@@ -90,12 +90,12 @@ public class Personnel_Details_Fragment extends Fragment {
 
         btnSave.setOnClickListener(v -> saveChanges(navController));
 
-        btnDelete.setOnClickListener(v -> new android.app.AlertDialog.Builder(requireContext())
-                .setTitle("Remove Personnel")
-                .setMessage("Are you sure you want to remove this personnel? This will also unlink their account.")
-                .setPositiveButton("Yes", (dialog, which) -> deletePersonnel(navController))
-                .setNegativeButton("Cancel", null)
-                .show());
+        btnDelete.setOnClickListener(v -> NotificationHelper.showConfirmation(
+                requireContext(),
+                "Remove Personnel",
+                "Are you sure you want to remove this personnel? This will also unlink their account.",
+                () -> deletePersonnel(navController)
+        ));
 
         btnResetPassword.setOnClickListener(v -> {
             String email = etEmail.getText().toString().trim();

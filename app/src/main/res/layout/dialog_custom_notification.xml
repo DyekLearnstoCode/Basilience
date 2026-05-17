@@ -45,14 +45,36 @@
             android:layout_marginBottom="24dp"
             android:textAlignment="center"/>
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/dialog_button"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="OK"
-            android:backgroundTint="@color/primary"
-            android:textColor="@color/onPrimary"
-            app:cornerRadius="12dp" />
+            android:orientation="horizontal"
+            android:layout_marginBottom="8dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/dialog_button_secondary"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Cancel"
+                android:textColor="@color/primary"
+                android:visibility="gone"
+                app:strokeColor="@color/primary"
+                app:cornerRadius="12dp"
+                android:layout_marginEnd="8dp"/>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/dialog_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="OK"
+                android:backgroundTint="@color/primary"
+                android:textColor="@color/onPrimary"
+                app:cornerRadius="12dp" />
+
+        </LinearLayout>
 
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

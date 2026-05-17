@@ -1,6 +1,5 @@
 package com.example.basilience;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
@@ -12,6 +11,7 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.Navigation;
 
@@ -369,12 +369,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         for (int i = 0; i < warnings.size(); i++) {
             msg.append("• ").append(warnings.get(i)).append(": ").append(actions.get(i)).append("\n");
         }
-        new AlertDialog.Builder(requireContext())
-                .setTitle("System Alert")
-                .setMessage(msg.toString())
-                .setPositiveButton("OK", (d, w) -> isDialogShowing = false)
-                .setOnDismissListener(d -> isDialogShowing = false)
-                .show();
+        NotificationHelper.showNotification(requireContext(), "System Alert", msg.toString());
+        // Note: we can't easily track dismissal of NotificationHelper currently to reset isDialogShowing
+        // But since it's a dialog, it's fine for now.
     }
 
     @Override

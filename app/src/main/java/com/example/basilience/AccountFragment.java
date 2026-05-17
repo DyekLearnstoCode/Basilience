@@ -135,34 +135,36 @@ public class AccountFragment extends Fragment {
     }
 
     private void logout() {
-        if (layoutLoading != null) {
-            tvLoadingTitle.setText(R.string.loading_logging_out);
-            layoutLoading.setVisibility(View.VISIBLE);
-        }
+        NotificationHelper.showConfirmation(requireContext(), "Logout", "Are you sure you want to log out?", () -> {
+            if (layoutLoading != null) {
+                tvLoadingTitle.setText(R.string.loading_logging_out);
+                layoutLoading.setVisibility(View.VISIBLE);
+            }
 
-        // Clear Firebase Auth
-        helper.logout();
+            // Clear Firebase Auth
+            helper.logout();
 
-        // Clear SharedPreferences
-        if (getActivity() != null) {
-            SharedPreferences borderPrefs = getActivity().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            borderPrefs.edit().putBoolean(KEY_IS_LOGGED_IN, false).apply();
+            // Clear SharedPreferences
+            if (getActivity() != null) {
+                SharedPreferences borderPrefs = getActivity().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+                borderPrefs.edit().putBoolean(KEY_IS_LOGGED_IN, false).apply();
 
-            // Redirect to Login Activity
-            Intent intent = new Intent(getActivity(), Auth_Login_Activity.class);
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-            
-            // Add a small delay to show the logout animation if it's too fast
-            View fragmentView = getView();
-            if (fragmentView != null) {
-                fragmentView.postDelayed(() -> {
+                // Redirect to Login Activity
+                Intent intent = new Intent(getActivity(), Auth_Login_Activity.class);
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+
+                // Add a small delay to show the logout animation if it's too fast
+                View fragmentView = getView();
+                if (fragmentView != null) {
+                    fragmentView.postDelayed(() -> {
+                        startActivity(intent);
+                        if (getActivity() != null) getActivity().finish();
+                    }, 600);
+                } else {
                     startActivity(intent);
                     if (getActivity() != null) getActivity().finish();
-                }, 600);
-            } else {
-                startActivity(intent);
-                if (getActivity() != null) getActivity().finish();
+                }
             }
-        }
+        });
     }
 }
