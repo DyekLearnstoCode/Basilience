@@ -1,0 +1,38 @@
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:layout_marginTop="8dp"
+    android:layout_marginBottom="8dp">
+
+    <TextView
+        android:id="@+id/tvCycleNumber"
+        android:layout_weight="1"
+        android:layout_width="0dp"
+        android:text="1"
+        android:layout_height="wrap_content"
+        android:textStyle="normal"
+        android:textColor="@color/black"
+        android:textAlignment="center"/>
+
+    <TextView
+        android:id="@+id/tvStartDate"
+        android:layout_weight="1"
+        android:layout_width="0dp"
+        android:text="Mar 18"
+        android:layout_height="wrap_content"
+        android:textStyle="normal"
+        android:textColor="@color/black"
+        android:textAlignment="center"/>
+
+    <TextView
+        android:id="@+id/tvEndDate"
+        android:layout_weight="1"
+        android:layout_width="0dp"
+        android:text="Jun 18" android:layout_height="wrap_content"
+        android:textStyle="normal"
+        android:textColor="@color/black"
+        android:textAlignment="center"/>
+</LinearLayout>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string-array name="parameters_array">
+        <item>Humidity</item>
+        <item>Water Temperature</item>
+        <item>Air Temperature</item>
+        <item>Water Level</item>
+        <item>pH Level</item>
+        <item>EC Level</item>
+    </string-array>
+
+</resources>

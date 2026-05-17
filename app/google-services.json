@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "482090299088",
+    "project_id": "basilience-database",
+    "storage_bucket": "basilience-database.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:482090299088:android:6bef97a2bd7f838b97f8d5",
+        "android_client_info": {
+          "package_name": "com.example.basilience"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDaJ7F8tAREnCo7zrrY_sJ6SgfNuYQtra0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

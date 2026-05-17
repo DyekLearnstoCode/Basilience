@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
+        app:elevation="0dp">
+
+        <com.google.android.material.appbar.CollapsingToolbarLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <!-- Shared header used but back button is hidden on main dashboard -->
+            <include layout="@layout/layout_header" />
+
+        </com.google.android.material.appbar.CollapsingToolbarLayout>
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="@dimen/container_overlap_margin"
+        android:background="@drawable/top_rounded_white"
+        android:elevation="5dp"
+        android:fillViewport="true"
+        android:overScrollMode="never"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingTop="@dimen/container_top_padding"
+            android:paddingStart="@dimen/container_side_padding"
+            android:paddingEnd="@dimen/container_side_padding"
+            android:paddingBottom="@dimen/container_side_padding">
+
+            <!-- TITLE -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/dashboard"
+                android:textSize="25sp"
+                android:textStyle="bold"
+                android:textColor="#000000"
+                android:gravity="center"
+                android:layout_marginBottom="16dp" />
+
+            <!-- OPTIONS LIST -->
+
+            <!-- parameters monitoring -->
+            <LinearLayout
+                android:id="@+id/cardParameters"
+                android:layout_width="match_parent"
+                android:layout_height="90dp"
+                android:layout_marginBottom="12dp"
+                android:background="@drawable/card_option"
+                android:orientation="horizontal"
+                android:padding="12dp"
+                android:gravity="center_vertical"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground">
+
+                <!-- ICON -->
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@drawable/parameters_monitoring_icon" />
+
+                <!-- TEXT -->
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/parameters_monitoring"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:textColor="#000000"
+                    android:layout_marginStart="12dp" />
+
+                <!-- CIRCLE BUTTON -->
+                <FrameLayout
+                    android:id="@+id/btnParameters"
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:background="@drawable/circle_button"
+                    android:gravity="center">
+
+                    <ImageView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:src="@drawable/enter_arrow" />
+                </FrameLayout>
+
+            </LinearLayout>
+
+            <!-- user guide  -->
+            <LinearLayout
+                android:id="@+id/cardUserGuide"
+                android:layout_width="match_parent"
+                android:layout_height="90dp"
+                android:layout_marginBottom="12dp"
+                android:background="@drawable/card_option"
+                android:orientation="horizontal"
+                android:padding="12dp"
+                android:gravity="center_vertical"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground">
+
+                <!-- ICON -->
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@drawable/userguide_icon" />
+
+                <!-- TEXT -->
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/feature2"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:textColor="#000000"
+                    android:layout_marginStart="12dp" />
+
+                <!-- CIRCLE BUTTON -->
+                <FrameLayout
+                    android:id="@+id/btnUserGuide"
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:background="@drawable/circle_button"
+                    android:gravity="center">
+
+                    <ImageView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:src="@drawable/enter_arrow"/>
+                </FrameLayout>
+
+            </LinearLayout>
+
+            <!-- system reports  -->
+            <LinearLayout
+                android:id="@+id/cardReports"
+                android:layout_width="match_parent"
+                android:layout_height="90dp"
+                android:layout_marginBottom="12dp"
+                android:background="@drawable/card_option"
+                android:orientation="horizontal"
+                android:padding="12dp"
+                android:gravity="center_vertical"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground">
+
+                <!-- ICON -->
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@drawable/reports_icon" />
+
+                <!-- TEXT -->
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/feature3"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:textColor="#000000"
+                    android:layout_marginStart="12dp" />
+
+                <!-- CIRCLE BUTTON -->
+                <FrameLayout
+                    android:id="@+id/btnReports"
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:background="@drawable/circle_button"
+                    android:gravity="center">
+
+                    <ImageView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:src="@drawable/enter_arrow" />
+                </FrameLayout>
+
+            </LinearLayout>
+
+            <!-- cycle details  -->
+            <LinearLayout
+                android:id="@+id/cardCycle"
+                android:layout_width="match_parent"
+                android:layout_height="90dp"
+                android:layout_marginBottom="12dp"
+                android:background="@drawable/card_option"
+                android:orientation="horizontal"
+                android:padding="12dp"
+                android:gravity="center_vertical"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground">
+
+                <!-- ICON -->
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@drawable/cycledetails_icon" />
+
+                <!-- TEXT -->
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/feature4"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:textColor="#000000"
+                    android:layout_marginStart="12dp" />
+
+                <!-- CIRCLE BUTTON -->
+                <FrameLayout
+                    android:id="@+id/btnCycle"
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:background="@drawable/circle_button"
+                    android:gravity="center">
+
+                    <ImageView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:src="@drawable/enter_arrow" />
+                </FrameLayout>
+
+
+            </LinearLayout>
+
+            <!-- personnel management  -->
+            <LinearLayout
+                android:id="@+id/cardPersonnel"
+                android:layout_width="match_parent"
+                android:layout_height="90dp"
+                android:layout_marginBottom="12dp"
+                android:background="@drawable/card_option"
+                android:orientation="horizontal"
+                android:padding="12dp"
+                android:gravity="center_vertical"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground">
+
+                <!-- ICON -->
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@drawable/personnel_icon" />
+
+                <!-- TEXT -->
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/feature5"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:textColor="#000000"
+                    android:layout_marginStart="12dp" />
+
+                <!-- CIRCLE BUTTON -->
+                <FrameLayout
+                    android:id="@+id/btnPersonnel"
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:background="@drawable/circle_button"
+                    android:gravity="center">
+
+                    <ImageView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:src="@drawable/enter_arrow" />
+                </FrameLayout>
+
+            </LinearLayout>
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

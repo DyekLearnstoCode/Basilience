@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
+        app:elevation="0dp">
+
+        <com.google.android.material.appbar.CollapsingToolbarLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:layout_scrollFlags="scroll|exitUntilCollapsed">
+
+            <include layout="@layout/layout_header" />
+
+        </com.google.android.material.appbar.CollapsingToolbarLayout>
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="@dimen/container_overlap_margin"
+        android:background="@drawable/top_rounded_white"
+        android:elevation="5dp"
+        android:fillViewport="true"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingTop="@dimen/container_top_padding"
+            android:paddingStart="@dimen/container_side_padding"
+            android:paddingEnd="@dimen/container_side_padding"
+            android:paddingBottom="@dimen/container_side_padding">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="20dp"
+                android:gravity="center"
+                android:text="Terms &amp; Conditions"
+                android:textColor="#000000"
+                android:textSize="25sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="1. Acceptance of Terms\nBy accessing and using Basilience, you agree to be bound by these Terms and Conditions.\n\n2. Use of Service\nYou agree to use the service only for lawful purposes and in a way that does not infringe the rights of others.\n\n3. Privacy Policy\nYour use of the service is also governed by our Privacy Policy, which is incorporated into these terms by reference.\n\n4. Data Collection\nWe collect sensor data and user information to provide and improve our services. We do not sell your personal data to third parties.\n\n5. Limitation of Liability\nBasilience is provided 'as is'. We are not liable for any damages arising from the use or inability to use the service."
+                android:textColor="#333333"
+                android:lineSpacingExtra="4dp"
+                android:textSize="16sp" />
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

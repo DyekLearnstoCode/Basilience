@@ -1,0 +1,188 @@
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- 1. FIXED BACKGROUND LOGO (Collapses on scroll) -->
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
+        app:elevation="0dp">
+
+        <com.google.android.material.appbar.CollapsingToolbarLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:layout_scrollFlags="scroll|exitUntilCollapsed">
+
+            <include layout="@layout/layout_header" />
+
+        </com.google.android.material.appbar.CollapsingToolbarLayout>
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <!-- 2. THE WHITE CARD (NestedScrollView)
+         This will slide up over the logo and then stick to the top. -->
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/nestedScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/top_rounded_white"
+        android:elevation="5dp"
+        android:fillViewport="true"
+        android:layout_marginTop="@dimen/container_overlap_margin"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <!-- CONTENT INSIDE THE CARD -->
+        <LinearLayout
+            android:id="@+id/cardContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/container_side_padding">
+
+            <!-- TITLE -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:gravity="center"
+                android:text="@string/feature1"
+                android:textColor="@android:color/black"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <!-- ===== GRID ROW 1 ===== -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <include
+                    android:id="@+id/cardPH"
+                    layout="@layout/item_parameter_card"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1" />
+
+                <include
+                    android:id="@+id/cardEC"
+                    layout="@layout/item_parameter_card"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1" />
+            </LinearLayout>
+
+            <!-- ===== GRID ROW 2 ===== -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <include
+                    android:id="@+id/cardTemp"
+                    layout="@layout/item_parameter_card"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1" />
+
+                <include
+                    android:id="@+id/cardHumidity"
+                    layout="@layout/item_parameter_card"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1" />
+            </LinearLayout>
+
+            <!-- ===== DETAILS SECTION ===== -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="10dp"
+                android:text="Details"
+                android:textColor="@color/black"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <include
+                android:id="@+id/cardWaterTemp"
+                layout="@layout/item_parameter" />
+
+            <include
+                android:id="@+id/cardWaterLevel"
+                layout="@layout/item_parameter" />
+
+            <!-- ===== ACTUATORS SECTION ===== -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="12dp"
+                android:gravity="center"
+                android:text="@string/feature1.1"
+                android:textColor="@android:color/black"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchMode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="Manual Mode"
+                android:textColor="@color/black"
+                android:textSize="16sp" />
+
+            <include
+                android:id="@+id/actWaterPumpValve"
+                layout="@layout/item_actuator" />
+
+            <include
+                android:id="@+id/actCanopyFan"
+                layout="@layout/item_actuator" />
+
+            <include
+                android:id="@+id/actGrowLights"
+                layout="@layout/item_actuator" />
+
+            <include
+                android:id="@+id/actPhUp"
+                layout="@layout/item_actuator" />
+
+            <include
+                android:id="@+id/actPhDown"
+                layout="@layout/item_actuator" />
+
+            <include
+                android:id="@+id/actNutrients"
+                layout="@layout/item_actuator" />
+
+            <include
+                android:id="@+id/actWaterEc"
+                layout="@layout/item_actuator" />
+
+            <include
+                android:id="@+id/actFogger"
+                layout="@layout/item_actuator" />
+
+            <include
+                android:id="@+id/actReservoirFan"
+                layout="@layout/item_actuator" />
+
+            <include
+                android:id="@+id/actWaterCooling"
+                layout="@layout/item_actuator" />
+
+            <include
+                android:id="@+id/actWaterHotting"
+                layout="@layout/item_actuator" />
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

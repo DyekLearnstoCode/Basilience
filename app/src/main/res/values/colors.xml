@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="softtur">#AFEEEE</color>
+    <color name="pastelmint">#D0F0C0</color>
+    <color name="celadon">#ACE1AF</color>
+    <color name="powderaquia">#E0F7FA</color>
+    <!-- Primary brand color -->
+    <color name="primary">#116F59</color>
+
+    <!-- Text/icons on primary -->
+    <color name="onPrimary">#FFFFFF</color>
+
+    <!-- Optional supporting colors -->
+    <color name="primary_light">#2E8B75</color>
+    <color name="background_light">#E8F5F1</color>
+    <color name="text_dark">#0B3D33</color>
+    <color name="nav_inactive">#2E4F46</color>
+    <color name="nav_active">#000000</color>
+</resources>

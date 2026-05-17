@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/tvHeader"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="16dp"
+    android:layout_marginBottom="8dp"
+    android:paddingStart="4dp"
+    android:text="May 2026"
+    android:textColor="#2E7D32"
+    android:textSize="14sp"
+    android:textStyle="bold"
+    android:textAllCaps="true" />

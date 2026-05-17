@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Active state -->
+    <item android:state_checked="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#E8F5F1"/>
+            <!-- Rounded corners -->
+            <corners android:radius="20dp"/>
+            <size
+                android:width="20dp"
+                android:height="20dp" />
+            <padding
+                android:left="8dp"
+                android:top="4dp"
+                android:right="8dp"
+                android:bottom="4dp" />
+        </shape>
+    </item>
+
+    <!-- Inactive state -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="20dp" />
+        </shape>
+    </item>
+</selector>

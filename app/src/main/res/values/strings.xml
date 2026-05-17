@@ -1,0 +1,62 @@
+<resources>
+    <string name="app_name">Basilience</string>
+    <string name="feature1">Parameters Monitoring</string>
+    <string name="feature1.1">Actuator Control</string>
+    <string name="feature2">User Guide</string>
+    <string name="feature2.1">Hardware Tutorial</string>
+    <string name="feature2.2">Mobile App Tutorial</string>
+    <string name="feature3">System Reports</string>
+    <string name="feature4">Cycle Details</string>
+    <string name="feature5">Personnel Management</string>
+    <string name="nav1">Home</string>
+    <string name="nav2">Notifications</string>
+    <string name="nav3">Settings</string>
+    <string name="nav3.1">Account Information</string>
+    <string name="nav3.2">About Basilience</string>
+    <string name="nav3.3">Terms and Agreements</string>
+    <string name="dashboard">Dashboard</string>
+    <string name="parameters_monitoring">Parameters Monitoring</string>
+
+    <!-- Personnel Management -->
+    <string name="personnel_add_title">Add Personnel</string>
+    <string name="personnel_details_title">Personnel Details</string>
+    <string name="personnel_name">Name</string>
+    <string name="personnel_role">Role</string>
+    <string name="personnel_email">Email</string>
+    <string name="personnel_phone">Phone</string>
+    <string name="personnel_password">Password</string>
+    <string name="personnel_confirm_password">Confirm Password</string>
+    <string name="personnel_save">Save Personnel</string>
+    <string name="personnel_update">Update Personnel</string>
+    <string name="personnel_delete">Delete Personnel</string>
+    <string name="personnel_edit">Edit Profile</string>
+
+    <!-- Settings -->
+    <string name="account_info_title">Account Information</string>
+    <string name="update_profile">Update Profile</string>
+    <string name="change_password">Change Password</string>
+    <string name="log_out">Log Out</string>
+    <string name="about_title">About Basilience</string>
+
+    <!-- Loading States -->
+    <string name="loading_logging_out">Logging out&#8230;</string>
+    <string name="loading_logging_in">Logging in&#8230;</string>
+    <string name="loading_creating_account">Creating account&#8230;</string>
+    <string name="loading_checking_credentials">Checking credentials&#8230;</string>
+    <string name="loading_saving">Saving changes&#8230;</string>
+    <string name="loading_syncing">Syncing data&#8230;</string>
+    <string name="loading_deleting">Deleting&#8230;</string>
+    <string name="loading_please_wait">Please wait a moment</string>
+
+    <!-- Error States -->
+    <string name="error_slow_internet">Connection is slow, please wait&#8230;</string>
+    <string name="error_no_internet">No internet connection</string>
+
+    <string name="terms_title">Terms &amp; Conditions</string>
+    <string name="select_date">Select Date</string>
+    <string name="end_date">End Date</string>
+    <string name="auto_generated">Auto-generated</string>
+    <string name="save_cycle">Save Cycle</string>
+    <string name="add_new_cycle">Add New Cycle</string>
+
+</resources>

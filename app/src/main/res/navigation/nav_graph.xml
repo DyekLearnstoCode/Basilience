@@ -1,0 +1,242 @@
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/home">
+
+    <!-- Dashboard (Home) -->
+    <fragment
+        android:id="@+id/home"
+        android:name="com.example.basilience.Dashboard_Fragment"
+        android:label="Home"
+        tools:layout="@layout/dashboard_main">
+        <action
+            android:id="@+id/action_home_to_parametersFragment"
+            app:destination="@id/parametersFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_home_to_userGuideFragment"
+            app:destination="@id/userGuideFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_home_to_reportschoiceFragment"
+            app:destination="@id/reportschoiceFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_home_to_cycleDetailsFragment"
+            app:destination="@id/cycleDetailsFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_home_to_personnelFragment"
+            app:destination="@id/personnelFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+    </fragment>
+
+    <!-- Notification -->
+    <fragment
+        android:id="@+id/Notification"
+        android:name="com.example.basilience.NotificationFragment"
+        android:label="Notification"
+        tools:layout="@layout/notification_feature">
+
+    </fragment>
+
+    <!-- Settings -->
+    <fragment
+        android:id="@+id/settings"
+        android:name="com.example.basilience.SettingsFragment"
+        android:label="Settings"
+        tools:layout="@layout/settings_main">
+        <action
+            android:id="@+id/action_settings_to_accountFragment"
+            app:destination="@id/accountFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_settings_to_aboutFragment"
+            app:destination="@id/aboutFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_settings_to_tosFragment"
+            app:destination="@id/tosFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+    </fragment>
+
+    <!-- Other fragments (Parameters, User Guide, Reports, Cycle, Personnel) -->
+    <fragment
+        android:id="@+id/parametersFragment"
+        android:name="com.example.basilience.Parameters_Monitoring_Fragment"
+        android:label="Parameters"
+        tools:layout="@layout/parameters_monitoring" />
+
+    <fragment
+        android:id="@+id/userGuideFragment"
+        android:name="com.example.basilience.UserGuideFragment"
+        android:label="User Guide"
+        tools:layout="@layout/guide_main" >
+        <action
+            android:id="@+id/action_userGuideFragment_to_hardwareGuideFragment"
+            app:destination="@id/hardwareGuideFragment"
+            app:enterAnim="@anim/fade_in"
+            app:exitAnim="@anim/fade_out"
+            app:popEnterAnim="@anim/fade_in"
+            app:popExitAnim="@anim/fade_out" />
+        <action
+            android:id="@+id/action_userGuideFragment_to_mobileGuideFragment"
+            app:destination="@id/mobileGuideFragment"
+            app:enterAnim="@anim/fade_in"
+            app:exitAnim="@anim/fade_out"
+            app:popEnterAnim="@anim/fade_in"
+            app:popExitAnim="@anim/fade_out" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/hardwareGuideFragment"
+        android:name="com.example.basilience.HardwareGuideFragment"
+        android:label="Hardware Guide"
+        tools:layout="@layout/guide_hardware" />
+
+    <fragment
+        android:id="@+id/mobileGuideFragment"
+        android:name="com.example.basilience.MobileGuideFragment"
+        android:label="Mobile Guide"
+        tools:layout="@layout/guide_mobile" />
+
+    <fragment
+        android:id="@+id/reportsFragment"
+        android:name="com.example.basilience.SystemReportsFragment"
+        android:label="Reports"
+        tools:layout="@layout/reports_system" />
+
+    <fragment
+        android:id="@+id/cycleDetailsFragment"
+        android:name="com.example.basilience.Cycle_Details_Fragment"
+        android:label="Cycle Details"
+        tools:layout="@layout/cycle_main">
+        <action
+            android:id="@+id/action_cycleDetailsFragment_to_cycleaddFragment"
+            app:destination="@id/cycleaddFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_cycleDetailsFragment_to_harvestLogFragment"
+            app:destination="@id/harvestLogFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/cycleaddFragment"
+        android:name="com.example.basilience.Cycle_Add_Fragment"
+        android:label="Add Cycle"
+        tools:layout="@layout/cycle_add" />
+
+
+    <fragment
+        android:id="@+id/personnelFragment"
+        android:name="com.example.basilience.Personnel_Main_Fragment"
+        android:label="Personnel"
+        tools:layout="@layout/personnel_main">
+        <action
+            android:id="@+id/action_personnelFragment_to_personneladdFragment"
+            app:destination="@id/personneladdFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_personnelFragment_to_personneldetailsFragment"
+            app:destination="@id/personneldetailsFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+    </fragment>
+    <fragment
+        android:id="@+id/foggingReportsFragment"
+        android:name="com.example.basilience.FoggingReportsFragment"
+        android:label="Fogging Reports"
+        tools:layout="@layout/reports_fogging" />
+    <fragment
+        android:id="@+id/reportschoiceFragment"
+        android:name="com.example.basilience.ReportsChoiceFragment"
+        android:label="Reports"
+        tools:layout="@layout/reports_main">
+        <action
+            android:id="@+id/action_reportschoiceFragment_to_reportsFragment"
+            app:destination="@id/reportsFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_reportschoiceFragment_to_foggingReportsFragment"
+            app:destination="@id/foggingReportsFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+    </fragment>
+    <fragment
+        android:id="@+id/personneladdFragment"
+        android:name="com.example.basilience.Personnel_Add_Fragment"
+        android:label="Add Personnel"
+        tools:layout="@layout/personnel_add" />
+    <fragment
+        android:id="@+id/personneldetailsFragment"
+        android:name="com.example.basilience.Personnel_Details_Fragment"
+        android:label="Personnel Details"
+        tools:layout="@layout/personnel_details" />
+
+    <fragment
+        android:id="@+id/harvestLogFragment"
+        android:name="com.example.basilience.HarvestLogFragment"
+        android:label="Harvest Log"
+        tools:layout="@layout/cycle_harvest_log" />
+
+    <!-- Settings Sub-pages -->
+    <fragment
+        android:id="@+id/accountFragment"
+        android:name="com.example.basilience.AccountFragment"
+        android:label="Account Information"
+        tools:layout="@layout/settings_account" />
+
+    <fragment
+        android:id="@+id/aboutFragment"
+        android:name="com.example.basilience.AboutFragment"
+        android:label="About Basilience"
+        tools:layout="@layout/settings_about" />
+
+    <fragment
+        android:id="@+id/tosFragment"
+        android:name="com.example.basilience.ToSFragment"
+        android:label="Terms and Agreements"
+        tools:layout="@layout/settings_terms" />
+</navigation>
