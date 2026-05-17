@@ -12,6 +12,7 @@
     <!-- Text/icons on primary -->
     <color name="onPrimary">#FFFFFF</color>
 
+
     <!-- Optional supporting colors -->
     <color name="primary_light">#2E8B75</color>
     <color name="background_light">#E8F5F1</color>
