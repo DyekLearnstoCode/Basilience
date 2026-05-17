@@ -6,7 +6,6 @@ import android.os.Bundle;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.splashscreen.SplashScreen;
@@ -72,13 +71,13 @@ public class Auth_Login_Activity extends AppCompatActivity {
     private void showForgotPasswordDialog() {
         String email = txtemail.getText().toString().trim();
         if (email.isEmpty()) {
-            Toast.makeText(this, "Enter your email above first", Toast.LENGTH_SHORT).show();
+            NotificationHelper.showError(this, "Enter your email above first");
             return;
         }
 
         helper.sendPasswordResetEmail(email)
-                .addOnSuccessListener(aVoid -> Toast.makeText(this, "Reset link sent to " + email, Toast.LENGTH_LONG).show())
-                .addOnFailureListener(e -> Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                .addOnSuccessListener(aVoid -> NotificationHelper.showSuccess(this, "Reset link sent to " + email))
+                .addOnFailureListener(e -> NotificationHelper.showError(this, "Error: " + e.getMessage()));
     }
 
     private void showLoading(boolean show, String message) {
@@ -94,7 +93,7 @@ public class Auth_Login_Activity extends AppCompatActivity {
         String password = String.valueOf(txtpassword.getText()).trim();
 
         if (email.isEmpty() || password.isEmpty()) {
-            Toast.makeText(this, "Please fill all fields", Toast.LENGTH_SHORT).show();
+            NotificationHelper.showError(this, "Please fill all fields");
             return;
         }
 
@@ -105,7 +104,7 @@ public class Auth_Login_Activity extends AppCompatActivity {
                     String uid = helper.getCurrentUid();
                     if (uid == null) {
                         showLoading(false, null);
-                        Toast.makeText(this, "LOGIN FAILED: uid is null", Toast.LENGTH_SHORT).show();
+                        NotificationHelper.showError(this, "LOGIN FAILED: uid is null");
                         return;
                     }
 
@@ -117,13 +116,13 @@ public class Auth_Login_Activity extends AppCompatActivity {
                                     showLoading(false, null);
                                     // If profile is missing, sign out to avoid being stuck
                                     helper.logout();
-                                    Toast.makeText(this, "Account found, but no profile exists. Please contact support.", Toast.LENGTH_LONG).show();
+                                    NotificationHelper.showError(this, "Account found, but no profile exists. Please contact support.");
                                     return;
                                 }
 
                                 String role = document.getString("role");
                                 String ownerUid = document.getString("ownerAdminUid");
-                                Toast.makeText(this, "LOGIN SUCCESSFUL", Toast.LENGTH_SHORT).show();
+                                // NotificationHelper.showSuccess(this, "LOGIN SUCCESSFUL"); // Optional: skip or show briefly
 
                                 SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
                                 SharedPreferences.Editor editor = prefs.edit();
@@ -140,12 +139,12 @@ public class Auth_Login_Activity extends AppCompatActivity {
                             })
                             .addOnFailureListener(e -> {
                                 showLoading(false, null);
-                                Toast.makeText(this, "Failed to load profile: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                                NotificationHelper.showError(this, "Failed to load profile: " + e.getMessage());
                             });
                 })
                 .addOnFailureListener(e -> {
                     showLoading(false, null);
-                    Toast.makeText(this, "LOGIN FAILED: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    NotificationHelper.showError(this, "LOGIN FAILED: " + e.getMessage());
                 });
     }
 }

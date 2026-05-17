@@ -5,7 +5,6 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -58,17 +57,17 @@ public class Personnel_Add_Fragment extends Fragment {
         String confirm = etConfirm.getText().toString();
 
         if (name.isEmpty() || email.isEmpty() || phone.isEmpty()) {
-            Toast.makeText(requireContext(), "Fill required fields", Toast.LENGTH_SHORT).show();
+            NotificationHelper.showError(requireContext(), "Fill required fields");
             return;
         }
 
         if (password.length() < 6) {
-            Toast.makeText(requireContext(), "Password must be at least 6 characters", Toast.LENGTH_SHORT).show();
+            NotificationHelper.showError(requireContext(), "Password must be at least 6 characters");
             return;
         }
 
         if (!password.equals(confirm)) {
-            Toast.makeText(requireContext(), "Passwords do not match", Toast.LENGTH_SHORT).show();
+            NotificationHelper.showError(requireContext(), "Passwords do not match");
             return;
         }
 
@@ -85,13 +84,13 @@ public class Personnel_Add_Fragment extends Fragment {
                     result.putBoolean("added", true);
                     getParentFragmentManager().setFragmentResult("personnel_add_result", result);
 
-                    Toast.makeText(requireContext(), "Farmer account created", Toast.LENGTH_SHORT).show();
+                    NotificationHelper.showSuccess(requireContext(), "Farmer account created");
                     getParentFragmentManager().popBackStack();
                 })
                 .addOnFailureListener(e -> {
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
                     btnSave.setEnabled(true);
-                    Toast.makeText(requireContext(), "Failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    NotificationHelper.showError(requireContext(), "Failed: " + e.getMessage());
                 });
     }
 }

@@ -8,7 +8,6 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -80,7 +79,7 @@ public class AccountFragment extends Fragment {
                 etEmail.setText(document.getString("email"));
                 etPhone.setText(document.getString("phone"));
             }
-        }).addOnFailureListener(e -> Toast.makeText(getContext(), "Failed to load profile", Toast.LENGTH_SHORT).show());
+        }).addOnFailureListener(e -> NotificationHelper.showError(getContext(), "Failed to load profile"));
     }
 
     private void updateProfile() {
@@ -91,7 +90,7 @@ public class AccountFragment extends Fragment {
         String phone = etPhone.getText().toString().trim();
 
         if (name.isEmpty()) {
-            Toast.makeText(getContext(), "Name cannot be empty", Toast.LENGTH_SHORT).show();
+            NotificationHelper.showError(getContext(), "Name cannot be empty");
             return;
         }
 
@@ -107,11 +106,11 @@ public class AccountFragment extends Fragment {
         helper.updateUserProfile(uid, updates)
                 .addOnSuccessListener(aVoid -> {
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
-                    Toast.makeText(getContext(), "Profile updated", Toast.LENGTH_SHORT).show();
+                    NotificationHelper.showSuccess(getContext(), "Profile updated");
                 })
                 .addOnFailureListener(e -> {
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
-                    Toast.makeText(getContext(), "Update failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    NotificationHelper.showError(getContext(), "Update failed: " + e.getMessage());
                 });
     }
 
@@ -127,11 +126,11 @@ public class AccountFragment extends Fragment {
         helper.sendPasswordResetEmail(email)
                 .addOnSuccessListener(aVoid -> {
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
-                    Toast.makeText(getContext(), "Password reset email sent", Toast.LENGTH_LONG).show();
+                    NotificationHelper.showSuccess(getContext(), "Password reset email sent");
                 })
                 .addOnFailureListener(e -> {
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
-                    Toast.makeText(getContext(), "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    NotificationHelper.showError(getContext(), "Error: " + e.getMessage());
                 });
     }
 

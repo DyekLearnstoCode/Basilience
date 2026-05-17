@@ -3,7 +3,6 @@ package com.example.basilience;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -110,9 +109,8 @@ public class Personnel_Main_Fragment extends Fragment {
                     adapter.notifyDataSetChanged();
                 })
                 .addOnFailureListener(e ->
-                        Toast.makeText(requireContext(),
-                                "Failed to load farmers: " + e.getMessage(),
-                                Toast.LENGTH_LONG).show()
+                        NotificationHelper.showError(requireContext(),
+                                "Failed to load farmers: " + e.getMessage())
                 );
     }
 }

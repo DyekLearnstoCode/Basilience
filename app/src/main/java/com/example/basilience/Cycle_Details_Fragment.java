@@ -2,7 +2,6 @@ package com.example.basilience;
 
 import android.os.Bundle;
 import android.view.View;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -73,7 +72,7 @@ public class Cycle_Details_Fragment extends Fragment {
                 dbHelper.setTargetUid(uid);
                 cycleListener = dbHelper.listenToCycles((snapshot, e) -> {
                     if (e != null) {
-                        Toast.makeText(getContext(), "Error loading cycles", Toast.LENGTH_SHORT).show();
+                        NotificationHelper.showError(getContext(), "Error loading cycles");
                         return;
                     }
 

@@ -6,7 +6,6 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -87,7 +86,7 @@ public class Cycle_Add_Fragment extends Fragment {
 
     private void saveCycleToDb(View view) {
         if (startDateIso.isEmpty()) {
-            Toast.makeText(requireContext(), "Select start date", Toast.LENGTH_SHORT).show();
+            NotificationHelper.showError(requireContext(), "Select start date");
             return;
         }
 
@@ -104,17 +103,17 @@ public class Cycle_Add_Fragment extends Fragment {
                 dbHelper.addCycle(newCycle).addOnCompleteListener(task -> {
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
                     if (task.isSuccessful()) {
-                        Toast.makeText(requireContext(), "Cycle saved successfully", Toast.LENGTH_SHORT).show();
+                        NotificationHelper.showSuccess(requireContext(), "Cycle saved successfully");
                         Navigation.findNavController(view).popBackStack();
                     } else {
                         btnSave.setEnabled(true);
-                        Toast.makeText(requireContext(), "Error saving cycle", Toast.LENGTH_SHORT).show();
+                        NotificationHelper.showError(requireContext(), "Error saving cycle");
                     }
                 });
             } else {
                 if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
                 btnSave.setEnabled(true);
-                Toast.makeText(requireContext(), "Auth error", Toast.LENGTH_SHORT).show();
+                NotificationHelper.showError(requireContext(), "Auth error");
             }
         });
     }

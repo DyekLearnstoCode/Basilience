@@ -7,7 +7,6 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -152,7 +151,7 @@ public class HarvestLogFragment extends Fragment {
     private void saveHarvest() {
         String weightStr = etWeight.getText().toString().trim();
         if (weightStr.isEmpty()) {
-            Toast.makeText(getContext(), "Enter weight", Toast.LENGTH_SHORT).show();
+            NotificationHelper.showError(getContext(), "Enter weight");
             return;
         }
 
@@ -168,10 +167,10 @@ public class HarvestLogFragment extends Fragment {
                 dbHelper.setTargetUid(uid);
                 dbHelper.addHarvestEntry(cycleNo, entry)
                         .addOnSuccessListener(aVoid -> {
-                            Toast.makeText(getContext(), "Harvest saved", Toast.LENGTH_SHORT).show();
+                            NotificationHelper.showSuccess(getContext(), "Harvest saved");
                             etWeight.setText("");
                         })
-                        .addOnFailureListener(e -> Toast.makeText(getContext(), "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                        .addOnFailureListener(e -> NotificationHelper.showError(getContext(), "Error: " + e.getMessage()));
             }
         });
     }

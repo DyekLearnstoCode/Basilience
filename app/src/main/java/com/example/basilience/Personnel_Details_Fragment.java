@@ -5,7 +5,6 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -61,7 +60,7 @@ public class Personnel_Details_Fragment extends Fragment {
 
         personnelId = getArguments() != null ? getArguments().getString("personnelId") : null;
         if (personnelId == null || personnelId.isEmpty()) {
-            Toast.makeText(requireContext(), "Missing personnelId", Toast.LENGTH_LONG).show();
+            NotificationHelper.showError(requireContext(), "Missing personnelId");
             navController.popBackStack();
             return;
         }
@@ -70,7 +69,7 @@ public class Personnel_Details_Fragment extends Fragment {
         helper.getPersonnelForCurrentAdmin(personnelId)
                 .addOnSuccessListener(doc -> {
                     if (!doc.exists()) {
-                        Toast.makeText(requireContext(), "Personnel not found", Toast.LENGTH_LONG).show();
+                        NotificationHelper.showError(requireContext(), "Personnel not found");
                         navController.popBackStack();
                         return;
                     }
@@ -80,7 +79,7 @@ public class Personnel_Details_Fragment extends Fragment {
                     etPhone.setText(safe(doc.getString("phone")));
                 })
                 .addOnFailureListener(e ->
-                        Toast.makeText(requireContext(), "Failed: " + e.getMessage(), Toast.LENGTH_LONG).show()
+                        NotificationHelper.showError(requireContext(), "Failed: " + e.getMessage())
                 );
 
         btnEdit.setOnClickListener(v -> {
@@ -105,11 +104,11 @@ public class Personnel_Details_Fragment extends Fragment {
             btnResetPassword.setEnabled(false);
             helper.sendPasswordResetEmail(email)
                     .addOnSuccessListener(unused -> {
-                        Toast.makeText(requireContext(), "Reset email sent to " + email, Toast.LENGTH_LONG).show();
+                        NotificationHelper.showSuccess(requireContext(), "Reset email sent to " + email);
                         btnResetPassword.setEnabled(true);
                     })
                     .addOnFailureListener(e -> {
-                        Toast.makeText(requireContext(), "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                        NotificationHelper.showError(requireContext(), "Error: " + e.getMessage());
                         btnResetPassword.setEnabled(true);
                     });
         });
@@ -122,7 +121,7 @@ public class Personnel_Details_Fragment extends Fragment {
         String phone = etPhone.getText().toString().trim();
 
         if (name.isEmpty() || email.isEmpty() || phone.isEmpty()) {
-            Toast.makeText(requireContext(), "Fill required fields", Toast.LENGTH_SHORT).show();
+            NotificationHelper.showError(requireContext(), "Fill required fields");
             return;
         }
 
@@ -143,7 +142,7 @@ public class Personnel_Details_Fragment extends Fragment {
         helper.updatePersonnelForCurrentAdmin(personnelId, updates)
                 .addOnSuccessListener(unused -> {
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
-                    Toast.makeText(requireContext(), "Personnel and Account Synced", Toast.LENGTH_SHORT).show();
+                    NotificationHelper.showSuccess(requireContext(), "Personnel and Account Synced");
                     Bundle result = new Bundle();
                     result.putBoolean("updated", true);
                     getParentFragmentManager().setFragmentResult("personnel_details_result", result);
@@ -152,7 +151,7 @@ public class Personnel_Details_Fragment extends Fragment {
                 .addOnFailureListener(e -> {
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
                     btnSave.setEnabled(true);
-                    Toast.makeText(requireContext(), "Failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    NotificationHelper.showError(requireContext(), "Failed: " + e.getMessage());
                 });
     }
 
@@ -166,7 +165,7 @@ public class Personnel_Details_Fragment extends Fragment {
         helper.deletePersonnelForCurrentAdmin(personnelId)
                 .addOnSuccessListener(unused -> {
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
-                    Toast.makeText(requireContext(), "Personnel unlinked successfully", Toast.LENGTH_SHORT).show();
+                    NotificationHelper.showSuccess(requireContext(), "Personnel unlinked successfully");
                     Bundle result = new Bundle();
                     result.putBoolean("deleted", true);
                     getParentFragmentManager().setFragmentResult("personnel_details_result", result);
@@ -175,7 +174,7 @@ public class Personnel_Details_Fragment extends Fragment {
                 .addOnFailureListener(e -> {
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
                     btnDelete.setEnabled(true);
-                    Toast.makeText(requireContext(), "Failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    NotificationHelper.showError(requireContext(), "Failed: " + e.getMessage());
                 });
     }
 

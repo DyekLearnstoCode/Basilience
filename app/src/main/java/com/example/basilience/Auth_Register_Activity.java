@@ -5,7 +5,6 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -58,11 +57,11 @@ public class Auth_Register_Activity extends AppCompatActivity {
         String confirmPassword = String.valueOf(etConfirmPassword.getText()).trim();
 
         if (name.isEmpty() || email.isEmpty() || password.isEmpty() || confirmPassword.isEmpty()) {
-            showCustomToast("Please fill all fields");
+            NotificationHelper.showError(this, "Please fill all fields");
             return;
         }
         if (!password.equals(confirmPassword)) {
-            showCustomToast("Passwords do not match");
+            NotificationHelper.showError(this, "Passwords do not match");
             return;
         }
 
@@ -74,7 +73,7 @@ public class Auth_Register_Activity extends AppCompatActivity {
                     String uid = helper.getCurrentUid();
                     if (uid == null) {
                         showLoading(false, null);
-                        showCustomToast("Registration failed: uid is null");
+                        NotificationHelper.showError(this, "Registration failed: uid is null");
                         return;
                     }
 
@@ -84,31 +83,20 @@ public class Auth_Register_Activity extends AppCompatActivity {
                     helper.createUserProfile(uid, name, email, "admin")
                             .addOnSuccessListener(v -> {
                                 showLoading(false, null);
-                                showCustomToast("Registration successful");
+                                NotificationHelper.showSuccess(this, "Registration successful");
                                 startActivity(new Intent(this, Auth_Login_Activity.class));
                                 finish();
                             })
                             .addOnFailureListener(e -> {
                                 showLoading(false, null);
-                                showCustomToast("Failed to save user data: " + e.getMessage());
+                                NotificationHelper.showError(this, "Failed to save user data: " + e.getMessage());
                             });
                 })
                 .addOnFailureListener(e -> {
                     showLoading(false, null);
-                    showCustomToast("Registration failed: " + e.getMessage());
+                    NotificationHelper.showError(this, "Registration failed: " + e.getMessage());
                 });
     }
 
-    private void showCustomToast(String message) {
-        LayoutInflater inflater = getLayoutInflater();
-        View layout = inflater.inflate(R.layout.custom_toast, null);
 
-        TextView text = layout.findViewById(R.id.toast_text);
-        text.setText(message);
-
-        Toast toast = new Toast(getApplicationContext());
-        toast.setDuration(Toast.LENGTH_SHORT);
-        toast.setView(layout);
-        toast.show();
-    }
 }
