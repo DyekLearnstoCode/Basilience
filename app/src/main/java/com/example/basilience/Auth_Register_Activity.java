@@ -2,12 +2,10 @@ package com.example.basilience;
 
 import android.content.Intent;
 import android.os.Bundle;
-import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.TextView;
-
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 
@@ -43,9 +41,7 @@ public class Auth_Register_Activity extends AppCompatActivity {
     }
 
     private void showLoading(boolean show, String message) {
-        if (tvLoadingTitle != null && message != null) {
-            tvLoadingTitle.setText(message);
-        }
+        if (tvLoadingTitle != null && message != null) tvLoadingTitle.setText(message);
         layoutLoading.setVisibility(show ? View.VISIBLE : View.GONE);
         btnSignup.setEnabled(!show);
     }
@@ -67,29 +63,42 @@ public class Auth_Register_Activity extends AppCompatActivity {
 
         showLoading(true, "Creating account...");
 
-        // 1) create auth user
         helper.registerAuth(email, password)
-                .addOnSuccessListener(res -> {
+                .addOnSuccessListener(authResult -> {
                     String uid = helper.getCurrentUid();
                     if (uid == null) {
                         showLoading(false, null);
                         NotificationHelper.showError(this, "Registration failed: uid is null");
                         return;
                     }
-
-                    showLoading(true, "Saving profile...");
-
-                    // 2) save profile in Firestore
                     helper.createUserProfile(uid, name, email, "admin")
-                            .addOnSuccessListener(v -> {
-                                showLoading(false, null);
-                                NotificationHelper.showSuccess(this, "Registration successful");
-                                startActivity(new Intent(this, Auth_Login_Activity.class));
-                                finish();
+                            .addOnSuccessListener(unused -> {
+                                helper.sendEmailVerification(new Database_Helper.EmailVerificationCallback() {
+                                    @Override
+                                    public void onSuccess() {
+                                        showLoading(false, null);
+                                        showVerifyEmailDialog();
+                                    }
+                                    @Override
+                                    public void onFailure(String errorMessage) {
+                                        showLoading(false, null);
+                                        NotificationHelper.showError(
+                                                Auth_Register_Activity.this,
+                                                "Failed to send verification email: " + errorMessage
+                                        );
+                                        helper.logout();
+                                        gotoLogin();
+                                    }
+                                });
                             })
                             .addOnFailureListener(e -> {
                                 showLoading(false, null);
-                                NotificationHelper.showError(this, "Failed to save user data: " + e.getMessage());
+                                NotificationHelper.showError(
+                                        Auth_Register_Activity.this,
+                                        "Failed to save user profile: " + e.getMessage()
+                                );
+                                helper.logout();
+                                gotoLogin();
                             });
                 })
                 .addOnFailureListener(e -> {
@@ -98,5 +107,21 @@ public class Auth_Register_Activity extends AppCompatActivity {
                 });
     }
 
+    // This dialog appears centered and waits for user
+    private void showVerifyEmailDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Registration Complete")
+                .setMessage("Please check your email to verify your account before logging in.")
+                .setCancelable(false)
+                .setPositiveButton("OK", (dialog, which) -> {
+                    helper.logout();
+                    gotoLogin();
+                })
+                .show();
+    }
 
+    private void gotoLogin() {
+        startActivity(new Intent(Auth_Register_Activity.this, Auth_Login_Activity.class));
+        finish();
+    }
 }

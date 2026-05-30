@@ -1,10 +1,16 @@
 package com.example.basilience;
 
+import static android.content.ContentValues.TAG;
+
+import android.util.Log;
+import androidx.annotation.NonNull;
+import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -25,6 +31,10 @@ public class Database_Helper {
     public Database_Helper() {
         auth = FirebaseAuth.getInstance();
         db = FirebaseFirestore.getInstance();
+    }
+    public interface EmailVerificationCallback {
+        void onSuccess();
+        void onFailure(String errorMessage);
     }
 
     public void setTargetUid(String uid) {
@@ -362,6 +372,29 @@ public class Database_Helper {
                 .document() // auto-id
                 .set(harvestEntry);
     }
+    public void sendEmailVerification(EmailVerificationCallback callback) {
+        FirebaseUser user = auth.getCurrentUser();
+        if (user != null) {
+            user.sendEmailVerification()
+                    .addOnCompleteListener(new OnCompleteListener<Void>() {
+                        @Override
+                        public void onComplete(@NonNull Task<Void> task) {
+                            if (task.isSuccessful()) {
+                                Log.d(TAG, "Email verification sent successfully.");
+                                callback.onSuccess();
+                            } else {
+                                String error = task.getException() != null ?
+                                        task.getException().getMessage() : "Unknown error";
+                                Log.e(TAG, "Failed to send verification email: " + error);
+                                callback.onFailure(error);
+                            }
+                        }
+                    });
+        } else {
+            Log.e(TAG, "No user is currently logged in.");
+            callback.onFailure("No user is currently logged in.");
+        }
+    }
 
     public ListenerRegistration listenToHarvestEntries(int cycleNo, EventListener<QuerySnapshot> listener) {
         String uid = getEffectiveUid();
@@ -389,4 +422,5 @@ public class Database_Helper {
                 .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
                 .addSnapshotListener(listener);
     }
+
 }

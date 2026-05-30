@@ -31,12 +31,11 @@ public class Auth_Login_Activity extends AppCompatActivity {
         SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
         super.onCreate(savedInstanceState);
 
-        final boolean[] keepSplash = { true };
+        final boolean[] keepSplash = {true};
         splashScreen.setKeepOnScreenCondition(() -> keepSplash[0]);
 
         helper = new Database_Helper();
 
-        // Check if user is already logged in (Remember Me logic)
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         boolean isLoggedIn = prefs.getBoolean(KEY_IS_LOGGED_IN, false);
         String currentUid = helper.getCurrentUid();
@@ -101,10 +100,20 @@ public class Auth_Login_Activity extends AppCompatActivity {
 
         helper.loginAuth(email, password)
                 .addOnSuccessListener(res -> {
-                    String uid = helper.getCurrentUid();
-                    if (uid == null) {
+                    com.google.firebase.auth.FirebaseUser user = com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser();
+                    String uid = user != null ? user.getUid() : null;
+
+                    if (user == null || uid == null) {
                         showLoading(false, null);
                         NotificationHelper.showError(this, "LOGIN FAILED: uid is null");
+                        return;
+                    }
+
+                    if (!user.isEmailVerified()) {
+                        showLoading(false, null);
+                        helper.logout();
+                        NotificationHelper.showError(this,
+                                "Your email is not verified! Please check your email inbox (including spam/junk), click the verification link, then log in again.");
                         return;
                     }
 
@@ -114,16 +123,14 @@ public class Auth_Login_Activity extends AppCompatActivity {
                             .addOnSuccessListener(document -> {
                                 if (!document.exists()) {
                                     showLoading(false, null);
-                                    // If profile is missing, sign out to avoid being stuck
                                     helper.logout();
-                                    NotificationHelper.showError(this, "Account found, but no profile exists. Please contact support.");
+                                    NotificationHelper.showError(this,
+                                            "Login failed: Your profile data is missing.\nPlease contact support or try re-registering.");
                                     return;
                                 }
 
                                 String role = document.getString("role");
                                 String ownerUid = document.getString("ownerAdminUid");
-                                // NotificationHelper.showSuccess(this, "LOGIN SUCCESSFUL"); // Optional: skip or show briefly
-
                                 SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
                                 SharedPreferences.Editor editor = prefs.edit();
                                 editor.putBoolean(KEY_IS_LOGGED_IN, cbRemember.isChecked());
@@ -131,7 +138,6 @@ public class Auth_Login_Activity extends AppCompatActivity {
                                 editor.putString("owner_uid", ownerUid);
                                 editor.apply();
 
-                                // Redirect based on role
                                 Intent intent = new Intent(this, MainActivity.class);
                                 showLoading(false, null);
                                 startActivity(intent);
@@ -139,7 +145,8 @@ public class Auth_Login_Activity extends AppCompatActivity {
                             })
                             .addOnFailureListener(e -> {
                                 showLoading(false, null);
-                                NotificationHelper.showError(this, "Failed to load profile: " + e.getMessage());
+                                NotificationHelper.showError(this,
+                                        "Failed to load profile: " + e.getMessage());
                             });
                 })
                 .addOnFailureListener(e -> {
