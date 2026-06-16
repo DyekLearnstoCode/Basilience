@@ -17,9 +17,12 @@ import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.google.firebase.firestore.QuerySnapshot;
 import com.google.firebase.firestore.SetOptions;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.DatabaseReference;
 
 import java.util.HashMap;
 import java.util.Map;
+
 
 public class Database_Helper {
 
@@ -72,6 +75,13 @@ public class Database_Helper {
     public Task<AuthResult> registerAuth(String email, String password) {
         return auth.createUserWithEmailAndPassword(email, password);
     }
+    private final FirebaseDatabase rtdb =
+            FirebaseDatabase.getInstance(
+                    "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app"
+            );
+
+    private final DatabaseReference deviceRef =
+            rtdb.getReference("device");
 
     public Task<AuthResult> loginAuth(String email, String password) {
         return auth.signInWithEmailAndPassword(email, password);
@@ -279,42 +289,25 @@ public class Database_Helper {
                 .addSnapshotListener(listener);
     }
 
-    public Task<Void> updateActuatorState(String actuatorName, boolean isOn) {
-        String uid = getEffectiveUid();
-        if (uid == null) return Tasks.forException(new Exception("Not logged in"));
+    public void updateActuatorState(String actuatorName, boolean isOn) {
 
-        return db.collection("users")
-                .document(uid)
-                .collection("system")
-                .document("status")
-                .update("actuators." + actuatorName, isOn)
-                .addOnFailureListener(e -> {
-                    Map<String, Object> actuators = new HashMap<>();
-                    actuators.put(actuatorName, isOn);
-                    Map<String, Object> data = new HashMap<>();
-                    data.put("actuators", actuators);
-                    db.collection("users").document(uid).collection("system").document("status")
-                            .set(data, SetOptions.merge());
-                });
+        deviceRef.child("command")
+                .child(actuatorName)
+                .setValue(isOn);
     }
 
-    public Task<Void> updateManualMode(boolean isManual) {
-        String uid = getEffectiveUid();
-        if (uid == null) return Tasks.forException(new Exception("Not logged in"));
+    public void updateManualMode(boolean isManual) {
 
-        return db.collection("users")
-                .document(uid)
-                .collection("system")
-                .document("status")
-                .update("manualMode", isManual)
-                .addOnFailureListener(e -> {
-                    Map<String, Object> data = new HashMap<>();
-                    data.put("manualMode", isManual);
-                    db.collection("users").document(uid).collection("system").document("status")
-                            .set(data, SetOptions.merge());
-                });
+        Log.d("MANUAL_DEBUG", "updateManualMode called: " + isManual);
+
+        deviceRef.child("command")
+                .child("manualMode")
+                .setValue(isManual)
+                .addOnSuccessListener(aVoid ->
+                        Log.d("MANUAL_DEBUG", "RTDB write success"))
+                .addOnFailureListener(e ->
+                        Log.e("MANUAL_DEBUG", "RTDB write failed", e));
     }
-
     // --------------------
     // CYCLES
     // --------------------

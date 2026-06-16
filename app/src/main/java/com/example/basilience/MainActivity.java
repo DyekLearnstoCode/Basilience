@@ -7,6 +7,8 @@ import androidx.navigation.fragment.NavHostFragment;
 import androidx.navigation.ui.NavigationUI;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
+import com.google.firebase.database.FirebaseDatabase;
+import android.util.Log;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -14,6 +16,10 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        FirebaseDatabase.getInstance()
+                .getReference("test")
+                .setValue("hello");
 
         BottomNavigationView bottomNav = findViewById(R.id.bottom_navigation);
 

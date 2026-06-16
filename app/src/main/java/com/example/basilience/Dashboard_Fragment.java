@@ -20,6 +20,7 @@ public class Dashboard_Fragment extends Fragment {
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
         return inflater.inflate(R.layout.dashboard_main, container, false);
+
     }
 
     @Override
