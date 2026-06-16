@@ -291,9 +291,17 @@ public class Database_Helper {
 
     public void updateActuatorState(String actuatorName, boolean isOn) {
 
-        deviceRef.child("command")
-                .child(actuatorName)
-                .setValue(isOn);
+        String path = "device/command/" + actuatorName;
+
+        Log.d("ACTUATOR_DEBUG", "PATH = " + path);
+        Log.d("ACTUATOR_DEBUG", "VALUE = " + isOn);
+
+        rtdb.getReference(path)
+                .setValue(isOn)
+                .addOnSuccessListener(aVoid ->
+                        Log.d("ACTUATOR_DEBUG", "SUCCESS"))
+                .addOnFailureListener(e ->
+                        Log.e("ACTUATOR_DEBUG", "FAILED", e));
     }
 
     public void updateManualMode(boolean isManual) {
