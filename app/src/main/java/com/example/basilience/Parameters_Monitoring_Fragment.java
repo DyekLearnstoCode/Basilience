@@ -1,17 +1,14 @@
 package com.example.basilience;
 
-import android.content.Context;
-import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.Navigation;
 
@@ -22,6 +19,11 @@ import com.google.firebase.firestore.ListenerRegistration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.ValueEventListener;
 
 public class Parameters_Monitoring_Fragment extends Fragment {
 
@@ -53,6 +55,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             this.isOn = false;
         }
     }
+
+    private DatabaseReference sensorsRef;
+    private ValueEventListener sensorsListener;
 
     private final Actuator waterPumpValve = new Actuator("Water Pump (Valve)", "waterPump");
     private final Actuator canopyFan = new Actuator("Canopy Fan", "canopyFan");
@@ -172,25 +177,93 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
     }
 
+
+
     private void startRealTimeMonitoring() {
+
         dbHelper.resolveDataUid().addOnSuccessListener(uid -> {
+
             if (uid != null) {
+
                 dbHelper.setTargetUid(uid);
 
-                // Enable mode switch now that correct UID is resolved
                 View v = getView();
+
                 if (v != null) {
-                    SwitchMaterial modeSwitch = v.findViewById(R.id.switchMode);
+
+                    SwitchMaterial modeSwitch =
+                            v.findViewById(R.id.switchMode);
+
                     if (modeSwitch != null) {
                         modeSwitch.setEnabled(true);
                         modeSwitch.setAlpha(1.0f);
                     }
                 }
 
-                statusListener = dbHelper.listenToSystemStatus((snapshot, e) -> {
-                    if (e != null || snapshot == null || !snapshot.exists()) return;
-                    updateUIFromSnapshot(snapshot);
-                });
+                sensorsRef = dbHelper
+                        .getSensorsReference();
+
+                sensorsListener =
+                        new ValueEventListener() {
+
+                            @Override
+                            public void onDataChange(
+                                    @NonNull DataSnapshot snapshot) {
+
+                                Double temp =
+                                        snapshot.child("temperature")
+                                                .getValue(Double.class);
+
+                                Double humidity =
+                                        snapshot.child("humidity")
+                                                .getValue(Double.class);
+
+                                Double waterTemp =
+                                        snapshot.child("waterTemperature")
+                                                .getValue(Double.class);
+
+                                Double ph =
+                                        snapshot.child("ph")
+                                                .getValue(Double.class);
+
+                                Double ec =
+                                        snapshot.child("ec")
+                                                .getValue(Double.class);
+
+                                if (temp != null)
+                                    tvTemp.setText(
+                                            String.format("%.1f °C", temp));
+
+                                if (humidity != null)
+                                    tvHumidity.setText(
+                                            String.format("%.1f %%", humidity));
+
+                                if (waterTemp != null)
+                                    tvWaterTemp.setText(
+                                            String.format("%.1f °C", waterTemp));
+
+                                if (ph != null)
+                                    tvPH.setText(
+                                            String.format("%.2f", ph));
+
+                                if (ec != null)
+                                    tvEC.setText(
+                                            String.format("%.2f", ec));
+                            }
+
+                            @Override
+                            public void onCancelled(
+                                    @NonNull DatabaseError error) {
+
+                                Log.e(
+                                        "RTDB",
+                                        error.getMessage()
+                                );
+                            }
+                        };
+
+                sensorsRef.addValueEventListener(
+                        sensorsListener);
             }
         });
     }
@@ -377,6 +450,11 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        if (statusListener != null) statusListener.remove();
+        if (sensorsRef != null &&
+                sensorsListener != null) {
+
+            sensorsRef.removeEventListener(
+                    sensorsListener);
+        }
     }
 }

@@ -289,6 +289,11 @@ public class Database_Helper {
                 .addSnapshotListener(listener);
     }
 
+    public DatabaseReference getSensorsReference() {
+        return rtdb.getReference("device")
+                .child("sensors");
+    }
+
     public void updateActuatorState(String actuatorName, boolean isOn) {
 
         String path = "device/command/" + actuatorName;
