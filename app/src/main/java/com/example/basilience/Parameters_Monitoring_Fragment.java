@@ -230,6 +230,10 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                                         snapshot.child("ec")
                                                 .getValue(Double.class);
 
+                                Double waterLevel =
+                                        snapshot.child("waterLevel")
+                                                .getValue(Double.class);
+
                                 if (temp != null)
                                     tvTemp.setText(
                                             String.format("%.1f °C", temp));
@@ -249,6 +253,10 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                                 if (ec != null)
                                     tvEC.setText(
                                             String.format("%.2f", ec));
+
+                                if (waterLevel != null)
+                                    tvWaterLevel.setText(
+                                            String.format("%.0f %%", waterLevel));
                             }
 
                             @Override
