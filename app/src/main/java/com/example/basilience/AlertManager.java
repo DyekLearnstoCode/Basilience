@@ -7,6 +7,7 @@ import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
+import com.example.basilience.NotificationHelper;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -18,7 +19,10 @@ public class AlertManager {
     private final Map<String, Boolean> previousStates =
             new HashMap<>();
 
-    public AlertManager() {
+    private final MainActivity activity;
+
+    public AlertManager(MainActivity activity) {
+        this.activity = activity;
         dbHelper = new Database_Helper();
     }
 
@@ -73,41 +77,104 @@ public class AlertManager {
         });
     }
 
-    private void createNotification(
-            String alertName
-    ) {
+    private void createNotification(String alertName) {
 
-        String message;
+        String firestoreMessage;
+        String popupMessage;
 
         switch (alertName) {
 
             case "phOutOfRange":
-                message =
+
+                firestoreMessage =
                         "pH level is outside the safe range.";
+
+                popupMessage =
+                        "⚠ pH OUT OF RANGE\n\n" +
+                                "Current Action:\n" +
+                                "Correcting pH using dosing pumps.";
+
                 break;
 
             case "ecLow":
-                message =
+
+                firestoreMessage =
                         "EC level is below the safe range.";
+
+                popupMessage =
+                        "⚠ EC LOW\n\n" +
+                                "Current Action:\n" +
+                                "Dosing nutrient solution.";
+
                 break;
 
             case "highTemperature":
-                message =
+
+                firestoreMessage =
                         "Temperature is above safe limits.";
+
+                popupMessage =
+                        "⚠ HIGH TEMPERATURE\n\n" +
+                                "Current Action:\n" +
+                                "Activating cooling fans.";
+
                 break;
 
             case "lowWater":
-                message =
+
+                firestoreMessage =
                         "Water level is critically low.";
+
+                popupMessage =
+                        "⚠ LOW WATER LEVEL\n\n" +
+                                "Current Action:\n" +
+                                "Refilling reservoir.";
+
                 break;
 
             default:
-                message =
+
+                firestoreMessage =
+                        "System alert detected.";
+
+                popupMessage =
                         "System alert detected.";
         }
 
+        String popupTitle;
+
+        switch (alertName) {
+
+            case "phOutOfRange":
+                popupTitle = "CRITICAL pH ALERT";
+                break;
+
+            case "ecLow":
+                popupTitle = "EC WARNING";
+                break;
+
+            case "highTemperature":
+                popupTitle = "TEMPERATURE WARNING";
+                break;
+
+            case "lowWater":
+                popupTitle = "CRITICAL WATER LEVEL ALERT";
+                break;
+
+            default:
+                popupTitle = "System Alert";
+        }
+
+        activity.runOnUiThread(() ->
+                NotificationHelper.showNotification(
+                        activity,
+                        popupTitle,
+                        popupMessage
+                )
+        );
+
         dbHelper.addNotification(
-                message,
+                firestoreMessage,
                 "parameter"
         );
     }

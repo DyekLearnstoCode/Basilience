@@ -20,7 +20,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        alertManager = new AlertManager();
+        alertManager = new AlertManager(this);
         alertManager.startListening();
 
         FirebaseDatabase.getInstance()

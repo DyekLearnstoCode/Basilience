@@ -9,6 +9,8 @@ import android.widget.TextView;
 import androidx.appcompat.app.AlertDialog;
 
 import com.google.android.material.button.MaterialButton;
+import androidx.core.content.ContextCompat;
+import android.graphics.PorterDuff;
 
 public class NotificationHelper {
 
@@ -28,6 +30,67 @@ public class NotificationHelper {
 
         tvTitle.setText(title);
         tvMessage.setText(message);
+
+        ImageView icon = view.findViewById(R.id.dialog_icon);
+
+        int color;
+        int iconRes;
+
+        if (title.toLowerCase().contains("ph")) {
+
+            color = ContextCompat.getColor(
+                    context,
+                    android.R.color.holo_red_dark
+            );
+
+            iconRes = R.drawable.ic_science_24;
+
+        } else if (title.toLowerCase().contains("water")) {
+
+            color = ContextCompat.getColor(
+                    context,
+                    android.R.color.holo_red_dark
+            );
+
+            iconRes = R.drawable.ic_water_drop_24;
+
+        } else if (title.toLowerCase().contains("temperature")) {
+
+            color = ContextCompat.getColor(
+                    context,
+                    android.R.color.holo_orange_dark
+            );
+
+            iconRes = R.drawable.ic_device_thermostat_24;
+
+        } else if (title.toLowerCase().contains("ec")) {
+
+            color = ContextCompat.getColor(
+                    context,
+                    android.R.color.holo_orange_dark
+            );
+
+            iconRes = R.drawable.ic_science_24;
+
+        } else {
+
+            color = ContextCompat.getColor(
+                    context,
+                    android.R.color.holo_red_dark
+            );
+
+            iconRes = R.drawable.ic_warning_24;
+        }
+
+        if (icon != null) {
+            icon.setImageResource(iconRes);
+            icon.setColorFilter(
+                    color,
+                    PorterDuff.Mode.SRC_IN
+            );
+        }
+
+        tvTitle.setTextColor(color);
         
         // Ensure secondary button is hidden for simple notifications
         if (btnCancel != null) btnCancel.setVisibility(View.GONE);
