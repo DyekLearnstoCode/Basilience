@@ -9,13 +9,19 @@ import androidx.navigation.ui.NavigationUI;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.firebase.database.FirebaseDatabase;
 import android.util.Log;
+import com.example.basilience.AlertManager;
 
 public class MainActivity extends AppCompatActivity {
+
+    private AlertManager alertManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        alertManager = new AlertManager();
+        alertManager.startListening();
 
         FirebaseDatabase.getInstance()
                 .getReference("test")
