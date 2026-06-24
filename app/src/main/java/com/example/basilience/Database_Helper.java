@@ -429,4 +429,27 @@ public class Database_Helper {
                 .addSnapshotListener(listener);
     }
 
+    public Task<Void> addNotification(String message, String type) {
+
+        String uid = getEffectiveUid();
+
+        if (uid == null) {
+            return Tasks.forException(
+                    new Exception("User not logged in")
+            );
+        }
+
+        Map<String, Object> notification = new HashMap<>();
+
+        notification.put("message", message);
+        notification.put("timestamp", System.currentTimeMillis());
+        notification.put("type", type);
+
+        return db.collection("users")
+                .document(uid)
+                .collection("notifications")
+                .document()
+                .set(notification);
+    }
+
 }
