@@ -70,7 +70,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
-                android:hint="Start Date">
+                android:hint="Start Date"
+                android:textColor="@color/black">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/etStartDate"
@@ -87,7 +88,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="24dp"
-                android:hint="@string/end_date">
+                android:hint="@string/end_date"
+                android:textColor="@color/black">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/etEndDate"

@@ -64,19 +64,7 @@ public class Auth_Login_Activity extends AppCompatActivity {
         btnlogin.setOnClickListener(v -> doLogin());
         tvSignup.setVisibility(android.view.View.VISIBLE);
         tvSignup.setOnClickListener(v -> startActivity(new Intent(this, Auth_Register_Activity.class)));
-        tvForgotPassword.setOnClickListener(v -> showForgotPasswordDialog());
-    }
-
-    private void showForgotPasswordDialog() {
-        String email = txtemail.getText().toString().trim();
-        if (email.isEmpty()) {
-            NotificationHelper.showError(this, "Enter your email above first");
-            return;
-        }
-
-        helper.sendPasswordResetEmail(email)
-                .addOnSuccessListener(aVoid -> NotificationHelper.showSuccess(this, "Reset link sent to " + email))
-                .addOnFailureListener(e -> NotificationHelper.showError(this, "Error: " + e.getMessage()));
+        tvForgotPassword.setOnClickListener(v -> startActivity(new Intent(this, Auth_ForgotPass_Activity.class)));
     }
 
     private void showLoading(boolean show, String message) {
