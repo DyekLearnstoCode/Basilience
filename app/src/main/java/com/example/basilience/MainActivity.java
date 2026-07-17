@@ -1,6 +1,7 @@
 package com.example.basilience;
 
 import android.os.Bundle;
+import android.view.View;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
@@ -10,7 +11,6 @@ import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.FirebaseDatabase;
-import android.util.Log;
 import com.example.basilience.AlertManager;
 
 import android.view.View;
@@ -26,6 +26,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView alertMessage;
 
     private AlertManager alertManager;
+    private BottomNavigationView bottomNav;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -41,11 +42,12 @@ public class MainActivity extends AppCompatActivity {
         alertManager.startListening();
         startAlertBannerListener();
 
+        // Realtime Database Ping (Test)
         FirebaseDatabase.getInstance()
                 .getReference("test")
                 .setValue("hello");
 
-        BottomNavigationView bottomNav = findViewById(R.id.bottom_navigation);
+        bottomNav = findViewById(R.id.bottom_navigation);
 
         // Get the NavHostFragment
         NavHostFragment navHostFragment =
@@ -54,47 +56,65 @@ public class MainActivity extends AppCompatActivity {
 
         if (navHostFragment != null) {
             NavController navController = navHostFragment.getNavController();
-            // Automatically handles navigation based on matching IDs between menu and nav_graph
+
+            // Awtomatikong i-setup ang navigation batay sa matching IDs
             NavigationUI.setupWithNavController(bottomNav, navController);
 
-            // Handle sub-screens showing "Home" as active and reset Home state on click
+            // --- DESTINATION LISTENER (STRICT VISIBILITY) ---
             navController.addOnDestinationChangedListener((controller, destination, arguments) -> {
                 int id = destination.getId();
+
+                // 🔥 PINAKAMALINIS NA LOGIC:
+                // Hangga't hindi umaalis sa Device Management screen (ibig sabihin hindi pa pumipili o nagki-claim ng device),
+                // LAGING NAKATAGO (GONE) ang bottom navigation bar!
+                if (id == R.id.DeviceManagementFragment) {
+                    bottomNav.setVisibility(View.GONE);
+                } else {
+                    // Lalabas lamang ang bottom navigation kapag lumipat na sa Dashboard (home) o ibang tabs
+                    bottomNav.setVisibility(View.VISIBLE);
+                }
+
+                // Ang iyong orihinal na Bottom Navigation item matching logic
                 if (id == R.id.home || id == R.id.parametersFragment || id == R.id.userGuideFragment ||
-                    id == R.id.hardwareGuideFragment || id == R.id.mobileGuideFragment ||
-                    id == R.id.reportschoiceFragment || id == R.id.reportsFragment ||
-                    id == R.id.foggingReportsFragment || id == R.id.cycleDetailsFragment ||
-                    id == R.id.cycleaddFragment || id == R.id.harvestLogFragment ||
-                    id == R.id.personnelFragment || id == R.id.personneladdFragment ||
-                    id == R.id.personneldetailsFragment) {
+                        id == R.id.hardwareGuideFragment || id == R.id.mobileGuideFragment ||
+                        id == R.id.reportschoiceFragment || id == R.id.reportsFragment ||
+                        id == R.id.foggingReportsFragment || id == R.id.cycleDetailsFragment ||
+                        id == R.id.cycleaddFragment || id == R.id.harvestLogFragment ||
+                        id == R.id.personnelFragment || id == R.id.personneladdFragment ||
+                        id == R.id.personneldetailsFragment) {
                     bottomNav.getMenu().findItem(R.id.home).setChecked(true);
                 } else if (id == R.id.Notification) {
                     bottomNav.getMenu().findItem(R.id.Notification).setChecked(true);
                 } else if (id == R.id.settings || id == R.id.accountFragment ||
+<<<<<<< Updated upstream
                            id == R.id.aboutFragment || id == R.id.tosFragment) {
+=======
+                        id == R.id.aboutFragment || id == R.id.tosFragment) {
+>>>>>>> Stashed changes
                     bottomNav.getMenu().findItem(R.id.settings).setChecked(true);
                 }
             });
 
+            // --- 3. SELECTION LISTENER ---
             bottomNav.setOnItemSelectedListener(item -> {
                 int itemId = item.getItemId();
                 if (itemId == R.id.home) {
-                    // Always navigate to the root 'home' destination and clear backstack
                     navController.navigate(R.id.home, null, new androidx.navigation.NavOptions.Builder()
                             .setPopUpTo(navController.getGraph().getStartDestinationId(), true)
                             .setLaunchSingleTop(true)
                             .build());
                     return true;
                 }
-                // Use default behavior for other items
                 return NavigationUI.onNavDestinationSelected(item, navController);
             });
         }
 
+        // Itago ang default Action Bar
         if (getSupportActionBar() != null) {
             getSupportActionBar().hide();
         }
     }
+<<<<<<< Updated upstream
 
     private void startAlertBannerListener() {
 
@@ -242,3 +262,6 @@ public class MainActivity extends AppCompatActivity {
                 });
     }
 }
+=======
+}
+>>>>>>> Stashed changes

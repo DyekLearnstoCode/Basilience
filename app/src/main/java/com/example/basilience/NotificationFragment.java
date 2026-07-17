@@ -53,7 +53,11 @@ public class NotificationFragment extends Fragment {
         // Hide back button on notification page (it's a top-level nav destination)
         View btnBack = view.findViewById(R.id.btnBack);
         if (btnBack != null) {
-            btnBack.setVisibility(View.GONE);
+            btnBack.setVisibility(View.VISIBLE);
+            btnBack.setOnClickListener(v -> {
+                androidx.navigation.Navigation.findNavController(view)
+                        .navigate(R.id.DeviceManagementFragment);
+            });
         }
     }
 

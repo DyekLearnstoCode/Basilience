@@ -26,10 +26,13 @@ public class SettingsFragment extends Fragment {
 
         NavController navController = Navigation.findNavController(view);
 
-        // Hide back button on settings (top-level nav destination)
         View btnBack = view.findViewById(R.id.btnBack);
         if (btnBack != null) {
-            btnBack.setVisibility(View.GONE);
+            btnBack.setVisibility(View.VISIBLE);
+            btnBack.setOnClickListener(v -> {
+                androidx.navigation.Navigation.findNavController(view)
+                        .navigate(R.id.DeviceManagementFragment);
+            });
         }
 
         // Account Information

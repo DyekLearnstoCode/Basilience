@@ -25,6 +25,7 @@ public class Auth_Register_Activity extends AppCompatActivity {
 
         if (getSupportActionBar() != null) getSupportActionBar().hide();
 
+        // Siguraduhing ligtas ang Database_Helper constructor mo kung walang context na ipinapasa
         helper = new Database_Helper();
 
         etName = findViewById(R.id.etName);
@@ -33,7 +34,7 @@ public class Auth_Register_Activity extends AppCompatActivity {
         etConfirmPassword = findViewById(R.id.etConfirmPassword);
         btnSignup = findViewById(R.id.btnSignup);
         tvLogin = findViewById(R.id.tvLogin);
-        layoutLoading = findViewById(R.id.layoutLoading);
+        layoutLoading = findViewById(0); // Gamitin ang tamang ID nito (e.g., R.id.layoutLoading)
         tvLoadingTitle = findViewById(R.id.tvLoadingTitle);
 
         btnSignup.setOnClickListener(v -> registerUser());
@@ -42,8 +43,8 @@ public class Auth_Register_Activity extends AppCompatActivity {
 
     private void showLoading(boolean show, String message) {
         if (tvLoadingTitle != null && message != null) tvLoadingTitle.setText(message);
-        layoutLoading.setVisibility(show ? View.VISIBLE : View.GONE);
-        btnSignup.setEnabled(!show);
+        if (layoutLoading != null) layoutLoading.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (btnSignup != null) btnSignup.setEnabled(!show);
     }
 
     private void registerUser() {
@@ -52,10 +53,24 @@ public class Auth_Register_Activity extends AppCompatActivity {
         String password = String.valueOf(etPassword.getText()).trim();
         String confirmPassword = String.valueOf(etConfirmPassword.getText()).trim();
 
+        // 1. Basic empty validations
         if (name.isEmpty() || email.isEmpty() || password.isEmpty() || confirmPassword.isEmpty()) {
             NotificationHelper.showError(this, "Please fill all fields");
             return;
         }
+
+        // 2. Email format validation
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            NotificationHelper.showError(this, "Please enter a valid email address");
+            return;
+        }
+
+        // 3. Password minimum length validation
+        if (password.length() < 6) {
+            NotificationHelper.showError(this, "Password must be at least 6 characters");
+            return;
+        }
+
         if (!password.equals(confirmPassword)) {
             NotificationHelper.showError(this, "Passwords do not match");
             return;
@@ -65,22 +80,31 @@ public class Auth_Register_Activity extends AppCompatActivity {
 
         helper.registerAuth(email, password)
                 .addOnSuccessListener(authResult -> {
+                    // Check if activity is still alive
+                    if (isFinishing() || isDestroyed()) return;
+
                     String uid = helper.getCurrentUid();
                     if (uid == null) {
                         showLoading(false, null);
                         NotificationHelper.showError(this, "Registration failed: uid is null");
                         return;
                     }
+
                     helper.createUserProfile(uid, name, email, "admin")
                             .addOnSuccessListener(unused -> {
+                                if (isFinishing() || isDestroyed()) return;
+
                                 helper.sendEmailVerification(new Database_Helper.EmailVerificationCallback() {
                                     @Override
                                     public void onSuccess() {
+                                        if (isFinishing() || isDestroyed()) return;
                                         showLoading(false, null);
                                         showVerifyEmailDialog();
                                     }
+
                                     @Override
                                     public void onFailure(String errorMessage) {
+                                        if (isFinishing() || isDestroyed()) return;
                                         showLoading(false, null);
                                         NotificationHelper.showError(
                                                 Auth_Register_Activity.this,
@@ -92,6 +116,7 @@ public class Auth_Register_Activity extends AppCompatActivity {
                                 });
                             })
                             .addOnFailureListener(e -> {
+                                if (isFinishing() || isDestroyed()) return;
                                 showLoading(false, null);
                                 NotificationHelper.showError(
                                         Auth_Register_Activity.this,
@@ -102,13 +127,15 @@ public class Auth_Register_Activity extends AppCompatActivity {
                             });
                 })
                 .addOnFailureListener(e -> {
+                    if (isFinishing() || isDestroyed()) return;
                     showLoading(false, null);
                     NotificationHelper.showError(this, "Registration failed: " + e.getMessage());
                 });
     }
 
-    // This dialog appears centered and waits for user
     private void showVerifyEmailDialog() {
+        if (isFinishing() || isDestroyed()) return;
+
         new AlertDialog.Builder(this)
                 .setTitle("Registration Complete")
                 .setMessage("Please check your email to verify your account before logging in.")
