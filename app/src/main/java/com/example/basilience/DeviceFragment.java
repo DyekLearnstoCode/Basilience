@@ -9,13 +9,13 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 import android.widget.Toast;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.example.basilience.Device;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.firebase.firestore.QueryDocumentSnapshot;
@@ -30,10 +30,9 @@ public class DeviceFragment extends Fragment {
 
     private TextInputEditText etClaimToken;
     private MaterialButton btnClaimDevice;
-    private MaterialButton btnLogout; // MATCHED: Idinagdag para sa Logout Button sa XML
+    private MaterialButton btnLogout;
     private RecyclerView recyclerDevices;
 
-    // Optional: Loading UI (Null-safe kung wala sa kasalukuyang XML)
     private View layoutLoading;
     private TextView tvLoadingTitle;
 
@@ -48,27 +47,36 @@ public class DeviceFragment extends Fragment {
 
         dbHelper = new Database_Helper();
 
-        // I-bind ang views base sa iyong XML IDs
         etClaimToken = view.findViewById(R.id.etClaimToken);
         btnClaimDevice = view.findViewById(R.id.btnClaimDevice);
         recyclerDevices = view.findViewById(R.id.recyclerDevices);
-        btnLogout = view.findViewById(R.id.btnLogout); // MATCHED: Kinuha ang ID mula sa XML
+        btnLogout = view.findViewById(R.id.btnLogout);
 
-        // Subukang hanapin ang loading views kung idadagdag mo sa layout_header o device_main
         layoutLoading = view.findViewById(R.id.layoutLoading);
         tvLoadingTitle = view.findViewById(R.id.tvLoadingTitle);
 
-        // Setup RecyclerView
         recyclerDevices.setLayoutManager(new LinearLayoutManager(getActivity()));
         deviceList = new ArrayList<>();
 
-        deviceAdapter = new DeviceAdapter(deviceList, device -> {
-            Bundle bundle = new Bundle();
-            bundle.putString("selected_device_id", device.getDevice_name());
+        // 🔥 IN-UPDATE: Dalawa na ang listener dito (Single Tap & Long Press)
+        deviceAdapter = new DeviceAdapter(
+                deviceList,
+                // 1. Single Tap -> Pupunta sa Home Dashboard
+                device -> {
+                    Bundle bundle = new Bundle();
+                    bundle.putString("selected_device_id", device.getDevice_name());
 
-            androidx.navigation.Navigation.findNavController(view)
-                    .navigate(R.id.home, bundle);
-        });
+                    androidx.navigation.Navigation.findNavController(view)
+                            .navigate(R.id.home, bundle);
+                },
+                // 2. 🔥 Long Press -> Lalabas ang Confirmation Dialog para mag-Unclaim
+                device -> NotificationHelper.showConfirmation(
+                        requireContext(),
+                        "Unclaim Device",
+                        "Are you sure you want to unclaim " + device.getDevice_name() + "?",
+                        () -> unclaimDevice(device)
+                )
+        );
         recyclerDevices.setAdapter(deviceAdapter);
 
         // Claim Device Action
@@ -77,19 +85,20 @@ public class DeviceFragment extends Fragment {
             if (!token.isEmpty()) {
                 dbHelper.claimDevice(token)
                         .addOnSuccessListener(aVoid -> {
-                            Toast.makeText(getActivity(), "Device successfully claimed!", Toast.LENGTH_LONG).show();
+                            if (!isAdded()) return;
+                            NotificationHelper.showSuccess(requireContext(), "Device successfully claimed!");
                             etClaimToken.setText("");
                             loadDevices();
                         })
                         .addOnFailureListener(e -> {
-                            Toast.makeText(getActivity(), e.getMessage(), Toast.LENGTH_LONG).show();
+                            if (!isAdded()) return;
+                            NotificationHelper.showError(requireContext(), e.getMessage());
                         });
             } else {
                 Toast.makeText(getActivity(), "Please enter a device token code", Toast.LENGTH_SHORT).show();
             }
         });
 
-        // MATCHED: Ikinabit ang click listener ng Logout button
         if (btnLogout != null) {
             btnLogout.setOnClickListener(v -> logout());
         }
@@ -102,6 +111,7 @@ public class DeviceFragment extends Fragment {
     private void loadDevices() {
         dbHelper.getMyDevices()
                 .addOnSuccessListener(queryDocumentSnapshots -> {
+                    if (!isAdded()) return;
                     deviceList.clear();
                     for (QueryDocumentSnapshot doc : queryDocumentSnapshots) {
                         Device device = doc.toObject(Device.class);
@@ -110,13 +120,33 @@ public class DeviceFragment extends Fragment {
                     deviceAdapter.notifyDataSetChanged();
                 })
                 .addOnFailureListener(e -> {
+                    if (!isAdded()) return;
                     Toast.makeText(getActivity(), "Error loading devices: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+    }
+    private void unclaimDevice(Device device) {
+        if (layoutLoading != null && tvLoadingTitle != null) {
+            tvLoadingTitle.setText(R.string.loading_saving);
+            layoutLoading.setVisibility(View.VISIBLE);
+        }
+
+        // Gamitin ang device_name o document ID depende sa setup ng Database_Helper mo
+        dbHelper.unclaimDevice(device.getDevice_name())
+                .addOnSuccessListener(aVoid -> {
+                    if (!isAdded()) return;
+                    if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                    NotificationHelper.showSuccess(requireContext(), "Device unclaimed successfully!");
+                    loadDevices(); // Refresh listahan
+                })
+                .addOnFailureListener(e -> {
+                    if (!isAdded()) return;
+                    if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                    NotificationHelper.showError(requireContext(), "Failed to unclaim: " + e.getMessage());
                 });
     }
 
     private void logout() {
         NotificationHelper.showConfirmation(requireContext(), "Logout", "Are you sure you want to log out?", () -> {
-            // Ligtas na i-check kung may loading views, kung wala ay lalaktawan ito
             if (layoutLoading != null && tvLoadingTitle != null) {
                 tvLoadingTitle.setText(R.string.loading_logging_out);
                 layoutLoading.setVisibility(View.VISIBLE);

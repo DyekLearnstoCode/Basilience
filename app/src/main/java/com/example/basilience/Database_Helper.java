@@ -393,11 +393,38 @@ public class Database_Helper {
             return deviceRef.update(updates);
         });
     }
+    // 🔥 IN-UPDATE: Naghahanap na sa Firestore gamit ang device_name at owner_id
+    public Task<Void> unclaimDevice(String deviceName) {
+        String adminUid = getCurrentUid();
+        if (adminUid == null) return Tasks.forException(new Exception("Not logged in"));
 
+        return db.collection("devices")
+                .whereEqualTo("device_name", deviceName)
+                .whereEqualTo("owner_id", adminUid)
+                .get()
+                .continueWithTask(task -> {
+                    if (!task.isSuccessful()) throw task.getException();
+
+                    QuerySnapshot snapshot = task.getResult();
+                    if (snapshot == null || snapshot.isEmpty()) {
+                        throw new Exception("Device not found for: " + deviceName);
+                    }
+
+                    // Kunin ang nahanap na document (kahit ano man ang Document ID / Token)
+                    DocumentSnapshot doc = snapshot.getDocuments().get(0);
+
+                    Map<String, Object> updates = new HashMap<>();
+                    updates.put("owner_id", null);
+                    updates.put("status", "unclaimed");
+
+                    return doc.getReference().update(updates);
+                });
+    }
     public Task<QuerySnapshot> getMyDevices() {
         String adminUid = getCurrentUid();
         if (adminUid == null) return Tasks.forException(new Exception("Not logged in"));
 
         return db.collection("devices").whereEqualTo("owner_id", adminUid).get();
     }
+
 }
