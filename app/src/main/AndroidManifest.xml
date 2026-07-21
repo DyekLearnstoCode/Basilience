@@ -37,6 +37,10 @@
             android:name=".Auth_Register_Activity"
             android:theme="@style/Theme.Basilience" />
 
+        <!-- Signup Activity -->
+        <activity
+            android:name=".Auth_ForgotPass_Activity"
+            android:theme="@style/Theme.Basilience" />
         <!-- Main Activity (Dashboard + BottomNav host) -->
         <activity
             android:name=".MainActivity"
