@@ -2,6 +2,7 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="snow">#FFFAFA</color>
     <color name="softtur">#AFEEEE</color>
     <color name="pastelmint">#D0F0C0</color>
     <color name="celadon">#ACE1AF</color>
@@ -23,4 +24,9 @@
     <color name="alert_red">#D32F2F</color>
     <color name="alert_orange">#F57C00</color>
     <color name="alert_text">#FFFFFF</color>
+
+    <!-- Status Colors -->
+    <color name="status_completed_text">#757575</color>
+    <color name="status_completed_background">#E0E0E0</color>
+    <color name="status_completed_border">#BDBDBD</color>
 </resources>

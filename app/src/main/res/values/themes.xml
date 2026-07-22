@@ -1,13 +1,11 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
 
     <!-- 1. Base Theme: This is the main engine for your app's look -->
-    <style name="Theme.Basilience" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <!-- Optional: You can keep this here as a backup,
-             but your activity_main.xml background will cover it anyway -->
+    <style name="Theme.Basilience" parent="Theme.MaterialComponents.Light.NoActionBar">
         <item name="android:windowBackground">@color/celadon</item>
-
-        <!-- Status bar color to match your design -->
-        <item name="statusBarBackground">@color/celadon</item>
+        <item name="android:statusBarColor">@color/celadon</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
     </style>
 
     <!-- 2. Splash Screen Theme: Keep this exactly as is -->
@@ -15,6 +13,7 @@
         <item name="windowSplashScreenBackground">@color/celadon</item>
         <item name="postSplashScreenTheme">@style/Theme.Basilience</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/animated_logo</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 
     <!-- 3. Custom Component Styles (Keep these) -->
@@ -58,6 +57,12 @@
         <item name="android:background">@drawable/top_rounded_white</item>
         <item name="android:orientation">vertical</item>
         <item name="android:padding">16dp</item>
+    </style>
+
+    <!-- 4. Dialog Themes -->
+    <style name="HarvestDialogTheme" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
+        <item name="colorSurface">@color/snow</item>
+        <item name="android:textColorPrimary">@color/black</item>
     </style>
 
 </resources>

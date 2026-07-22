@@ -59,4 +59,6 @@
     <string name="save_cycle">Save Cycle</string>
     <string name="add_new_cycle">Add New Cycle</string>
 
+    <string name="status_ongoing">Ongoing</string>
+    <string name="days_suffix">%1$d days</string>
 </resources>

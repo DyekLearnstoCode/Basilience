@@ -62,7 +62,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
         }
 
         public void bind(final Device device, final OnItemClickListener clickListener, final OnItemLongClickListener longClickListener) {
-            String name = device.getDevice_name();
+            String name = device.getDeviceName();
             tvDeviceName.setText(name);
 
             if (device.getStatus() != null) {

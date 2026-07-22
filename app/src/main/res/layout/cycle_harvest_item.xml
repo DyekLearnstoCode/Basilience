@@ -1,24 +1,91 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:padding="12dp"
-    android:orientation="horizontal"
-    android:background="@drawable/input_card">
+    android:layout_marginBottom="12dp"
+    android:layout_marginHorizontal="4dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="2dp"
+    app:strokeColor="#F0F0F0"
+    app:strokeWidth="1dp"
+    app:cardBackgroundColor="@color/snow"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground">
 
-    <TextView
-        android:id="@+id/tvHarvestDate"
-        android:layout_width="0dp"
-        android:layout_weight="1"
-        android:text="2026-04-01"
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="@android:color/black"/>
+        android:padding="16dp">
 
-    <TextView
-        android:id="@+id/tvHarvestWeight"
-        android:layout_width="wrap_content"
-        android:text="50g"
-        android:textStyle="bold"
-        android:layout_height="wrap_content"
-        android:textColor="@android:color/black"/>
-</LinearLayout>
+        <!-- TOP: HARVEST WEIGHT -->
+        <TextView
+            android:id="@+id/tvHarvestWeight"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0.0g"
+            android:textColor="@color/primary"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- RIGHT: OVERFLOW MENU -->
+        <ImageView
+            android:id="@+id/ivMoreActions"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:src="@android:drawable/ic_menu_more"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:tint="@color/nav_inactive" />
+
+        <!-- MIDDLE: HARVEST DATE -->
+        <TextView
+            android:id="@+id/tvHarvestDate"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Date"
+            android:textColor="@color/black"
+            android:textSize="15sp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/ivMoreActions"
+            app:layout_constraintTop_toBottomOf="@id/tvHarvestWeight" />
+
+        <!-- MIDDLE: RECORDED BY -->
+        <TextView
+            android:id="@+id/tvRecordedBy"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="By: User"
+            android:textColor="@color/nav_inactive"
+            android:textSize="12sp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="@id/tvHarvestDate"
+            app:layout_constraintTop_toBottomOf="@id/tvHarvestDate" />
+
+        <!-- BOTTOM: SOURCE BADGE -->
+        <TextView
+            android:id="@+id/tvSource"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/status_chip_bg"
+            android:backgroundTint="#F1F8E9"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:text="MANUAL"
+            android:textColor="@color/primary"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/tvRecordedBy"
+            app:layout_constraintBottom_toBottomOf="parent" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</com.google.android.material.card.MaterialCardView>

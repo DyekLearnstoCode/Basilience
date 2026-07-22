@@ -26,55 +26,58 @@ public class AlertManager {
         dbHelper = new Database_Helper();
     }
 
+    private ValueEventListener alertsListener;
+    private DatabaseReference alertsRef;
+    private String deviceId;
+
+    public void setDeviceId(String deviceId) {
+        this.deviceId = deviceId;
+    }
+
     public void startListening() {
+        if (deviceId == null || deviceId.isEmpty()) {
+            Log.w("AlertManager", "startListening: No deviceId provided, skipping listener.");
+            return;
+        }
 
-        DatabaseReference alertsRef =
-                FirebaseDatabase.getInstance(
-                        "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app"
-                ).getReference("device/alerts");
+        if (alertsListener != null) return; // Already listening
 
-        alertsRef.addValueEventListener(new ValueEventListener() {
+        String path = "devices/" + deviceId + "/alerts";
 
+        alertsRef = FirebaseDatabase.getInstance().getReference(path);
+
+        alertsListener = new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot snapshot) {
-
                 for (DataSnapshot child : snapshot.getChildren()) {
-
                     String alertName = child.getKey();
+                    Boolean current = child.getValue(Boolean.class);
 
-                    Boolean current =
-                            child.getValue(Boolean.class);
+                    if (alertName == null || current == null) continue;
 
-                    if (alertName == null || current == null)
-                        continue;
-
-                    boolean previous =
-                            previousStates.getOrDefault(
-                                    alertName,
-                                    false
-                            );
+                    boolean previous = previousStates.getOrDefault(alertName, false);
 
                     if (!previous && current) {
-
                         createNotification(alertName);
                     }
-
-                    previousStates.put(
-                            alertName,
-                            current
-                    );
+                    previousStates.put(alertName, current);
                 }
             }
 
             @Override
             public void onCancelled(DatabaseError error) {
-
-                Log.e(
-                        "AlertManager",
-                        error.getMessage()
-                );
+                Log.e("AlertManager", error.getMessage());
             }
-        });
+        };
+
+        alertsRef.addValueEventListener(alertsListener);
+    }
+
+    public void stopListening() {
+        if (alertsRef != null && alertsListener != null) {
+            alertsRef.removeEventListener(alertsListener);
+            alertsListener = null;
+        }
     }
 
     private void createNotification(String alertName) {

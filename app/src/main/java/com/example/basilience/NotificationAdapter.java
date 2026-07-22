@@ -81,9 +81,7 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             ContentViewHolder contentHolder = (ContentViewHolder) holder;
             contentHolder.tvMessage.setText(item.message);
             
-            SimpleDateFormat timeFormat = new SimpleDateFormat("hh:mm a", Locale.US);
-            SimpleDateFormat dateFormat = new SimpleDateFormat("MMM dd, yyyy", Locale.US);
-            String timeStr = timeFormat.format(new Date(item.timestamp)) + " • " + dateFormat.format(new Date(item.timestamp));
+            String timeStr = DateUtils.formatDateTime(item.timestamp);
             contentHolder.tvTimestamp.setText(timeStr);
 
             String title = "INFORMATION";

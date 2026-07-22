@@ -8,6 +8,7 @@
 
     <queries>
         <package android:name="com.google.android.gms" />
+        <package android:name="com.android.vending" />
     </queries>
 
     <application
@@ -32,6 +33,7 @@
             </intent-filter>
         </activity>
 
+
         <!-- Signup Activity -->
         <activity
             android:name=".Auth_Register_Activity"
@@ -41,11 +43,14 @@
         <activity
             android:name=".Auth_ForgotPass_Activity"
             android:theme="@style/Theme.Basilience" />
-        <!-- Main Activity (Dashboard + BottomNav host) -->
         <activity
             android:name=".MainActivity"
             android:theme="@style/Theme.Basilience"
             android:windowSoftInputMode="adjustPan" />
+
+        <meta-data
+            android:name="com.google.android.gms.version"
+            android:value="@integer/google_play_services_version" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

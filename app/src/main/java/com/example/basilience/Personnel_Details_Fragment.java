@@ -4,6 +4,7 @@ import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -15,10 +16,18 @@ import androidx.navigation.Navigation;
 import java.util.HashMap;
 import java.util.Map;
 
+import android.widget.LinearLayout;
+import com.google.firebase.firestore.QuerySnapshot;
+import com.google.firebase.firestore.DocumentSnapshot;
+import android.app.AlertDialog;
+import java.util.ArrayList;
+import java.util.List;
+
 public class Personnel_Details_Fragment extends Fragment {
 
     private EditText etName, etRole, etEmail, etPhone;
-    private Button btnEdit, btnSave, btnDelete, btnResetPassword;
+    private Button btnEdit, btnSave, btnDelete, btnResetPassword, btnAssignDevice;
+    private LinearLayout layoutAssignedDevices;
     private View layoutLoading;
     private TextView tvLoadingTitle;
 
@@ -51,6 +60,8 @@ public class Personnel_Details_Fragment extends Fragment {
         btnSave = view.findViewById(R.id.btnSave);
         btnDelete = view.findViewById(R.id.btnDelete);
         btnResetPassword = view.findViewById(R.id.btnResetPassword);
+        btnAssignDevice = view.findViewById(R.id.btnAssignDevice);
+        layoutAssignedDevices = view.findViewById(R.id.layoutAssignedDevices);
 
         layoutLoading = view.findViewById(R.id.layoutLoading);
         tvLoadingTitle = view.findViewById(R.id.tvLoadingTitle);
@@ -73,7 +84,7 @@ public class Personnel_Details_Fragment extends Fragment {
                         navController.popBackStack();
                         return;
                     }
-                    etName.setText(safe(doc.getString("name")));
+                    etName.setText(safe(doc.getString("fullName"))); // Changed from "name"
                     etRole.setText(safe(doc.getString("role")));
                     etEmail.setText(safe(doc.getString("email")));
                     etPhone.setText(safe(doc.getString("phone")));
@@ -112,6 +123,77 @@ public class Personnel_Details_Fragment extends Fragment {
                         btnResetPassword.setEnabled(true);
                     });
         });
+
+        btnAssignDevice.setOnClickListener(v -> showAssignDeviceDialog());
+
+        loadAssignments();
+    }
+
+    private void loadAssignments() {
+        if (personnelId == null) return;
+        layoutAssignedDevices.removeAllViews();
+
+        helper.getAssignmentsForUser(personnelId)
+                .addOnSuccessListener(qs -> {
+                    for (DocumentSnapshot doc : qs.getDocuments()) {
+                        String deviceId = doc.getString("deviceId");
+                        addDeviceViewToLayout(deviceId);
+                    }
+                });
+    }
+
+    private void addDeviceViewToLayout(String deviceId) {
+        View deviceView = getLayoutInflater().inflate(R.layout.item_assigned_device_card, layoutAssignedDevices, false);
+        TextView tvId = deviceView.findViewById(R.id.tvDeviceId);
+        ImageView btnRemove = deviceView.findViewById(R.id.btnRemoveDevice);
+
+        tvId.setText(deviceId);
+        btnRemove.setOnClickListener(v -> {
+            NotificationHelper.showConfirmation(requireContext(), "Remove Assignment",
+                    "Are you sure you want to remove " + deviceId + " from this user?",
+                    () -> {
+                        showLoading(true, "Removing assignment...");
+                        helper.removeAssignment(deviceId, personnelId)
+                                .addOnSuccessListener(unused -> {
+                                    showLoading(false, null);
+                                    layoutAssignedDevices.removeView(deviceView);
+                                })
+                                .addOnFailureListener(e -> {
+                                    showLoading(false, null);
+                                    NotificationHelper.showError(requireContext(), "Failed: " + e.getMessage());
+                                });
+                    });
+        });
+
+        layoutAssignedDevices.addView(deviceView);
+    }
+
+    private void showAssignDeviceDialog() {
+        helper.getMyDevices().addOnSuccessListener(qs -> {
+            if (qs.isEmpty()) {
+                NotificationHelper.showError(requireContext(), "You have no claimed devices to assign.");
+                return;
+            }
+
+            List<String> deviceIds = new ArrayList<>();
+            for (DocumentSnapshot doc : qs.getDocuments()) {
+                deviceIds.add(doc.getId());
+            }
+
+            String[] items = deviceIds.toArray(new String[0]);
+            new AlertDialog.Builder(requireContext())
+                    .setTitle("Assign Device")
+                    .setItems(items, (dialog, which) -> {
+                        String selectedId = items[which];
+                        helper.assignDeviceToUser(selectedId, personnelId, "FARMER")
+                                .addOnSuccessListener(unused -> {
+                                    NotificationHelper.showSuccess(requireContext(), "Device assigned successfully");
+                                    loadAssignments();
+                                })
+                                .addOnFailureListener(e -> NotificationHelper.showError(requireContext(), "Error: " + e.getMessage()));
+                    })
+                    .show();
+        });
     }
 
     private void saveChanges(NavController navController) {
@@ -125,13 +207,10 @@ public class Personnel_Details_Fragment extends Fragment {
             return;
         }
 
-        if (layoutLoading != null) {
-            tvLoadingTitle.setText(R.string.loading_saving);
-            layoutLoading.setVisibility(View.VISIBLE);
-        }
+        showLoading(true, getString(R.string.loading_saving));
 
         Map<String, Object> updates = new HashMap<>();
-        updates.put("name", name);
+        updates.put("fullName", name); // Changed from "name"
         updates.put("role", role);
         updates.put("email", email);
         updates.put("phone", phone);
@@ -141,7 +220,7 @@ public class Personnel_Details_Fragment extends Fragment {
         // This helper method syncs both the admin's subcollection and the personnel's main profile
         helper.updatePersonnelForCurrentAdmin(personnelId, updates)
                 .addOnSuccessListener(unused -> {
-                    if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                    showLoading(false, null);
                     NotificationHelper.showSuccess(requireContext(), "Personnel and Account Synced");
                     Bundle result = new Bundle();
                     result.putBoolean("updated", true);
@@ -149,22 +228,19 @@ public class Personnel_Details_Fragment extends Fragment {
                     navController.popBackStack();
                 })
                 .addOnFailureListener(e -> {
-                    if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                    showLoading(false, null);
                     btnSave.setEnabled(true);
                     NotificationHelper.showError(requireContext(), "Failed: " + e.getMessage());
                 });
     }
 
     private void deletePersonnel(NavController navController) {
-        if (layoutLoading != null) {
-            tvLoadingTitle.setText(R.string.loading_deleting);
-            layoutLoading.setVisibility(View.VISIBLE);
-        }
+        showLoading(true, getString(R.string.loading_deleting));
         btnDelete.setEnabled(false);
 
         helper.deletePersonnelForCurrentAdmin(personnelId)
                 .addOnSuccessListener(unused -> {
-                    if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                    showLoading(false, null);
                     NotificationHelper.showSuccess(requireContext(), "Personnel unlinked successfully");
                     Bundle result = new Bundle();
                     result.putBoolean("deleted", true);
@@ -172,10 +248,21 @@ public class Personnel_Details_Fragment extends Fragment {
                     navController.popBackStack();
                 })
                 .addOnFailureListener(e -> {
-                    if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                    showLoading(false, null);
                     btnDelete.setEnabled(true);
                     NotificationHelper.showError(requireContext(), "Failed: " + e.getMessage());
                 });
+    }
+
+    private void showLoading(boolean show, String title) {
+        if (layoutLoading != null) {
+            if (show) {
+                if (title != null && tvLoadingTitle != null) tvLoadingTitle.setText(title);
+                layoutLoading.setVisibility(View.VISIBLE);
+            } else {
+                layoutLoading.setVisibility(View.GONE);
+            }
+        }
     }
 
     private void setEditable(boolean enabled) {

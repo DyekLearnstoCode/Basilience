@@ -71,26 +71,34 @@ public class Personnel_Add_Fragment extends Fragment {
             return;
         }
 
-        if (layoutLoading != null) {
-            tvLoadingTitle.setText(R.string.loading_creating_account);
-            layoutLoading.setVisibility(View.VISIBLE);
-        }
+        showLoading(true, getString(R.string.loading_creating_account));
         btnSave.setEnabled(false);
 
         helper.createFarmerAccountAndAssignToCurrentAdmin(name, email, phone, password)
                 .addOnSuccessListener(unused -> {
-                    if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                    showLoading(false, null);
                     Bundle result = new Bundle();
                     result.putBoolean("added", true);
                     getParentFragmentManager().setFragmentResult("personnel_add_result", result);
 
-                    NotificationHelper.showSuccess(requireContext(), "Farmer account created");
+                    NotificationHelper.showSuccess(requireContext(), "Farmer account created & verification email sent");
                     getParentFragmentManager().popBackStack();
                 })
                 .addOnFailureListener(e -> {
-                    if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                    showLoading(false, null);
                     btnSave.setEnabled(true);
                     NotificationHelper.showError(requireContext(), "Failed: " + e.getMessage());
                 });
+    }
+
+    private void showLoading(boolean show, String title) {
+        if (layoutLoading != null) {
+            if (show) {
+                if (title != null && tvLoadingTitle != null) tvLoadingTitle.setText(title);
+                layoutLoading.setVisibility(View.VISIBLE);
+            } else {
+                layoutLoading.setVisibility(View.GONE);
+            }
+        }
     }
 }

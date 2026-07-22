@@ -25,13 +25,14 @@ import java.util.List;
 
 public class DeviceFragment extends Fragment {
 
-    private static final String PREFS_NAME = "UserPrefs";
-    private static final String KEY_IS_LOGGED_IN = "isLoggedIn";
+    private static final String PREFS_NAME = "basilience_prefs";
+    private static final String KEY_IS_LOGGED_IN = "is_logged_in";
 
     private TextInputEditText etClaimToken;
     private MaterialButton btnClaimDevice;
     private MaterialButton btnLogout;
     private RecyclerView recyclerDevices;
+    private View cardClaimDevice;
 
     private View layoutLoading;
     private TextView tvLoadingTitle;
@@ -49,11 +50,20 @@ public class DeviceFragment extends Fragment {
 
         etClaimToken = view.findViewById(R.id.etClaimToken);
         btnClaimDevice = view.findViewById(R.id.btnClaimDevice);
+        cardClaimDevice = view.findViewById(R.id.cardClaimDevice);
         recyclerDevices = view.findViewById(R.id.recyclerDevices);
         btnLogout = view.findViewById(R.id.btnLogout);
 
         layoutLoading = view.findViewById(R.id.layoutLoading);
         tvLoadingTitle = view.findViewById(R.id.tvLoadingTitle);
+
+        // Role-based visibility
+        SharedPreferences prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        String role = prefs.getString("user_role", "FARMER");
+        
+        if ("FARMER".equalsIgnoreCase(role)) {
+            if (cardClaimDevice != null) cardClaimDevice.setVisibility(View.GONE);
+        }
 
         recyclerDevices.setLayoutManager(new LinearLayoutManager(getActivity()));
         deviceList = new ArrayList<>();
@@ -64,18 +74,24 @@ public class DeviceFragment extends Fragment {
                 // 1. Single Tap -> Pupunta sa Home Dashboard
                 device -> {
                     Bundle bundle = new Bundle();
-                    bundle.putString("selected_device_id", device.getDevice_name());
+                    bundle.putString("selected_device_id", device.getDeviceId());
 
                     androidx.navigation.Navigation.findNavController(view)
                             .navigate(R.id.home, bundle);
                 },
                 // 2. 🔥 Long Press -> Lalabas ang Confirmation Dialog para mag-Unclaim
-                device -> NotificationHelper.showConfirmation(
-                        requireContext(),
-                        "Unclaim Device",
-                        "Are you sure you want to unclaim " + device.getDevice_name() + "?",
-                        () -> unclaimDevice(device)
-                )
+                device -> {
+                    SharedPreferences currentPrefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+                    String currentRole = currentPrefs.getString("user_role", "FARMER");
+                    if ("ADMIN".equalsIgnoreCase(currentRole)) {
+                        NotificationHelper.showConfirmation(
+                                requireContext(),
+                                "Unclaim Device",
+                                "Are you sure you want to unclaim " + device.getDeviceName() + "?",
+                                () -> unclaimDevice(device)
+                        );
+                    }
+                }
         );
         recyclerDevices.setAdapter(deviceAdapter);
 
@@ -130,8 +146,7 @@ public class DeviceFragment extends Fragment {
             layoutLoading.setVisibility(View.VISIBLE);
         }
 
-        // Gamitin ang device_name o document ID depende sa setup ng Database_Helper mo
-        dbHelper.unclaimDevice(device.getDevice_name())
+        dbHelper.unclaimDevice(device.getDeviceId())
                 .addOnSuccessListener(aVoid -> {
                     if (!isAdded()) return;
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);

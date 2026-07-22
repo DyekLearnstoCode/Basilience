@@ -90,7 +90,7 @@ public class Auth_Register_Activity extends AppCompatActivity {
                         return;
                     }
 
-                    helper.createUserProfile(uid, name, email, "admin")
+                    helper.createUserProfile(uid, name, email, "", "admin", null)
                             .addOnSuccessListener(unused -> {
                                 if (isFinishing() || isDestroyed()) return;
 

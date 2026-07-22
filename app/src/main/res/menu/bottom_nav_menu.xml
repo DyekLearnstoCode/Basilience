@@ -14,10 +14,4 @@
         android:title="Notification"
         app:showAsAction="ifRoom" />
 
-    <item
-        android:id="@+id/settings"
-        android:icon="@drawable/nav_setting_icon"
-        android:title="Settings"
-        app:showAsAction="ifRoom" />
-
 </menu>

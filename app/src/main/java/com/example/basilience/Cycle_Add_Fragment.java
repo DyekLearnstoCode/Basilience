@@ -1,6 +1,8 @@
 package com.example.basilience;
 
 import android.app.DatePickerDialog;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
@@ -12,20 +14,23 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.Navigation;
 
+import com.google.firebase.Timestamp;
+import com.google.firebase.auth.FirebaseAuth;
+
 import java.util.Calendar;
 import java.util.Locale;
 
 public class Cycle_Add_Fragment extends Fragment {
 
-    private TextView tvCycleNumber, tvEndDate;
-    private EditText etStartDate;
+    private TextView tvCycleNumber;
+    private EditText etStartDate, etHarvestFrequency;
     private Button btnSave;
     private Database_Helper dbHelper;
     private View layoutLoading;
     private TextView tvLoadingTitle;
 
     private int cycleNo = 1;
-    private String startDateIso = ""; // YYYY-MM-DD
+    private Timestamp startDateTimestamp;
 
     public Cycle_Add_Fragment() {
         super(R.layout.cycle_add);
@@ -36,6 +41,7 @@ public class Cycle_Add_Fragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         dbHelper = new Database_Helper();
+        checkAdminAccess(view);
 
         View btnBack = view.findViewById(R.id.btnBack);
         if (btnBack != null) {
@@ -46,8 +52,8 @@ public class Cycle_Add_Fragment extends Fragment {
         }
 
         tvCycleNumber = view.findViewById(R.id.etCycleNumber);
-        tvEndDate = view.findViewById(R.id.etEndDate);
         etStartDate = view.findViewById(R.id.etStartDate);
+        etHarvestFrequency = view.findViewById(R.id.etHarvestFrequency);
         btnSave = view.findViewById(R.id.btnSaveCycle);
 
         layoutLoading = view.findViewById(R.id.layoutLoading);
@@ -58,13 +64,27 @@ public class Cycle_Add_Fragment extends Fragment {
         }
 
         tvCycleNumber.setText("Cycle #" + cycleNo);
-        tvEndDate.setHint("Auto-generated");
 
         etStartDate.setFocusable(false);
         etStartDate.setClickable(true);
         etStartDate.setOnClickListener(v -> showDatePicker());
 
         btnSave.setOnClickListener(v -> saveCycleToDb(view));
+    }
+
+    private void checkAdminAccess(View view) {
+        String uid = FirebaseAuth.getInstance().getUid();
+        if (uid != null) {
+            dbHelper.getUserProfile(uid).addOnSuccessListener(documentSnapshot -> {
+                if (documentSnapshot.exists()) {
+                    String role = documentSnapshot.getString("role");
+                    if (!"Admin".equalsIgnoreCase(role)) {
+                        NotificationHelper.showError(getContext(), "Access Denied: Admins Only");
+                        Navigation.findNavController(view).popBackStack();
+                    }
+                }
+            });
+        }
     }
 
     private void showDatePicker() {
@@ -75,7 +95,10 @@ public class Cycle_Add_Fragment extends Fragment {
                     int mm = month + 1;
                     String display = String.format(Locale.US, "%02d/%02d/%04d", day, mm, year);
                     etStartDate.setText(display);
-                    startDateIso = String.format(Locale.US, "%04d-%02d-%02d", year, mm, day);
+                    
+                    Calendar selectedCal = Calendar.getInstance();
+                    selectedCal.set(year, month, day, 0, 0, 0);
+                    startDateTimestamp = new Timestamp(selectedCal.getTime());
                 },
                 cal.get(Calendar.YEAR),
                 cal.get(Calendar.MONTH),
@@ -85,8 +108,16 @@ public class Cycle_Add_Fragment extends Fragment {
     }
 
     private void saveCycleToDb(View view) {
-        if (startDateIso.isEmpty()) {
+        if (startDateTimestamp == null) {
             NotificationHelper.showError(requireContext(), "Select start date");
+            return;
+        }
+
+        SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
+        String deviceId = prefs.getString("selected_device_id", null);
+
+        if (deviceId == null) {
+            NotificationHelper.showError(requireContext(), "No device selected");
             return;
         }
 
@@ -95,25 +126,52 @@ public class Cycle_Add_Fragment extends Fragment {
             layoutLoading.setVisibility(View.VISIBLE);
         }
         btnSave.setEnabled(false);
-        Cycle newCycle = new Cycle(cycleNo, startDateIso, "");
 
-        dbHelper.resolveDataUid().addOnSuccessListener(uid -> {
-            if (uid != null) {
-                dbHelper.setTargetUid(uid);
-                dbHelper.addCycle(newCycle).addOnCompleteListener(task -> {
-                    if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
-                    if (task.isSuccessful()) {
-                        NotificationHelper.showSuccess(requireContext(), "Cycle saved successfully");
-                        Navigation.findNavController(view).popBackStack();
-                    } else {
-                        btnSave.setEnabled(true);
-                        NotificationHelper.showError(requireContext(), "Error saving cycle");
-                    }
-                });
-            } else {
+        // Single Active Cycle Rule check
+        dbHelper.getActiveCycle(deviceId).addOnSuccessListener(queryDocumentSnapshots -> {
+            if (!queryDocumentSnapshots.isEmpty()) {
                 if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
                 btnSave.setEnabled(true);
-                NotificationHelper.showError(requireContext(), "Auth error");
+                new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                        .setTitle("Active Cycle Exists")
+                        .setMessage("A device can only have one ACTIVE cycle. Please complete the current cycle before starting a new one.")
+                        .setPositiveButton("OK", null)
+                        .show();
+            } else {
+                proceedWithSaving(view, deviceId);
+            }
+        }).addOnFailureListener(e -> {
+            if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+            btnSave.setEnabled(true);
+            NotificationHelper.showError(requireContext(), "Verification failed: " + e.getMessage());
+        });
+    }
+
+    private void proceedWithSaving(View view, String deviceId) {
+        String freqStr = etHarvestFrequency.getText().toString().trim();
+        int frequency = 5;
+        if (!freqStr.isEmpty()) {
+            frequency = Integer.parseInt(freqStr);
+        }
+
+        Cycle newCycle = new Cycle(cycleNo, startDateTimestamp, "ACTIVE");
+        newCycle.setHarvestFrequencyDays(frequency);
+        
+        // Calculate initial nextHarvestDate: startDate + frequency
+        Calendar cal = Calendar.getInstance();
+        cal.setTime(startDateTimestamp.toDate());
+        cal.add(Calendar.DAY_OF_YEAR, frequency);
+        newCycle.setNextHarvestDate(new Timestamp(cal.getTime()));
+
+        dbHelper.setSelectedDeviceId(deviceId);
+        dbHelper.addCycle(newCycle).addOnCompleteListener(task -> {
+            if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+            if (task.isSuccessful()) {
+                NotificationHelper.showSuccess(requireContext(), "Cycle saved successfully");
+                Navigation.findNavController(view).popBackStack();
+            } else {
+                btnSave.setEnabled(true);
+                NotificationHelper.showError(requireContext(), "Error saving cycle");
             }
         });
     }

@@ -82,23 +82,21 @@
                     android:clickable="true" />
             </com.google.android.material.textfield.TextInputLayout>
 
-            <!-- END DATE -->
+            <!-- HARVEST FREQUENCY -->
             <com.google.android.material.textfield.TextInputLayout
                 style="@style/InputFieldStyle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="24dp"
-                android:hint="@string/end_date"
+                android:layout_marginBottom="16dp"
+                android:hint="Harvest Frequency (Days)"
                 android:textColor="@color/black">
 
                 <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/etEndDate"
+                    android:id="@+id/etHarvestFrequency"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:inputType="none"
-                    android:focusable="false"
-                    android:enabled="false"
-                    android:text="@string/auto_generated" />
+                    android:inputType="number"
+                    android:text="5" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <!-- SAVE BUTTON -->

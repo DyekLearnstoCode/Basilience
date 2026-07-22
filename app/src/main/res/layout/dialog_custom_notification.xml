@@ -43,12 +43,14 @@
             android:textColor="@color/black"
             android:textSize="16sp"
             android:layout_marginBottom="24dp"
-            android:textAlignment="center"/>
+            android:textAlignment="center"
+            android:lineSpacingExtra="4dp"/>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
+            android:gravity="center"
             android:layout_marginBottom="8dp">
 
             <com.google.android.material.button.MaterialButton
@@ -62,7 +64,10 @@
                 android:visibility="gone"
                 app:strokeColor="@color/primary"
                 app:cornerRadius="12dp"
-                android:layout_marginEnd="8dp"/>
+                android:layout_marginEnd="8dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:padding="0dp"/>
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/dialog_button"
@@ -72,7 +77,10 @@
                 android:text="OK"
                 android:backgroundTint="@color/primary"
                 android:textColor="@color/onPrimary"
-                app:cornerRadius="12dp" />
+                app:cornerRadius="12dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:padding="0dp"/>
 
         </LinearLayout>
 

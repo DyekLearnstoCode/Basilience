@@ -92,7 +92,7 @@ public class Personnel_Main_Fragment extends Fragment {
 
                     for (DocumentSnapshot doc : qs.getDocuments()) {
                         String id = doc.getId();
-                        String name = doc.getString("name");
+                        String name = doc.getString("fullName"); // Changed from "name" to "fullName" to match createUserProfile
                         String role = doc.getString("role");
                         String email = doc.getString("email");
                         String phone = doc.getString("phone");

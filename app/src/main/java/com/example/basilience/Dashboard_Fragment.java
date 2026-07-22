@@ -30,13 +30,21 @@ public class Dashboard_Fragment extends Fragment {
         NavController navController = Navigation.findNavController(view);
         Database_Helper dbHelper = new Database_Helper();
 
-        // Hide back button on dashboard
+        // Save selected device ID if passed from DeviceFragment
+        if (getArguments() != null) {
+            String deviceId = getArguments().getString("selected_device_id");
+            if (deviceId != null) {
+                SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
+                prefs.edit().putString("selected_device_id", deviceId).apply();
+            }
+        }
+
+        // Show back button on dashboard to return to Device Management
         View btnBack = view.findViewById(R.id.btnBack);
         if (btnBack != null) {
             btnBack.setVisibility(View.VISIBLE);
             btnBack.setOnClickListener(v -> {
-                androidx.navigation.Navigation.findNavController(view)
-                        .navigate(R.id.DeviceManagementFragment);
+                navController.navigate(R.id.DeviceManagementFragment);
             });
         }
 

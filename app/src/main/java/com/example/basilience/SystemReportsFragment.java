@@ -25,6 +25,7 @@ import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
 import com.google.android.material.button.MaterialButton;
+import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.QueryDocumentSnapshot;
 
 import java.io.File;
@@ -47,6 +48,7 @@ public class SystemReportsFragment extends Fragment {
     private ImageButton btnShare;
     private String currentSelectedFilter = "Today";
     private String selectedDeviceId;
+    private String userRole = "Farmer";
 
     public SystemReportsFragment() { }
 
@@ -62,7 +64,13 @@ public class SystemReportsFragment extends Fragment {
         }
 
         if (selectedDeviceId == null || selectedDeviceId.isEmpty()) {
-            selectedDeviceId = "BSLN-9X2A-K47P";
+            android.content.SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
+            selectedDeviceId = prefs.getString("selected_device_id", null);
+        }
+
+        if (selectedDeviceId == null || selectedDeviceId.isEmpty()) {
+            Toast.makeText(getContext(), "Please select a device first", Toast.LENGTH_SHORT).show();
+            // Optional: navigate back if no device is selected
         }
 
         spinnerParameter = view.findViewById(R.id.spinnerParameter);
@@ -76,6 +84,8 @@ public class SystemReportsFragment extends Fragment {
         btnMonth = view.findViewById(R.id.btnMonth);
         btnYear = view.findViewById(R.id.btnYear);
         btnShare = view.findViewById(R.id.btnShare);
+
+        fetchUserInfo();
 
         View btnBack = view.findViewById(R.id.btnBack);
         if (btnBack != null) {
@@ -100,17 +110,102 @@ public class SystemReportsFragment extends Fragment {
         btnMonth.setOnClickListener(v -> updateFilterSelection("Month"));
         btnYear.setOnClickListener(v -> updateFilterSelection("Year"));
 
-        // Dito tinatawag ang totoong CSV export functionality
-        if (btnShare != null) {
-            btnShare.setOnClickListener(v -> exportDataToCSV());
-        }
-
-        if (spinnerParameter.getSelectedItem() != null) {
-            loadReportData(String.valueOf(spinnerParameter.getSelectedItem()), currentSelectedFilter);
-        }
-
-        return view;
+    // Dito tinatawag ang totoong CSV export functionality
+    if (btnShare != null) {
+        btnShare.setOnClickListener(v -> showExportOptions());
     }
+
+    if (spinnerParameter.getSelectedItem() != null) {
+        loadReportData(String.valueOf(spinnerParameter.getSelectedItem()), currentSelectedFilter);
+    }
+
+    return view;
+}
+
+    private void fetchUserInfo() {
+        String uid = FirebaseAuth.getInstance().getUid();
+        if (uid != null) {
+            dbHelper.getUserProfile(uid).addOnSuccessListener(documentSnapshot -> {
+                if (documentSnapshot.exists()) {
+                    userRole = documentSnapshot.getString("role");
+                    updateUIForRole();
+                }
+            });
+        }
+    }
+
+    private void updateUIForRole() {
+        if (btnShare != null) {
+            btnShare.setVisibility("Admin".equalsIgnoreCase(userRole) ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private void showExportOptions() {
+    String[] options = {"Share CSV", "Save as PDF"};
+    androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(requireContext());
+    builder.setTitle("Export Report");
+    builder.setItems(options, (dialog, which) -> {
+        if (which == 0) {
+            exportDataToCSV();
+        } else {
+            exportToPdf();
+        }
+    });
+    builder.show();
+}
+
+private void exportToPdf() {
+    if (getContext() == null) return;
+    
+    Toast.makeText(getContext(), "Generating PDF...", Toast.LENGTH_SHORT).show();
+    
+    // Get stats from UI
+    String avgStr = tvAverage.getText().toString().replaceAll("[^0-9.]", "");
+    String highStr = tvHigh.getText().toString().replaceAll("[^0-9.]", "");
+    String lowStr = tvLow.getText().toString().replaceAll("[^0-9.]", "");
+    
+    float avg = avgStr.isEmpty() ? 0 : Float.parseFloat(avgStr);
+    float high = highStr.isEmpty() ? 0 : Float.parseFloat(highStr);
+    float low = lowStr.isEmpty() ? 0 : Float.parseFloat(lowStr);
+    
+    String parameter = String.valueOf(spinnerParameter.getSelectedItem());
+    
+    long endTime = System.currentTimeMillis();
+    long startTime = getStartTimeForFilter(currentSelectedFilter, endTime);
+    
+    dbHelper.getParameterLogs(startTime, endTime).addOnSuccessListener(queryDocumentSnapshots -> {
+        List<com.github.mikephil.charting.data.Entry> entries = new ArrayList<>();
+        String dbFieldName = getFieldNameFromParameter(parameter);
+        int index = 0;
+        for (QueryDocumentSnapshot doc : queryDocumentSnapshots) {
+            Double value = doc.getDouble(dbFieldName);
+            if (value != null) {
+                entries.add(new com.github.mikephil.charting.data.Entry(index++, value.floatValue()));
+            }
+        }
+        
+        try {
+            CycleReportGenerator generator = new CycleReportGenerator(requireContext());
+            // Getting user name from profile if available, else generic
+            String userName = "Basilience User"; 
+            
+            File pdfFile = generator.generateSensorReportPdf(
+                selectedDeviceId, parameter, currentSelectedFilter, 
+                entries, avg, high, low, userName
+            );
+            
+            Uri contentUri = FileProvider.getUriForFile(requireContext(), requireContext().getPackageName() + ".fileprovider", pdfFile);
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(contentUri, "application/pdf");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(intent, "Open PDF Report"));
+            
+        } catch (IOException e) {
+            Log.e("PDF_EXPORT_ERROR", "Error generating PDF", e);
+            Toast.makeText(getContext(), "Failed to generate PDF", Toast.LENGTH_SHORT).show();
+        }
+    });
+}
 
     private void updateFilterSelection(String selectedFilter) {
         currentSelectedFilter = selectedFilter;
@@ -155,7 +250,7 @@ public class SystemReportsFragment extends Fragment {
         long endTime = System.currentTimeMillis();
         long startTime = getStartTimeForFilter(filter, endTime);
 
-        dbHelper.setTargetUid(selectedDeviceId);
+        // Removed setTargetUid as it is deprecated in favor of selectedDeviceId
 
         dbHelper.getParameterLogs(startTime, endTime)
                 .addOnSuccessListener(queryDocumentSnapshots -> {
@@ -223,7 +318,7 @@ public class SystemReportsFragment extends Fragment {
         long endTime = System.currentTimeMillis();
         long startTime = getStartTimeForFilter(currentSelectedFilter, endTime);
 
-        dbHelper.setTargetUid(selectedDeviceId);
+        // Removed setTargetUid as it is deprecated in favor of selectedDeviceId
 
         // Kuhanin ang parehong set ng data na makikita sa filter ngayon
         dbHelper.getParameterLogs(startTime, endTime)

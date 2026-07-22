@@ -1,5 +1,6 @@
 package com.example.basilience;
 
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -32,9 +33,6 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     }
 
     private Database_Helper dbHelper;
-    private ListenerRegistration statusListener;
-
-    enum Status { NORMAL, WARNING }
 
     private boolean isDialogShowing = false;
     private boolean isManualMode = false;
@@ -97,13 +95,20 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         // ===== MODE SWITCH =====
         SwitchMaterial modeSwitch = view.findViewById(R.id.switchMode);
         if (modeSwitch != null) {
-            modeSwitch.setEnabled(false); // Disable until UID is resolved and data is loaded
+            modeSwitch.setEnabled(false); // Disable until device ID is resolved
             modeSwitch.setAlpha(0.5f);
+            
+            SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
+            String role = prefs.getString("user_role", "FARMER");
+            boolean isAdmin = "ADMIN".equalsIgnoreCase(role);
+
             modeSwitch.setOnCheckedChangeListener((buttonView, checked) -> {
-                isManualMode = checked;
-                modeSwitch.setText(checked ? "Manual Mode" : "Auto Mode");
-                updateActuatorControls();
-                dbHelper.updateManualMode(checked);
+                if (isAdmin) {
+                    isManualMode = checked;
+                    modeSwitch.setText(checked ? "Manual Mode" : "Auto Mode");
+                    updateActuatorControls();
+                    dbHelper.updateManualMode(checked);
+                }
             });
         }
 
@@ -177,192 +182,97 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
     }
 
-
-
     private void startRealTimeMonitoring() {
+        if (getContext() == null) return;
+        SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
+        String deviceId = prefs.getString("selected_device_id", null);
 
-        dbHelper.resolveDataUid().addOnSuccessListener(uid -> {
+        if (deviceId == null) {
+            Log.e("Monitoring", "No device selected");
+            return;
+        }
 
-            if (uid != null) {
+        dbHelper.setSelectedDeviceId(deviceId);
 
-                dbHelper.setTargetUid(uid);
+        View v = getView();
+        if (v != null) {
+            SwitchMaterial modeSwitch = v.findViewById(R.id.switchMode);
+            if (modeSwitch != null) {
+                SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
+                String role = prefs.getString("user_role", "FARMER");
+                boolean isAdmin = "ADMIN".equalsIgnoreCase(role);
+                
+                modeSwitch.setEnabled(isAdmin);
+                modeSwitch.setAlpha(isAdmin ? 1.0f : 0.6f);
+            }
+        }
 
-                View v = getView();
+        sensorsRef = dbHelper.getSensorsReference();
+        if (sensorsRef == null) {
+            Log.e("Monitoring", "Sensors reference is null. Ensure deviceId is set.");
+            return;
+        }
+        sensorsListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!isAdded()) return;
 
-                if (v != null) {
+                Double temp = snapshot.child("temperature").getValue(Double.class);
+                Double humidity = snapshot.child("humidity").getValue(Double.class);
+                Double waterTemp = snapshot.child("waterTemperature").getValue(Double.class);
+                Double ph = snapshot.child("ph").getValue(Double.class);
+                Double ec = snapshot.child("ec").getValue(Double.class);
+                Double waterLevel = snapshot.child("waterLevel").getValue(Double.class);
 
-                    SwitchMaterial modeSwitch =
-                            v.findViewById(R.id.switchMode);
+                if (temp != null) tvTemp.setText(String.format("%.1f °C", temp));
+                if (humidity != null) tvHumidity.setText(String.format("%.1f %%", humidity));
+                if (waterTemp != null) tvWaterTemp.setText(String.format("%.1f °C", waterTemp));
+                if (ph != null) tvPH.setText(String.format("%.2f", ph));
+                if (ec != null) tvEC.setText(String.format("%.2f", ec));
+                if (waterLevel != null) tvWaterLevel.setText(String.format("%.0f %%", waterLevel));
 
+                // Sync Manual Mode from RTDB
+                Boolean manualMode = snapshot.child("manualMode").getValue(Boolean.class);
+                if (manualMode != null) {
+                    isManualMode = manualMode;
+                    SwitchMaterial modeSwitch = getView() != null ? getView().findViewById(R.id.switchMode) : null;
                     if (modeSwitch != null) {
-                        modeSwitch.setEnabled(true);
-                        modeSwitch.setAlpha(1.0f);
+                        modeSwitch.setOnCheckedChangeListener(null);
+                        modeSwitch.setChecked(isManualMode);
+                        modeSwitch.setText(isManualMode ? "Manual Mode" : "Auto Mode");
+                        modeSwitch.setOnCheckedChangeListener((buttonView, checked) -> {
+                            isManualMode = checked;
+                            modeSwitch.setText(checked ? "Manual Mode" : "Auto Mode");
+                            updateActuatorControls();
+                            dbHelper.updateManualMode(checked);
+                        });
                     }
+                    updateActuatorControls();
                 }
 
-                sensorsRef = dbHelper
-                        .getSensorsReference();
-
-                sensorsListener =
-                        new ValueEventListener() {
-
-                            @Override
-                            public void onDataChange(
-                                    @NonNull DataSnapshot snapshot) {
-
-                                Double temp =
-                                        snapshot.child("temperature")
-                                                .getValue(Double.class);
-
-                                Double humidity =
-                                        snapshot.child("humidity")
-                                                .getValue(Double.class);
-
-                                Double waterTemp =
-                                        snapshot.child("waterTemperature")
-                                                .getValue(Double.class);
-
-                                Double ph =
-                                        snapshot.child("ph")
-                                                .getValue(Double.class);
-
-                                Double ec =
-                                        snapshot.child("ec")
-                                                .getValue(Double.class);
-
-                                Double waterLevel =
-                                        snapshot.child("waterLevel")
-                                                .getValue(Double.class);
-
-                                if (temp != null)
-                                    tvTemp.setText(
-                                            String.format("%.1f °C", temp));
-
-                                if (humidity != null)
-                                    tvHumidity.setText(
-                                            String.format("%.1f %%", humidity));
-
-                                if (waterTemp != null)
-                                    tvWaterTemp.setText(
-                                            String.format("%.1f °C", waterTemp));
-
-                                if (ph != null)
-                                    tvPH.setText(
-                                            String.format("%.2f", ph));
-
-                                if (ec != null)
-                                    tvEC.setText(
-                                            String.format("%.2f", ec));
-
-                                if (waterLevel != null)
-                                    tvWaterLevel.setText(
-                                            String.format("%.0f %%", waterLevel));
-                            }
-
-                            @Override
-                            public void onCancelled(
-                                    @NonNull DatabaseError error) {
-
-                                Log.e(
-                                        "RTDB",
-                                        error.getMessage()
-                                );
-                            }
-                        };
-
-                sensorsRef.addValueEventListener(
-                        sensorsListener);
+                // Sync Actuators from RTDB
+                DataSnapshot actuators = snapshot.child("actuators");
+                if (actuators.exists()) {
+                    syncActuatorState(waterPumpValve, actWaterPumpValve, actuators.child(waterPumpValve.dbKey).getValue());
+                    syncActuatorState(canopyFan, actCanopyFan, actuators.child(canopyFan.dbKey).getValue());
+                    syncActuatorState(growLights, actGrowLights, actuators.child(growLights.dbKey).getValue());
+                    syncActuatorState(phUp, actPhUp, actuators.child(phUp.dbKey).getValue());
+                    syncActuatorState(phDown, actPhDown, actuators.child(phDown.dbKey).getValue());
+                    syncActuatorState(nutrients, actNutrients, actuators.child(nutrients.dbKey).getValue());
+                    syncActuatorState(waterEc, actWaterEc, actuators.child(waterEc.dbKey).getValue());
+                    syncActuatorState(fogger, actFogger, actuators.child(fogger.dbKey).getValue());
+                    syncActuatorState(reservoirFan, actReservoirFan, actuators.child(reservoirFan.dbKey).getValue());
+                    syncActuatorState(waterCooling, actWaterCooling, actuators.child(waterCooling.dbKey).getValue());
+                    syncActuatorState(waterHotting, actWaterHotting, actuators.child(waterHotting.dbKey).getValue());
+                }
             }
-        });
-    }
 
-    private void updateUIFromSnapshot(DocumentSnapshot snapshot) {
-        Double pH = snapshot.getDouble("ph");
-        Double ec = snapshot.getDouble("ec");
-        Double temp = snapshot.getDouble("temp");
-        Double hum = snapshot.getDouble("humidity");
-        Double wTemp = snapshot.getDouble("waterTemp");
-        Double wLevel = snapshot.getDouble("waterLevel");
-
-        // Sync Manual Mode
-        Boolean manualMode = snapshot.getBoolean("manualMode");
-        isManualMode = (manualMode != null) ? manualMode : false;
-
-        SwitchMaterial modeSwitch = getView() != null ? getView().findViewById(R.id.switchMode) : null;
-        if (modeSwitch != null) {
-            modeSwitch.setOnCheckedChangeListener(null);
-            modeSwitch.setChecked(isManualMode);
-            modeSwitch.setText(isManualMode ? "Manual Mode" : "Auto Mode");
-            modeSwitch.setOnCheckedChangeListener((buttonView, checked) -> {
-                isManualMode = checked;
-                modeSwitch.setText(checked ? "Manual Mode" : "Auto Mode");
-                updateActuatorControls();
-                dbHelper.updateManualMode(checked);
-            });
-        }
-        updateActuatorControls();
-
-        List<String> warnings = new ArrayList<>();
-        List<String> actions = new ArrayList<>();
-
-        if (pH != null && tvPH != null) process(tvPH, "pH", pH, 5.5, 6.5, warnings, actions);
-        if (ec != null && tvEC != null) process(tvEC, "EC", ec, 1.0, 2.0, warnings, actions);
-        if (temp != null && tvTemp != null) process(tvTemp, "Air Temp", temp, 20, 30, warnings, actions);
-        if (hum != null && tvHumidity != null) process(tvHumidity, "Humidity", hum, 50, 80, warnings, actions);
-        if (wTemp != null && tvWaterTemp != null) process(tvWaterTemp, "Water Temp", wTemp, 18, 24, warnings, actions);
-        if (wLevel != null && tvWaterLevel != null) process(tvWaterLevel, "Water Level", wLevel, 60, 100, warnings, actions);
-
-        // Always sync actuator states from DB to ensure UI is up-to-date on load
-        Map<String, Object> actuators = (Map<String, Object>) snapshot.get("actuators");
-        if (actuators != null) {
-            syncActuatorState(waterPumpValve, actWaterPumpValve, actuators.get(waterPumpValve.dbKey));
-            syncActuatorState(canopyFan, actCanopyFan, actuators.get(canopyFan.dbKey));
-            syncActuatorState(growLights, actGrowLights, actuators.get(growLights.dbKey));
-            syncActuatorState(phUp, actPhUp, actuators.get(phUp.dbKey));
-            syncActuatorState(phDown, actPhDown, actuators.get(phDown.dbKey));
-            syncActuatorState(nutrients, actNutrients, actuators.get(nutrients.dbKey));
-            syncActuatorState(waterEc, actWaterEc, actuators.get(waterEc.dbKey));
-            syncActuatorState(fogger, actFogger, actuators.get(fogger.dbKey));
-            syncActuatorState(reservoirFan, actReservoirFan, actuators.get(reservoirFan.dbKey));
-            syncActuatorState(waterCooling, actWaterCooling, actuators.get(waterCooling.dbKey));
-            syncActuatorState(waterHotting, actWaterHotting, actuators.get(waterHotting.dbKey));
-        }
-
-        if (!warnings.isEmpty()) {
-            showCombinedDialog(warnings, actions);
-        }
-    }
-
-    private void process(TextView view, String name, double value, double min, double max,
-                         List<String> warnings, List<String> actions) {
-        Status current = (value < min || value > max) ? Status.WARNING : Status.NORMAL;
-        String text = formatValue(name, value);
-
-        if (current == Status.WARNING) {
-            view.setText(text + " ⚠");
-            view.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
-            warnings.add(name);
-            actions.add(getSystemAction(name));
-        } else {
-            view.setText(text);
-            view.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
-        }
-    }
-
-    private String formatValue(String name, double value) {
-        if (name.contains("Temp")) return (int) value + "°C";
-        if (name.equals("pH") || name.equals("EC")) return String.format("%.2f", value);
-        return (int) value + "%";
-    }
-
-    private String getSystemAction(String parameter) {
-        switch (parameter) {
-            case "pH": return "Dosing pH Up/Down";
-            case "EC": return "Adjusting nutrient dosing";
-            case "Water Level": return "Refilling water";
-            case "Air Temp": return "Fan activated";
-            default: return "System adjusting";
-        }
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("RTDB", error.getMessage());
+            }
+        };
+        sensorsRef.addValueEventListener(sensorsListener);
     }
 
     private void syncActuatorState(Actuator actuator, View card, Object stateObj) {
@@ -397,6 +307,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (toggle != null) {
             toggle.setOnCheckedChangeListener(null);
             toggle.setChecked(isOn);
+            // Re-setup listener after programmatic check to avoid recursion and maintain logic
             setupActuatorUI(card, getActuatorFromCard(card));
         }
         
@@ -451,18 +362,13 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             msg.append("• ").append(warnings.get(i)).append(": ").append(actions.get(i)).append("\n");
         }
         NotificationHelper.showNotification(requireContext(), "System Alert", msg.toString());
-        // Note: we can't easily track dismissal of NotificationHelper currently to reset isDialogShowing
-        // But since it's a dialog, it's fine for now.
     }
 
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        if (sensorsRef != null &&
-                sensorsListener != null) {
-
-            sensorsRef.removeEventListener(
-                    sensorsListener);
+        if (sensorsRef != null && sensorsListener != null) {
+            sensorsRef.removeEventListener(sensorsListener);
         }
     }
 }

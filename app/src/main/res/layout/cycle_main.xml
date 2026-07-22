@@ -40,7 +40,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:text="Cycle Details"
+                android:text="Growth Cycles"
                 android:textColor="#000000"
                 android:textSize="24sp"
                 android:textStyle="bold" />
@@ -51,47 +51,16 @@
                 android:layout_marginTop="7dp"
                 android:layout_marginBottom="16dp"
                 android:gravity="center"
-                android:text="Choose the cycle where you want to record the harvested weight."
+                android:text="Track and manage your crop growth cycles and harvest logs."
                 android:textColor="#000000"
                 android:textSize="14sp" />
-
-            <!-- Table header -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="#1A116F59"
-                android:orientation="horizontal"
-                android:padding="10dp">
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Cycle No."
-                    android:textAlignment="center"
-                    android:textColor="@color/primary" />
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Start Date"
-                    android:textAlignment="center"
-                    android:textColor="@color/primary" />
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="End Date"
-                    android:textAlignment="center"
-                    android:textColor="@color/primary" />
-            </LinearLayout>
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/recyclerCycles"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:clipToPadding="false"
+                android:paddingBottom="80dp"
                 android:nestedScrollingEnabled="false" />
 
             <com.google.android.material.button.MaterialButton

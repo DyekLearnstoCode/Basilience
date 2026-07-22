@@ -24,9 +24,26 @@
         android:src="@drawable/arrow_back"
         android:clickable="true"
         android:focusable="true"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        android:elevation="10dp"
+        android:background="@null"
+        android:elevation="100dp"
+        android:translationZ="100dp"
         android:visibility="gone"
         app:layout_collapseMode="pin" />
+
+    <!-- SETTINGS GEAR (Pinned) -->
+    <ImageView
+        android:id="@+id/btnGlobalSettings"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="end|top"
+        android:layout_margin="16dp"
+        android:padding="8dp"
+        android:src="@drawable/nav_setting_icon"
+        android:clickable="true"
+        android:background="@null"
+        android:elevation="100dp"
+        android:translationZ="100dp"
+        app:layout_collapseMode="pin"
+        android:contentDescription="@string/nav3" />
 
 </merge>

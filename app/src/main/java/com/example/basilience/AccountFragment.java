@@ -75,7 +75,7 @@ public class AccountFragment extends Fragment {
 
         helper.getUserProfile(uid).addOnSuccessListener(document -> {
             if (document.exists()) {
-                etName.setText(document.getString("name"));
+                etName.setText(document.getString("fullName"));
                 etEmail.setText(document.getString("email"));
                 etPhone.setText(document.getString("phone"));
             }
@@ -100,7 +100,7 @@ public class AccountFragment extends Fragment {
         }
 
         Map<String, Object> updates = new HashMap<>();
-        updates.put("name", name);
+        updates.put("fullName", name);
         updates.put("phone", phone);
 
         helper.updateUserProfile(uid, updates)

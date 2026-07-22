@@ -34,7 +34,7 @@ public class Personnel_Adapter extends RecyclerView.Adapter<Personnel_Adapter.Vi
     public void onBindViewHolder(ViewHolder h, int pos) {
         Personnel p = list.get(pos);
 
-        String name = p.getName() != null ? p.getName() : "";
+        String name = p.getFullName() != null ? p.getFullName() : "";
         String role = p.getRole() != null ? p.getRole() : "";
 
         h.name.setText(name);

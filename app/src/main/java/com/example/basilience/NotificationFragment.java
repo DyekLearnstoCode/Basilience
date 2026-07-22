@@ -50,13 +50,12 @@ public class NotificationFragment extends Fragment {
 
         loadNotifications();
 
-        // Hide back button on notification page (it's a top-level nav destination)
+        // Back button configuration
         View btnBack = view.findViewById(R.id.btnBack);
         if (btnBack != null) {
             btnBack.setVisibility(View.VISIBLE);
             btnBack.setOnClickListener(v -> {
-                androidx.navigation.Navigation.findNavController(view)
-                        .navigate(R.id.DeviceManagementFragment);
+                androidx.navigation.Navigation.findNavController(view).popBackStack();
             });
         }
     }
@@ -90,11 +89,19 @@ public class NotificationFragment extends Fragment {
     private void loadNotifications() {
         if (notificationListener != null) notificationListener.remove();
 
-        dbHelper.resolveDataUid().addOnSuccessListener(uid -> {
-            if (uid != null) {
-                dbHelper.setTargetUid(uid);
-                notificationListener = dbHelper.listenToNotifications((value, error) -> {
-                    if (error != null || value == null) return;
+        // Check for selected device in preferences if not set
+        String deviceId = dbHelper.getSelectedDeviceId();
+        if (deviceId == null) {
+            android.content.SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
+            deviceId = prefs.getString("selected_device_id", null);
+            if (deviceId != null) {
+                dbHelper.setSelectedDeviceId(deviceId);
+            }
+        }
+
+        if (deviceId != null) {
+            notificationListener = dbHelper.listenToNotifications((value, error) -> {
+                if (error != null || value == null) return;
 
                     List<NotificationAdapter.NotificationItem> rawList = new ArrayList<>();
                     
@@ -140,8 +147,7 @@ public class NotificationFragment extends Fragment {
 
                     adapter.notifyDataSetChanged();
                 });
-            }
-        });
+        }
     }
 
     @Override

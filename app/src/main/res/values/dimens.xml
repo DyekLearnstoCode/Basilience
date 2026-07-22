@@ -8,4 +8,6 @@
     <dimen name="container_top_padding">24dp</dimen>
     <dimen name="container_side_padding">20dp</dimen>
     <dimen name="container_overlap_margin">-24dp</dimen>
+    <dimen name="card_elevation_completed">1dp</dimen>
+    <dimen name="card_elevation_active">2dp</dimen>
 </resources>

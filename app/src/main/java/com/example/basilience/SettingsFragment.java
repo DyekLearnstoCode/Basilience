@@ -30,8 +30,7 @@ public class SettingsFragment extends Fragment {
         if (btnBack != null) {
             btnBack.setVisibility(View.VISIBLE);
             btnBack.setOnClickListener(v -> {
-                androidx.navigation.Navigation.findNavController(view)
-                        .navigate(R.id.DeviceManagementFragment);
+                navController.popBackStack();
             });
         }
 
@@ -55,19 +54,21 @@ public class SettingsFragment extends Fragment {
     }
 
     private void performLogout() {
-        Database_Helper helper = new Database_Helper();
-        helper.logout();
+        NotificationHelper.showConfirmation(requireContext(), "Logout", "Are you sure you want to log out?", () -> {
+            Database_Helper helper = new Database_Helper();
+            helper.logout();
 
-        // Clear session preferences
-        if (getActivity() != null) {
-            android.content.SharedPreferences prefs = getActivity().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
-            prefs.edit().clear().apply();
+            // Clear session preferences
+            if (getActivity() != null) {
+                android.content.SharedPreferences prefs = getActivity().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
+                prefs.edit().clear().apply();
 
-            // Redirect to Login
-            android.content.Intent intent = new android.content.Intent(getActivity(), Auth_Login_Activity.class);
-            intent.setFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK);
-            startActivity(intent);
-            getActivity().finish();
-        }
+                // Redirect to Login
+                android.content.Intent intent = new android.content.Intent(getActivity(), Auth_Login_Activity.class);
+                intent.setFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                startActivity(intent);
+                getActivity().finish();
+            }
+        });
     }
 }

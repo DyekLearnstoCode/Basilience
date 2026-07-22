@@ -1,6 +1,7 @@
 package com.example.basilience;
 
 import android.app.Application;
+import androidx.appcompat.app.AppCompatDelegate;
 
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
@@ -9,6 +10,9 @@ public class MyApp extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+
+        // Force Light Mode permanently
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
 
         try {
             FirebaseOptions options = FirebaseApp.getInstance().getOptions();
