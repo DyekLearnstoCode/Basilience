@@ -8,6 +8,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
@@ -43,10 +44,19 @@ public class Dashboard_Fragment extends Fragment {
         View btnBack = view.findViewById(R.id.btnBack);
         if (btnBack != null) {
             btnBack.setVisibility(View.VISIBLE);
-            btnBack.setOnClickListener(v -> {
-                navController.navigate(R.id.DeviceManagementFragment);
-            });
+            btnBack.setOnClickListener(v -> navController.popBackStack());
         }
+
+        // Hardware back button: also go back to Device Manager, don't exit app
+        requireActivity().getOnBackPressedDispatcher().addCallback(
+                getViewLifecycleOwner(),
+                new OnBackPressedCallback(true) {
+                    @Override
+                    public void handleOnBackPressed() {
+                        navController.popBackStack();
+                    }
+                }
+        );
 
         // Parameters Monitoring
         LinearLayout cardParameters = view.findViewById(R.id.cardParameters);
@@ -56,29 +66,9 @@ public class Dashboard_Fragment extends Fragment {
         LinearLayout cardUserGuide = view.findViewById(R.id.cardUserGuide);
         cardUserGuide.setOnClickListener(v -> navController.navigate(R.id.action_home_to_userGuideFragment));
 
-        // System Reports
-        LinearLayout cardReports = view.findViewById(R.id.cardReports);
-        cardReports.setOnClickListener(v -> navController.navigate(R.id.action_home_to_reportschoiceFragment));
-
         // Cycle Details
         LinearLayout cardCycle = view.findViewById(R.id.cardCycle);
         cardCycle.setOnClickListener(v -> navController.navigate(R.id.action_home_to_cycleDetailsFragment));
-
-        // Personnel Management
-        LinearLayout cardPersonnel = view.findViewById(R.id.cardPersonnel);
-        cardPersonnel.setOnClickListener(v -> navController.navigate(R.id.action_home_to_personnelFragment));
-
-        // Role-based visibility - Use Prefs for immediate UI sync to avoid "glitch"
-        SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
-        String savedRole = prefs.getString("user_role", "admin");
-        
-        if ("farmer".equals(savedRole)) {
-            cardReports.setVisibility(View.GONE);
-            cardPersonnel.setVisibility(View.GONE);
-        } else {
-            cardReports.setVisibility(View.VISIBLE);
-            cardPersonnel.setVisibility(View.VISIBLE);
-        }
 
         // Verify with Firestore in background (optional/robustness)
         String uid = dbHelper.getCurrentUid();
@@ -86,13 +76,7 @@ public class Dashboard_Fragment extends Fragment {
             dbHelper.getUserProfile(uid).addOnSuccessListener(document -> {
                 if (isAdded() && document.exists()) {
                     String role = document.getString("role");
-                    if ("farmer".equals(role)) {
-                        cardReports.setVisibility(View.GONE);
-                        cardPersonnel.setVisibility(View.GONE);
-                    } else {
-                        cardReports.setVisibility(View.VISIBLE);
-                        cardPersonnel.setVisibility(View.VISIBLE);
-                    }
+                    // removed cardPersonnel logic here
                 }
             });
         }

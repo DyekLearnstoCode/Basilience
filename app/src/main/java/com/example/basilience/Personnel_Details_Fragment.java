@@ -185,7 +185,7 @@ public class Personnel_Details_Fragment extends Fragment {
                     .setTitle("Assign Device")
                     .setItems(items, (dialog, which) -> {
                         String selectedId = items[which];
-                        helper.assignDeviceToUser(selectedId, personnelId, "FARMER")
+                        helper.assignDeviceToUser(selectedId, personnelId, RoleConstants.ROLE_FARMER)
                                 .addOnSuccessListener(unused -> {
                                     NotificationHelper.showSuccess(requireContext(), "Device assigned successfully");
                                     loadAssignments();

@@ -42,7 +42,9 @@ public class Auth_Login_Activity extends AppCompatActivity {
 
         if (isLoggedIn && currentUid != null) {
             // User chose "Remember Me" and is still authenticated in Firebase
-            startActivity(new Intent(this, MainActivity.class));
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            startActivity(intent);
             finish();
             return;
         }
@@ -126,10 +128,19 @@ public class Auth_Login_Activity extends AppCompatActivity {
                                 editor.putString("owner_uid", ownerUid);
                                 editor.apply();
 
-                                Intent intent = new Intent(this, MainActivity.class);
-                                showLoading(false, null);
-                                startActivity(intent);
-                                finish();
+                                // Efficient migration: Only run once per user, scoped to their data
+                                boolean isMigrated = prefs.getBoolean("migrated_" + uid, false);
+                                if (!isMigrated) {
+                                    showLoading(true, "Synchronizing assignments...");
+                                    helper.migrateDeviceAssignments(uid).addOnCompleteListener(t -> {
+                                        if (t.isSuccessful()) {
+                                            prefs.edit().putBoolean("migrated_" + uid, true).apply();
+                                        }
+                                        navigateToMain();
+                                    });
+                                } else {
+                                    navigateToMain();
+                                }
                             })
                             .addOnFailureListener(e -> {
                                 showLoading(false, null);
@@ -141,5 +152,13 @@ public class Auth_Login_Activity extends AppCompatActivity {
                     showLoading(false, null);
                     NotificationHelper.showError(this, "LOGIN FAILED: " + e.getMessage());
                 });
+    }
+
+    private void navigateToMain() {
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        showLoading(false, null);
+        startActivity(intent);
+        finish();
     }
 }

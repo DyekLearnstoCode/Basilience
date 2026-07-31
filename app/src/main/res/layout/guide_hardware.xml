@@ -40,7 +40,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="System Setup & Hardware Guide"
+                android:text="System Setup and Hardware Guide"
                 android:textSize="22sp"
                 android:textStyle="bold"
                 android:textColor="#2E7D32"
@@ -65,7 +65,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Step 2: Sensor Calibration & Placement"
+                android:text="Step 2: Sensor Calibration and Placement"
                 android:textStyle="bold"
                 android:textColor="#000000"
                 android:textSize="18sp"
@@ -97,7 +97,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Step 4: Power & Network"
+                android:text="Step 4: Power and Network"
                 android:textStyle="bold"
                 android:textColor="#000000"
                 android:textSize="18sp"

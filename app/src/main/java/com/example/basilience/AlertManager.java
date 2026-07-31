@@ -2,11 +2,8 @@ package com.example.basilience;
 
 import android.util.Log;
 
-import com.google.firebase.database.DataSnapshot;
-import com.google.firebase.database.DatabaseError;
-import com.google.firebase.database.DatabaseReference;
-import com.google.firebase.database.FirebaseDatabase;
-import com.google.firebase.database.ValueEventListener;
+import com.google.firebase.firestore.DocumentSnapshot;
+import com.google.firebase.firestore.ListenerRegistration;
 import com.example.basilience.NotificationHelper;
 
 import java.util.HashMap;
@@ -26,8 +23,7 @@ public class AlertManager {
         dbHelper = new Database_Helper();
     }
 
-    private ValueEventListener alertsListener;
-    private DatabaseReference alertsRef;
+    private ListenerRegistration notificationsListener;
     private String deviceId;
 
     public void setDeviceId(String deviceId) {
@@ -40,43 +36,42 @@ public class AlertManager {
             return;
         }
 
-        if (alertsListener != null) return; // Already listening
+        if (notificationsListener != null) return; // Already listening
 
-        String path = "devices/" + deviceId + "/alerts";
+        dbHelper.setSelectedDeviceId(deviceId);
 
-        alertsRef = FirebaseDatabase.getInstance().getReference(path);
+        notificationsListener = dbHelper.listenToNotifications((snapshots, e) -> {
+            if (e != null) {
+                Log.e("AlertManager", "Firestore Listen failed: " + e.getMessage());
+                return;
+            }
 
-        alertsListener = new ValueEventListener() {
-            @Override
-            public void onDataChange(DataSnapshot snapshot) {
-                for (DataSnapshot child : snapshot.getChildren()) {
-                    String alertName = child.getKey();
-                    Boolean current = child.getValue(Boolean.class);
+            if (snapshots != null) {
+                for (DocumentSnapshot doc : snapshots.getDocuments()) {
+                    // Check if notification is already processed via metadata/SharedPreferences if needed
+                    // For now, simple implementation of creating notification from new documents
+                    String message = doc.getString("message");
+                    String type = doc.getString("type");
+                    Long timestamp = doc.getLong("timestamp");
 
-                    if (alertName == null || current == null) continue;
-
-                    boolean previous = previousStates.getOrDefault(alertName, false);
-
-                    if (!previous && current) {
-                        createNotification(alertName);
+                    if (timestamp != null && (System.currentTimeMillis() - timestamp < 10000)) { // Only show recent ones (last 10s)
+                         activity.runOnUiThread(() ->
+                            NotificationHelper.showNotification(
+                                    activity,
+                                    "System Alert",
+                                    message
+                            )
+                        );
                     }
-                    previousStates.put(alertName, current);
                 }
             }
-
-            @Override
-            public void onCancelled(DatabaseError error) {
-                Log.e("AlertManager", error.getMessage());
-            }
-        };
-
-        alertsRef.addValueEventListener(alertsListener);
+        });
     }
 
     public void stopListening() {
-        if (alertsRef != null && alertsListener != null) {
-            alertsRef.removeEventListener(alertsListener);
-            alertsListener = null;
+        if (notificationsListener != null) {
+            notificationsListener.remove();
+            notificationsListener = null;
         }
     }
 

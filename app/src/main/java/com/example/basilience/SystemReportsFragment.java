@@ -48,7 +48,7 @@ public class SystemReportsFragment extends Fragment {
     private ImageButton btnShare;
     private String currentSelectedFilter = "Today";
     private String selectedDeviceId;
-    private String userRole = "Farmer";
+    private String userRole = RoleConstants.ROLE_FARMER;
 
     public SystemReportsFragment() { }
 
@@ -136,7 +136,7 @@ public class SystemReportsFragment extends Fragment {
 
     private void updateUIForRole() {
         if (btnShare != null) {
-            btnShare.setVisibility("Admin".equalsIgnoreCase(userRole) ? View.VISIBLE : View.GONE);
+            btnShare.setVisibility(RoleConstants.ROLE_ADMIN.equalsIgnoreCase(userRole) ? View.VISIBLE : View.GONE);
         }
     }
 

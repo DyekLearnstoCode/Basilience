@@ -6,6 +6,14 @@
         <entry key="Firebase Crashlytics">
           <value>
             <InsightsFilterSettings>
+              <option name="connection">
+                <ConnectionSetting>
+                  <option name="appId" value="com.example.basilience" />
+                  <option name="mobileSdkAppId" value="1:482090299088:android:6bef97a2bd7f838b97f8d5" />
+                  <option name="projectId" value="basilience-database" />
+                  <option name="projectNumber" value="482090299088" />
+                </ConnectionSetting>
+              </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />
               <option name="timeIntervalDays" value="THIRTY_DAYS" />
               <option name="visibilityType" value="ALL" />

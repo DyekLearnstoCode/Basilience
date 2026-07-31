@@ -78,7 +78,7 @@ public class Cycle_Add_Fragment extends Fragment {
             dbHelper.getUserProfile(uid).addOnSuccessListener(documentSnapshot -> {
                 if (documentSnapshot.exists()) {
                     String role = documentSnapshot.getString("role");
-                    if (!"Admin".equalsIgnoreCase(role)) {
+                    if (!RoleConstants.ROLE_ADMIN.equalsIgnoreCase(role)) {
                         NotificationHelper.showError(getContext(), "Access Denied: Admins Only");
                         Navigation.findNavController(view).popBackStack();
                     }

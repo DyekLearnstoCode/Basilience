@@ -86,7 +86,7 @@ public class Personnel_Main_Fragment extends Fragment {
     }
 
     private void loadFarmersFromFirestore() {
-        helper.getMyPersonnelByRole("farmer")
+        helper.getMyPersonnelByRole(RoleConstants.ROLE_FARMER)
                 .addOnSuccessListener(qs -> {
                     list.clear();
 

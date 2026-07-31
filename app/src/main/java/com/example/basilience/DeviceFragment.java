@@ -30,7 +30,6 @@ public class DeviceFragment extends Fragment {
 
     private TextInputEditText etClaimToken;
     private MaterialButton btnClaimDevice;
-    private MaterialButton btnLogout;
     private RecyclerView recyclerDevices;
     private View cardClaimDevice;
 
@@ -52,16 +51,15 @@ public class DeviceFragment extends Fragment {
         btnClaimDevice = view.findViewById(R.id.btnClaimDevice);
         cardClaimDevice = view.findViewById(R.id.cardClaimDevice);
         recyclerDevices = view.findViewById(R.id.recyclerDevices);
-        btnLogout = view.findViewById(R.id.btnLogout);
 
         layoutLoading = view.findViewById(R.id.layoutLoading);
         tvLoadingTitle = view.findViewById(R.id.tvLoadingTitle);
 
         // Role-based visibility
         SharedPreferences prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        String role = prefs.getString("user_role", "FARMER");
+        String role = prefs.getString("user_role", RoleConstants.ROLE_FARMER);
         
-        if ("FARMER".equalsIgnoreCase(role)) {
+        if (RoleConstants.ROLE_FARMER.equalsIgnoreCase(role)) {
             if (cardClaimDevice != null) cardClaimDevice.setVisibility(View.GONE);
         }
 
@@ -82,8 +80,8 @@ public class DeviceFragment extends Fragment {
                 // 2. 🔥 Long Press -> Lalabas ang Confirmation Dialog para mag-Unclaim
                 device -> {
                     SharedPreferences currentPrefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-                    String currentRole = currentPrefs.getString("user_role", "FARMER");
-                    if ("ADMIN".equalsIgnoreCase(currentRole)) {
+                    String currentRole = currentPrefs.getString("user_role", RoleConstants.ROLE_FARMER);
+                    if (RoleConstants.ROLE_ADMIN.equalsIgnoreCase(currentRole)) {
                         NotificationHelper.showConfirmation(
                                 requireContext(),
                                 "Unclaim Device",
@@ -115,9 +113,6 @@ public class DeviceFragment extends Fragment {
             }
         });
 
-        if (btnLogout != null) {
-            btnLogout.setOnClickListener(v -> logout());
-        }
 
         loadDevices();
 
@@ -158,35 +153,5 @@ public class DeviceFragment extends Fragment {
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
                     NotificationHelper.showError(requireContext(), "Failed to unclaim: " + e.getMessage());
                 });
-    }
-
-    private void logout() {
-        NotificationHelper.showConfirmation(requireContext(), "Logout", "Are you sure you want to log out?", () -> {
-            if (layoutLoading != null && tvLoadingTitle != null) {
-                tvLoadingTitle.setText(R.string.loading_logging_out);
-                layoutLoading.setVisibility(View.VISIBLE);
-            }
-
-            dbHelper.logout();
-
-            if (getActivity() != null) {
-                SharedPreferences borderPrefs = getActivity().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-                borderPrefs.edit().putBoolean(KEY_IS_LOGGED_IN, false).apply();
-
-                Intent intent = new Intent(getActivity(), Auth_Login_Activity.class);
-                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-
-                View fragmentView = getView();
-                if (fragmentView != null) {
-                    fragmentView.postDelayed(() -> {
-                        startActivity(intent);
-                        if (getActivity() != null) getActivity().finish();
-                    }, 600);
-                } else {
-                    startActivity(intent);
-                    if (getActivity() != null) getActivity().finish();
-                }
-            }
-        });
     }
 }

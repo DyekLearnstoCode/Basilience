@@ -2,6 +2,8 @@ package com.example.basilience;
 
 import static android.content.ContentValues.TAG;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import com.google.android.gms.tasks.OnCompleteListener;
@@ -36,22 +38,56 @@ public class Database_Helper {
     private final FirebaseAuth auth;
     private final FirebaseFirestore db;
     private final FirebaseDatabase rtdb;
-    private final DatabaseReference deviceRef;
 
-    private String selectedDeviceId; // Primary Device Context ID
-    private String cachedRole; // RBAC Cache
+    private String selectedDeviceId;
+    private String cachedRole;
+
+    private DatabaseReference deviceRef;
+    private DatabaseReference sensorsRef;
+    private DatabaseReference actuatorsRef;
+    private DatabaseReference statusRef;
+    private DatabaseReference commandsRef;
 
     public Database_Helper() {
         auth = FirebaseAuth.getInstance();
         db = FirebaseFirestore.getInstance();
 
         // RTDB Initialization
-        rtdb = FirebaseDatabase.getInstance();
+        rtdb = FirebaseDatabase.getInstance("https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app");
         deviceRef = rtdb.getReference("devices");
+
+        // Connectivity Monitoring
+        DatabaseReference connectedRef = rtdb.getReference(".info/connected");
+        connectedRef.addValueEventListener(new com.google.firebase.database.ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull com.google.firebase.database.DataSnapshot snapshot) {
+                boolean connected = snapshot.getValue(Boolean.class);
+                if (connected) {
+                    Log.d("SensorDebug", "RTDB Connected");
+                } else {
+                    Log.d("SensorDebug", "RTDB Disconnected");
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull com.google.firebase.database.DatabaseError error) {
+                Log.e("SensorDebug", "Connectivity listener cancelled: " + error.getMessage());
+            }
+        });
     }
 
     public void setSelectedDeviceId(String deviceId) {
+
         this.selectedDeviceId = deviceId;
+
+        deviceRef = rtdb
+                .getReference("devices")
+                .child(deviceId);
+
+        sensorsRef = deviceRef.child("sensors");
+        actuatorsRef = deviceRef.child("actuators");
+        statusRef = deviceRef.child("status");
+        commandsRef = deviceRef.child("commands");
     }
 
     public String getSelectedDeviceId() {
@@ -92,7 +128,7 @@ public class Database_Helper {
      * Uses memory cache if available, otherwise fetches from Firestore.
      */
     private Task<Void> checkAdminTask() {
-        if ("ADMIN".equalsIgnoreCase(cachedRole)) {
+        if (RoleConstants.ROLE_ADMIN.equalsIgnoreCase(cachedRole)) {
             return Tasks.forResult(null);
         }
 
@@ -102,7 +138,7 @@ public class Database_Helper {
         return getUserProfile(uid).onSuccessTask(doc -> {
             if (doc.exists()) {
                 cachedRole = doc.getString("role");
-                if ("ADMIN".equalsIgnoreCase(cachedRole)) {
+                if (RoleConstants.ROLE_ADMIN.equalsIgnoreCase(cachedRole)) {
                     return Tasks.forResult(null);
                 }
             }
@@ -209,7 +245,7 @@ public class Database_Helper {
                         farmerProfile.put("fullName", name);
                         farmerProfile.put("email", email);
                         farmerProfile.put("phone", phone);
-                        farmerProfile.put("role", "FARMER"); // Standardized to uppercase
+                        farmerProfile.put("role", RoleConstants.ROLE_FARMER); // Standardized to uppercase
                         farmerProfile.put("createdAt", System.currentTimeMillis());
                         farmerProfile.put("ownerAdminUid", adminUid);
                         farmerProfile.put("isActive", true);
@@ -242,14 +278,16 @@ public class Database_Helper {
     // --------------------
     // REALTIME DATABASE & ACTUATORS
     // --------------------
-    public DatabaseReference getSensorsReference() {
-        if (selectedDeviceId == null || selectedDeviceId.isEmpty()) return null;
-        return rtdb.getReference("devices").child(selectedDeviceId).child("sensors");
+    public DatabaseReference getDeviceReference() {
+        return deviceRef;
     }
 
     public DatabaseReference getStatusReference() {
-        if (selectedDeviceId == null || selectedDeviceId.isEmpty()) return null;
-        return rtdb.getReference("devices").child(selectedDeviceId).child("status");
+        return statusRef;
+    }
+
+    public DatabaseReference getSensorsReference() {
+        return sensorsRef;
     }
 
     public Task<Void> updateActuatorState(String actuatorName, boolean isOn) {
@@ -261,8 +299,13 @@ public class Database_Helper {
         ).onSuccessTask(snapshot -> {
             Boolean isManual = snapshot.getValue(Boolean.class);
             if (isManual != null && isManual) {
+                Map<String, Object> commandData = new HashMap<>();
+                commandData.put("state", isOn);
+                commandData.put("source", "android");
+                commandData.put("timestamp", System.currentTimeMillis());
+                
                 String path = "devices/" + selectedDeviceId + "/commands/" + actuatorName;
-                return rtdb.getReference(path).setValue(isOn);
+                return rtdb.getReference(path).setValue(commandData);
             } else {
                 return Tasks.forException(new Exception("Manual mode must be enabled to control actuators."));
             }
@@ -273,8 +316,62 @@ public class Database_Helper {
         if (selectedDeviceId == null || selectedDeviceId.isEmpty())
             return Tasks.forException(new Exception("No device selected"));
 
+        return checkAdminTask().onSuccessTask(aVoid -> {
+            DatabaseReference cmdRef = rtdb.getReference("devices").child(selectedDeviceId).child("commands");
+            if (!isManual) {
+                Map<String, Object> turnOffData = new HashMap<>();
+                turnOffData.put("state", false);
+                turnOffData.put("source", "android");
+                turnOffData.put("timestamp", System.currentTimeMillis());
+
+                Map<String, Object> updates = new HashMap<>();
+                updates.put("manualMode", false);
+                updates.put("solenoid", turnOffData);
+                updates.put("canopyFan", turnOffData);
+                updates.put("growLight", turnOffData);
+                updates.put("phUpPump", turnOffData);
+                updates.put("phDownPump", turnOffData);
+                updates.put("growPump", turnOffData);
+                updates.put("bloomPump", turnOffData);
+                updates.put("fogger", turnOffData);
+                updates.put("blower", turnOffData);
+                updates.put("peltier", turnOffData);
+                return cmdRef.updateChildren(updates);
+            } else {
+                return cmdRef.child("manualMode").setValue(true);
+            }
+        });
+    }
+
+    /**
+     * Sends an OperationRequest to the firmware via RTDB devices/{deviceId}/commands/current.
+     * Uses SharedPreferences to persist an incrementing requestId.
+     */
+    public Task<Void> sendOperationRequest(String operation, String action) {
+        if (selectedDeviceId == null || selectedDeviceId.isEmpty())
+            return Tasks.forException(new Exception("No device selected"));
+
+        // Using SharedPreferences to maintain a simple incrementing requestId
+        Context context = FirebaseApp.getInstance().getApplicationContext();
+        SharedPreferences prefs = context.getSharedPreferences("Basilience_Prefs", Context.MODE_PRIVATE);
+        int lastId = prefs.getInt("last_request_id", 0);
+        int nextId = lastId + 1;
+
+        // Persist the new ID
+        prefs.edit().putInt("last_request_id", nextId).apply();
+
+        long timestamp = System.currentTimeMillis() / 1000L; // Unix timestamp in seconds
+
+        OperationRequest request = new OperationRequest(
+                nextId,
+                operation,
+                action,
+                timestamp,
+                1 // protocolVersion
+        );
+
         return checkAdminTask().onSuccessTask(aVoid ->
-                rtdb.getReference("devices").child(selectedDeviceId).child("commands").child("manualMode").setValue(isManual)
+                rtdb.getReference("devices").child(selectedDeviceId).child("commands").child("current").setValue(request)
         );
     }
 
@@ -414,7 +511,7 @@ public class Database_Helper {
         DocumentReference cycleRef = db.collection("devices").document(selectedDeviceId)
                 .collection("cycles").document(cycleId);
         DocumentReference harvestRef = cycleRef.collection("harvestLogs").document();
-        
+
         harvest.setId(harvestRef.getId());
 
         return db.runTransaction(transaction -> {
@@ -711,15 +808,16 @@ public class Database_Helper {
                 return deviceRef.update(updates).continueWithTask(t2 -> {
                     if (!t2.isSuccessful()) throw t2.getException();
 
-                    // Create Assignment for Admin
+                    // Create Assignment for Admin (Deterministic ID for Security Rules)
                     Map<String, Object> assignment = new HashMap<>();
                     assignment.put("deviceId", deviceCode);
                     assignment.put("userUid", adminUid);
-                    assignment.put("role", "ADMIN");
+                    assignment.put("role", RoleConstants.ROLE_ADMIN);
                     assignment.put("assignedBy", adminUid);
                     assignment.put("assignedAt", System.currentTimeMillis());
 
-                    return db.collection("deviceAssignments").document().set(assignment);
+                    String assignmentId = adminUid + "_" + deviceCode;
+                    return db.collection("deviceAssignments").document(assignmentId).set(assignment);
                 });
             });
         });
@@ -760,7 +858,7 @@ public class Database_Helper {
         return db.collection("deviceAssignments").whereEqualTo("userUid", uid).get()
                 .continueWithTask(assignmentTask -> {
                     if (!assignmentTask.isSuccessful() || assignmentTask.getResult().isEmpty()) {
-                        // Return empty query snapshot or failure? 
+                        // Return empty query snapshot or failure?
                         // Using a dummy query that returns nothing to keep types consistent
                         return db.collection("devices").whereEqualTo("deviceId", "NONE").get();
                     }
@@ -789,7 +887,8 @@ public class Database_Helper {
             assignment.put("assignedBy", adminUid);
             assignment.put("assignedAt", System.currentTimeMillis());
 
-            return db.collection("deviceAssignments").document().set(assignment);
+            String assignmentId = userUid + "_" + deviceId;
+            return db.collection("deviceAssignments").document(assignmentId).set(assignment);
         });
     }
 
@@ -800,20 +899,10 @@ public class Database_Helper {
     }
 
     public Task<Void> removeAssignment(String deviceId, String userUid) {
-        return checkAdminTask().onSuccessTask(aVoid ->
-                db.collection("deviceAssignments")
-                        .whereEqualTo("deviceId", deviceId)
-                        .whereEqualTo("userUid", userUid)
-                        .get()
-                        .continueWithTask(task -> {
-                            if (!task.isSuccessful()) return Tasks.forException(task.getException());
-                            List<Task<Void>> deleteTasks = new ArrayList<>();
-                            for (DocumentSnapshot doc : task.getResult()) {
-                                deleteTasks.add(doc.getReference().delete());
-                            }
-                            return Tasks.whenAll(deleteTasks);
-                        })
-        );
+        return checkAdminTask().onSuccessTask(aVoid -> {
+            String assignmentId = userUid + "_" + deviceId;
+            return db.collection("deviceAssignments").document(assignmentId).delete();
+        });
     }
 
     public Task<QuerySnapshot> getAssignedDevices() {
@@ -821,6 +910,49 @@ public class Database_Helper {
         if (uid == null) return Tasks.forException(new Exception("Not logged in"));
 
         return db.collection("deviceAssignments").whereEqualTo("userUid", uid).get();
+    }
+
+    /**
+     * Migrates existing deviceAssignments for a specific user to use deterministic IDs (uid_deviceId).
+     * Scoped to the current user to satisfy security rules and improve performance.
+     * Uses a Write Batch to ensure atomicity for each assignment migration.
+     */
+    public Task<Void> migrateDeviceAssignments(String uid) {
+        if (uid == null) return Tasks.forResult(null);
+
+        return db.collection("deviceAssignments")
+                .whereEqualTo("userUid", uid)
+                .get()
+                .continueWithTask(task -> {
+                    if (!task.isSuccessful()) throw task.getException();
+
+                    com.google.firebase.firestore.WriteBatch batch = db.batch();
+                    boolean hasChanges = false;
+
+                    for (DocumentSnapshot doc : task.getResult()) {
+                        String currentId = doc.getId();
+                        String deviceId = doc.getString("deviceId");
+
+                        if (deviceId != null) {
+                            String expectedId = uid + "_" + deviceId;
+                            if (!currentId.equals(expectedId)) {
+                                // Create the new document and delete the old one in one atomic batch
+                                DocumentReference newRef = db.collection("deviceAssignments").document(expectedId);
+                                DocumentReference oldRef = doc.getReference();
+
+                                batch.set(newRef, doc.getData());
+                                batch.delete(oldRef);
+                                hasChanges = true;
+                            }
+                        }
+                    }
+
+                    if (hasChanges) {
+                        return batch.commit();
+                    } else {
+                        return Tasks.forResult(null);
+                    }
+                });
     }
 
 }

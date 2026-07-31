@@ -18,29 +18,49 @@ public class SensorRepository {
     private ValueEventListener sensorsListener;
 
     public void startListening(String deviceId, MutableLiveData<SensorData> liveData) {
-        sensorsRef = FirebaseDatabase.getInstance().getReference("devices").child(deviceId).child("sensors");
-        
+
+        stopListening();
+
+        sensorsRef = FirebaseDatabase
+                .getInstance("https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app")
+                .getReference("devices")
+                .child(deviceId)
+                .child("sensors");
+
         sensorsListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
+
+                if (!snapshot.exists()) {
+                    Log.d("SensorRepository", "Sensors node does not exist.");
+                    return;
+                }
+
                 SensorData data = snapshot.getValue(SensorData.class);
+
                 if (data != null) {
-                    liveData.setValue(data);
+                    liveData.postValue(data);
                 }
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
-                Log.e("SensorRepository", "RTDB Error: " + error.getMessage());
+                Log.e("SensorRepository",
+                        "Firebase Error",
+                        error.toException());
             }
         };
-        
+
         sensorsRef.addValueEventListener(sensorsListener);
     }
 
     public void stopListening() {
+
         if (sensorsRef != null && sensorsListener != null) {
             sensorsRef.removeEventListener(sensorsListener);
         }
+
+        sensorsRef = null;
+        sensorsListener = null;
     }
 }

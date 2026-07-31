@@ -57,10 +57,10 @@ public class Cycle_Details_Fragment extends Fragment {
 
         // Role-based visibility
         SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
-        String role = prefs.getString("user_role", "FARMER");
+        String role = prefs.getString("user_role", RoleConstants.ROLE_FARMER);
         
         View btnAddCycle = view.findViewById(R.id.btnAddCycle);
-        if ("FARMER".equalsIgnoreCase(role)) {
+        if (RoleConstants.ROLE_FARMER.equalsIgnoreCase(role)) {
             if (btnAddCycle != null) btnAddCycle.setVisibility(View.GONE);
         } else {
             if (btnAddCycle != null) {

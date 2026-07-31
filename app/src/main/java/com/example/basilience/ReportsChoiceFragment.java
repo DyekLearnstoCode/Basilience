@@ -40,7 +40,7 @@ public class ReportsChoiceFragment extends Fragment {
         }
 
         if (btnBack != null) {
-            btnBack.setVisibility(View.VISIBLE);
+            btnBack.setVisibility(View.GONE);
             btnBack.setOnClickListener(v -> navController.popBackStack());
         }
     }

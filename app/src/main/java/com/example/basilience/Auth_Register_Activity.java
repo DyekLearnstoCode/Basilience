@@ -38,7 +38,7 @@ public class Auth_Register_Activity extends AppCompatActivity {
         tvLoadingTitle = findViewById(R.id.tvLoadingTitle);
 
         btnSignup.setOnClickListener(v -> registerUser());
-        tvLogin.setOnClickListener(v -> startActivity(new Intent(this, Auth_Login_Activity.class)));
+        tvLogin.setOnClickListener(v -> finish());
     }
 
     private void showLoading(boolean show, String message) {
@@ -90,7 +90,7 @@ public class Auth_Register_Activity extends AppCompatActivity {
                         return;
                     }
 
-                    helper.createUserProfile(uid, name, email, "", "admin", null)
+                    helper.createUserProfile(uid, name, email, "", RoleConstants.ROLE_ADMIN, null)
                             .addOnSuccessListener(unused -> {
                                 if (isFinishing() || isDestroyed()) return;
 
@@ -148,7 +148,6 @@ public class Auth_Register_Activity extends AppCompatActivity {
     }
 
     private void gotoLogin() {
-        startActivity(new Intent(Auth_Register_Activity.this, Auth_Login_Activity.class));
         finish();
     }
 }

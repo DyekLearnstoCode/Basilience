@@ -65,7 +65,7 @@ public class HarvestLogFragment extends Fragment {
     private boolean isFirstLoad = true;
     private boolean isFirstChartLoad = true;
     
-    private String userRole = "Farmer";
+    private String userRole = RoleConstants.ROLE_FARMER;
     private String userName = "Anonymous";
     private String currentHarvestSource = "MANUAL";
     private Harvest editingHarvest = null;
@@ -165,7 +165,7 @@ public class HarvestLogFragment extends Fragment {
         if (adapter == null) {
             setupRecyclerView();
         } else {
-            boolean isAdmin = "Admin".equalsIgnoreCase(userRole);
+            boolean isAdmin = RoleConstants.ROLE_ADMIN.equalsIgnoreCase(userRole);
             boolean isActive = currentCycle != null && "ACTIVE".equalsIgnoreCase(currentCycle.getStatus());
             adapter.setCanManage(isAdmin && isActive);
             adapter.notifyDataSetChanged();
@@ -179,7 +179,7 @@ public class HarvestLogFragment extends Fragment {
     private void setupRecyclerView() {
         // canManage is true only if user is Admin AND we'll check cycle status in updateSummaryUI
         // For initial load, we assume based on role and update later
-        boolean canManage = "Admin".equalsIgnoreCase(userRole);
+        boolean canManage = RoleConstants.ROLE_ADMIN.equalsIgnoreCase(userRole);
 
         adapter = new HarvestAdapter(harvestList, canManage, new HarvestAdapter.OnHarvestActionListener() {
             @Override
@@ -359,7 +359,7 @@ public class HarvestLogFragment extends Fragment {
 
         // Update status background color
         int statusColor = getResources().getColor(R.color.primary);
-        boolean isAdmin = "Admin".equalsIgnoreCase(userRole);
+        boolean isAdmin = RoleConstants.ROLE_ADMIN.equalsIgnoreCase(userRole);
 
         if (btnEditFrequency != null) {
             btnEditFrequency.setVisibility(isActive && isAdmin ? View.VISIBLE : View.GONE);
@@ -383,7 +383,7 @@ public class HarvestLogFragment extends Fragment {
         
         // Update adapter management state based on cycle status
         if (adapter != null) {
-            adapter.setCanManage("Admin".equalsIgnoreCase(userRole) && isActive);
+            adapter.setCanManage(RoleConstants.ROLE_ADMIN.equalsIgnoreCase(userRole) && isActive);
             adapter.notifyDataSetChanged();
         }
         
@@ -393,7 +393,7 @@ public class HarvestLogFragment extends Fragment {
     }
 
     private void exportPdf() {
-        if (!"Admin".equalsIgnoreCase(userRole)) {
+        if (!RoleConstants.ROLE_ADMIN.equalsIgnoreCase(userRole)) {
             NotificationHelper.showError(getContext(), "Only administrators can export reports.");
             return;
         }

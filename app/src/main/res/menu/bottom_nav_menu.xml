@@ -9,6 +9,12 @@
         app:showAsAction="ifRoom" />
 
     <item
+        android:id="@+id/reportschoiceFragment"
+        android:icon="@drawable/ic_nav_report"
+        android:title="Reports"
+        app:showAsAction="ifRoom" />
+
+    <item
         android:id="@+id/Notification"
         android:icon="@drawable/nav_notif_icon"
         android:title="Notification"

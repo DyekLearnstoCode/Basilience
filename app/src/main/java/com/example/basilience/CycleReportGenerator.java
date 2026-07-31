@@ -182,6 +182,16 @@ public class CycleReportGenerator {
         return file;
     }
 
+    private void drawLabelValue(
+            Canvas canvas,
+            Paint paint,
+            String label,
+            String value,
+            int x,
+            int y)
+    {
+        canvas.drawText(label + " " + value, x, y, paint);
+    }
     private void drawHeader(Canvas canvas, Paint paint, int x, int y, String userName, String status) {
         // App Title
         paint.setColor(Color.parseColor("#2E7D32")); // Dark Green

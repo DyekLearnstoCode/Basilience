@@ -163,10 +163,6 @@
                 layout="@layout/item_actuator" />
 
             <include
-                android:id="@+id/actWaterEc"
-                layout="@layout/item_actuator" />
-
-            <include
                 android:id="@+id/actFogger"
                 layout="@layout/item_actuator" />
 
@@ -175,14 +171,66 @@
                 layout="@layout/item_actuator" />
 
             <include
-                android:id="@+id/actWaterCooling"
-                layout="@layout/item_actuator" />
-
-            <include
-                android:id="@+id/actWaterHotting"
+                android:id="@+id/actPeltier"
                 layout="@layout/item_actuator" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
+
+    <!-- Actuator Loading Overlay (renders on top of everything) -->
+    <RelativeLayout
+        android:id="@+id/actuatorLoadingOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="12dp"
+            app:cardBackgroundColor="@color/white">
+
+            <LinearLayout
+                android:layout_width="220dp"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="32dp">
+
+                <ProgressBar
+                    android:id="@+id/actuatorProgressBar"
+                    android:layout_width="45dp"
+                    android:layout_height="45dp"
+                    android:indeterminateTint="@color/primary" />
+
+                <TextView
+                    android:id="@+id/tvActuatorLoadingTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:text="Sending..."
+                    android:textColor="@color/primary"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:gravity="center"/>
+
+                <TextView
+                    android:id="@+id/tvActuatorLoadingStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text=""
+                    android:textColor="#757575"
+                    android:textSize="13sp"
+                    android:gravity="center"/>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </RelativeLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

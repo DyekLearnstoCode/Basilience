@@ -110,25 +110,68 @@ public class MainActivity extends AppCompatActivity {
             navController.addOnDestinationChangedListener((controller, destination, arguments) -> {
                 int id = destination.getId();
 
-                if (id == R.id.DeviceManagementFragment) {
-                    bottomNav.setVisibility(View.GONE);
+                boolean isManagementScreen = (id == R.id.DeviceManagementFragment || id == R.id.personnelFragment || id == R.id.personneladdFragment || id == R.id.personneldetailsFragment);
+
+                if (isManagementScreen) {
+                    bottomNav.setVisibility(View.VISIBLE);
+                    if (bottomNav.getMenu().findItem(R.id.DeviceManagementFragment) == null) {
+                        bottomNav.getMenu().clear();
+                        bottomNav.inflateMenu(R.menu.management_bottom_nav_menu);
+                        
+                        // RBAC: Hide Personnel for Farmers
+                        SharedPreferences rolePrefs = getSharedPreferences("basilience_prefs", MODE_PRIVATE);
+                        String userRole = rolePrefs.getString("user_role", RoleConstants.ROLE_ADMIN);
+                        if (RoleConstants.ROLE_FARMER.equalsIgnoreCase(userRole)) {
+                            if (bottomNav.getMenu().findItem(R.id.personnelFragment) != null) {
+                                bottomNav.getMenu().findItem(R.id.personnelFragment).setVisible(false);
+                            }
+                        }
+                    }
                     
-                    // Task 2.i: Management Summary Logic
-                    startManagementSummaryListener();
-                    alertManager.stopListening();
-                    
+                    if (id == R.id.DeviceManagementFragment) {
+                        // Task 2.i: Management Summary Logic
+                        startManagementSummaryListener();
+                        alertManager.stopListening();
+                    } else {
+                        stopManagementSummaryListener();
+                    }
                 } else {
                     stopManagementSummaryListener(); // Ensure summary is hidden when leaving management
 
-                    if (id == R.id.home) {
+                    if (id == R.id.home || id == R.id.Notification || id == R.id.reportschoiceFragment) {
                         bottomNav.setVisibility(View.VISIBLE);
-                        // Task 2.ii: Dashboard Logic
-                        SharedPreferences prefs = getSharedPreferences("basilience_prefs", MODE_PRIVATE);
-                        String deviceId = prefs.getString("selected_device_id", null);
-                        alertManager.setDeviceId(deviceId);
-                        alertManager.startListening();
+                        if (bottomNav.getMenu().findItem(R.id.home) == null) {
+                            bottomNav.getMenu().clear();
+                            bottomNav.inflateMenu(R.menu.bottom_nav_menu);
+                            
+                            // RBAC: Hide Reports for Farmers
+                            SharedPreferences rolePrefs = getSharedPreferences("basilience_prefs", MODE_PRIVATE);
+                            String userRole = rolePrefs.getString("user_role", RoleConstants.ROLE_ADMIN);
+                            if (RoleConstants.ROLE_FARMER.equalsIgnoreCase(userRole)) {
+                                if (bottomNav.getMenu().findItem(R.id.reportschoiceFragment) != null) {
+                                    bottomNav.getMenu().findItem(R.id.reportschoiceFragment).setVisible(false);
+                                }
+                            }
+                        }
+
+                        // RBAC: Navigate away if farmer tries to access reports
+                        if (id == R.id.reportschoiceFragment) {
+                            SharedPreferences prefs = getSharedPreferences("basilience_prefs", MODE_PRIVATE);
+                            String role = prefs.getString("user_role", RoleConstants.ROLE_ADMIN);
+                            if (RoleConstants.ROLE_FARMER.equalsIgnoreCase(role)) {
+                                navController.navigate(R.id.home);
+                            }
+                        }
+
+                        if (id == R.id.home) {
+                            // Task 2.ii: Dashboard Logic
+                            SharedPreferences prefs = getSharedPreferences("basilience_prefs", MODE_PRIVATE);
+                            String deviceId = prefs.getString("selected_device_id", null);
+                            alertManager.setDeviceId(deviceId);
+                            alertManager.startListening();
+                        }
                     } else {
-                        bottomNav.setVisibility(View.VISIBLE);
+                        bottomNav.setVisibility(View.GONE);
                     }
                 }
 
@@ -136,12 +179,32 @@ public class MainActivity extends AppCompatActivity {
                 updateBottomNavSelection(id);
             });
 
+            // Initial RBAC check for Bottom Nav Menu items is handled in listener now
+
             // Selection Listener...
             bottomNav.setOnItemSelectedListener(item -> {
                 int itemId = item.getItemId();
                 if (itemId == R.id.home) {
                     navController.navigate(R.id.home, null, new androidx.navigation.NavOptions.Builder()
                             .setPopUpTo(navController.getGraph().getStartDestinationId(), true)
+                            .setLaunchSingleTop(true)
+                            .build());
+                    return true;
+                } else if (itemId == R.id.reportschoiceFragment) {
+                    navController.navigate(R.id.reportschoiceFragment, null, new androidx.navigation.NavOptions.Builder()
+                            .setPopUpTo(navController.getGraph().getStartDestinationId(), false)
+                            .setLaunchSingleTop(true)
+                            .build());
+                    return true;
+                } else if (itemId == R.id.DeviceManagementFragment) {
+                    navController.navigate(R.id.DeviceManagementFragment, null, new androidx.navigation.NavOptions.Builder()
+                            .setPopUpTo(navController.getGraph().getStartDestinationId(), true)
+                            .setLaunchSingleTop(true)
+                            .build());
+                    return true;
+                } else if (itemId == R.id.personnelFragment) {
+                    navController.navigate(R.id.personnelFragment, null, new androidx.navigation.NavOptions.Builder()
+                            .setPopUpTo(navController.getGraph().getStartDestinationId(), false)
                             .setLaunchSingleTop(true)
                             .build());
                     return true;
@@ -161,9 +224,14 @@ public class MainActivity extends AppCompatActivity {
 
         SharedPreferences prefs = getSharedPreferences("basilience_prefs", MODE_PRIVATE);
         String deviceId = prefs.getString("selected_device_id", null);
-        String path = (deviceId != null) ? "devices/" + deviceId + "/status" : "device/status";
 
-        summaryStatusRef = FirebaseDatabase.getInstance().getReference(path);
+        if (deviceId == null || deviceId.isEmpty()) {
+            return;
+        }
+
+        String path = "devices/" + deviceId + "/status";
+
+        summaryStatusRef = FirebaseDatabase.getInstance("https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app").getReference(path);
         summaryAlertListener = new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot snapshot) {
@@ -210,21 +278,37 @@ public class MainActivity extends AppCompatActivity {
                 id == R.id.hardwareGuideFragment || id == R.id.mobileGuideFragment ||
                 id == R.id.reportschoiceFragment || id == R.id.reportsFragment ||
                 id == R.id.foggingReportsFragment || id == R.id.cycleDetailsFragment ||
-                id == R.id.cycleaddFragment || id == R.id.harvestLogFragment ||
-                id == R.id.personnelFragment || id == R.id.personneladdFragment ||
-                id == R.id.personneldetailsFragment) {
-            bottomNav.getMenu().findItem(R.id.home).setChecked(true);
+                id == R.id.cycleaddFragment || id == R.id.harvestLogFragment) {
+            if (bottomNav.getMenu().findItem(R.id.home) != null) {
+                bottomNav.getMenu().findItem(R.id.home).setChecked(true);
+            }
         } else if (id == R.id.Notification) {
-            bottomNav.getMenu().findItem(R.id.Notification).setChecked(true);
+            if (bottomNav.getMenu().findItem(R.id.Notification) != null) {
+                bottomNav.getMenu().findItem(R.id.Notification).setChecked(true);
+            }
+        } else if (id == R.id.DeviceManagementFragment) {
+            if (bottomNav.getMenu().findItem(R.id.DeviceManagementFragment) != null) {
+                bottomNav.getMenu().findItem(R.id.DeviceManagementFragment).setChecked(true);
+            }
+        } else if (id == R.id.personnelFragment || id == R.id.personneladdFragment ||
+                id == R.id.personneldetailsFragment) {
+            if (bottomNav.getMenu().findItem(R.id.personnelFragment) != null) {
+                bottomNav.getMenu().findItem(R.id.personnelFragment).setChecked(true);
+            }
         }
     }
 
     // The listener is still here if you need it later, but it won't run unless called
     private void startAlertBannerListener() {
+        SharedPreferences prefs = getSharedPreferences("basilience_prefs", MODE_PRIVATE);
+        String deviceId = prefs.getString("selected_device_id", null);
+
+        if (deviceId == null || deviceId.isEmpty()) return;
+
         FirebaseDatabase.getInstance(
                         "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app"
                 )
-                .getReference("device")
+                .getReference("devices").child(deviceId)
                 .addValueEventListener(new ValueEventListener() {
                     @Override
                     public void onDataChange(DataSnapshot snapshot) {
