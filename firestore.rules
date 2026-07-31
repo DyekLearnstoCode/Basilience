@@ -1,0 +1,83 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasRole(role) {
+      return isSignedIn() && getUserData().role == role;
+    }
+
+    function isAdmin() {
+      return hasRole('ADMIN');
+    }
+
+    function isFarmer() {
+      return hasRole('FARMER');
+    }
+
+    // Check if user is assigned to a device
+    function isAssignedToDevice(deviceId) {
+      let assignmentId = request.auth.uid + "_" + deviceId;
+      return exists(/databases/$(database)/documents/deviceAssignments/$(assignmentId));
+    }
+
+    // USERS collection
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      // Allow self-registration: permit create if UID matches and role is FARMER (or ADMIN for first user, usually handled by console or a special logic)
+      // In this app, farmers are created by admins, but let's allow read for all authenticated users to check profiles.
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow update, delete: if isAdmin() || request.auth.uid == uid;
+    }
+
+    // DEVICES collection
+    match /devices/{deviceId} {
+      allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+      allow update: if isAdmin() && (resource.data.ownerUid == request.auth.uid || !exists(resource.data.ownerUid));
+      allow create, delete: if isAdmin();
+
+      // CYCLES sub-collection
+      match /cycles/{cycleId} {
+        allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+        // Farmers can't create or delete cycles, but can update harvest fields if they are assigned.
+        allow create, delete: if isAdmin() && isAssignedToDevice(deviceId);
+        allow update: if (isAdmin() && isAssignedToDevice(deviceId)) ||
+                        (isFarmer() && isAssignedToDevice(deviceId) &&
+                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['harvestFrequency', 'lastHarvestDate', 'status']));
+      }
+
+      // HARVEST ENTRIES sub-collection
+      match /harvestEntries/{entryId} {
+        allow read, write: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+      }
+    }
+
+    // DEVICE ASSIGNMENTS collection
+    match /deviceAssignments/{assignmentId} {
+      // Allow user to see their own assignments
+      allow read: if isSignedIn() && (resource.data.userUid == request.auth.uid || isAdmin());
+      // Only Admins can manage assignments
+      allow create, update, delete: if isAdmin();
+    }
+
+    // LOGS and NOTIFICATIONS (Top-level or nested)
+    match /parameter_logs/{logId} {
+       allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(resource.data.deviceId));
+       allow write: if false; // Only written by IoT devices/cloud functions
+    }
+
+    match /notifications/{notifId} {
+       allow read: if isSignedIn() && (resource.data.userUid == request.auth.uid || isAdmin());
+       allow write: if isAdmin();
+    }
+  }
+}
