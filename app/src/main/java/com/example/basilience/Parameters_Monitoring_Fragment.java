@@ -118,7 +118,21 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             modeSwitch.setOnCheckedChangeListener((buttonView, checked) -> {
                 if (isAdmin) {
                     isManualMode = checked;
-                    modeSwitch.setText(checked ? "Manual Mode" : "Auto Mode");
+                    modeSwitch.setText("Manual Mode");
+                    
+                    // Optimistically turn off actuator switches in the UI when manual mode is disabled
+                    if (!checked) {
+                        updateActuatorUI(actWaterPumpValve, false);
+                        updateActuatorUI(actCanopyFan, false);
+                        updateActuatorUI(actGrowLights, false);
+                        updateActuatorUI(actPhUp, false);
+                        updateActuatorUI(actPhDown, false);
+                        updateActuatorUI(actNutrients, false);
+                        updateActuatorUI(actFogger, false);
+                        updateActuatorUI(actReservoirFan, false);
+                        updateActuatorUI(actPeltier, false);
+                    }
+                    
                     updateActuatorControls();
                     dbHelper.updateManualMode(checked);
                 }
@@ -254,10 +268,10 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                     if (modeSwitch != null) {
                         modeSwitch.setOnCheckedChangeListener(null);
                         modeSwitch.setChecked(isManualMode);
-                        modeSwitch.setText(isManualMode ? "Manual Mode" : "Auto Mode");
+                        modeSwitch.setText("Manual Mode");
                         modeSwitch.setOnCheckedChangeListener((buttonView, checked) -> {
                             isManualMode = checked;
-                            modeSwitch.setText(checked ? "Manual Mode" : "Auto Mode");
+                            modeSwitch.setText("Manual Mode");
                             
                             // Optimistically turn off actuator switches in the UI when manual mode is disabled
                             if (!checked) {
@@ -431,7 +445,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
      * or REJECTED(3), or a 10s timeout. Shows real-time state labels in the popup.
      */
     private void pollActuatorUntilDone(Actuator actuator, View card, boolean targetState, int attempt) {
-        final int MAX_ATTEMPTS = 20; // 20 * 500ms = 10 seconds max
+        final int MAX_ATTEMPTS = 10; // 10 * 500ms = 5 seconds max
         if (!isAdded()) return;
 
         new Handler(Looper.getMainLooper()).postDelayed(() -> {

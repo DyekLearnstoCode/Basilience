@@ -46,6 +46,18 @@ public class SettingsFragment extends Fragment {
         View btnTerms = view.findViewById(R.id.btnTerms);
         btnTerms.setOnClickListener(v -> navController.navigate(R.id.action_settings_to_tosFragment));
 
+        // Wi-Fi Configuration (Admin Only)
+        View wifiConfigContainer = view.findViewById(R.id.wifiConfigContainer);
+        View btnWifiConfig = view.findViewById(R.id.btnWifiConfig);
+        if (getActivity() != null) {
+            android.content.SharedPreferences prefs = getActivity().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
+            String role = prefs.getString("user_role", "FARMER");
+            if ("ADMIN".equalsIgnoreCase(role)) {
+                wifiConfigContainer.setVisibility(View.VISIBLE);
+                btnWifiConfig.setOnClickListener(v -> navController.navigate(R.id.action_settings_to_wifiConfigFragment));
+            }
+        }
+
         // Logout
         View btnLogout = view.findViewById(R.id.btnLogout);
         if (btnLogout != null) {

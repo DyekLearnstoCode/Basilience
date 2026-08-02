@@ -39,6 +39,7 @@ public class DeviceFragment extends Fragment {
     private Database_Helper dbHelper;
     private DeviceAdapter deviceAdapter;
     private List<Device> deviceList;
+    private TextView tvLoadingDevices;
 
     @Nullable
     @Override
@@ -54,6 +55,7 @@ public class DeviceFragment extends Fragment {
 
         layoutLoading = view.findViewById(R.id.layoutLoading);
         tvLoadingTitle = view.findViewById(R.id.tvLoadingTitle);
+        tvLoadingDevices = view.findViewById(R.id.tvLoadingDevices);
 
         // Role-based visibility
         SharedPreferences prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
@@ -120,18 +122,35 @@ public class DeviceFragment extends Fragment {
     }
 
     private void loadDevices() {
+        if (tvLoadingDevices != null) tvLoadingDevices.setVisibility(View.VISIBLE);
+        if (recyclerDevices != null) recyclerDevices.setVisibility(View.GONE);
+
         dbHelper.getMyDevices()
                 .addOnSuccessListener(queryDocumentSnapshots -> {
                     if (!isAdded()) return;
+                    if (tvLoadingDevices != null) tvLoadingDevices.setVisibility(View.GONE);
+                    
                     deviceList.clear();
                     for (QueryDocumentSnapshot doc : queryDocumentSnapshots) {
                         Device device = doc.toObject(Device.class);
                         deviceList.add(device);
                     }
                     deviceAdapter.notifyDataSetChanged();
+                    
+                    if (recyclerDevices != null) {
+                        if (deviceList.isEmpty()) {
+                            tvLoadingDevices.setText("No registered devices");
+                            tvLoadingDevices.setVisibility(View.VISIBLE);
+                        } else {
+                            recyclerDevices.setVisibility(View.VISIBLE);
+                        }
+                    }
                 })
                 .addOnFailureListener(e -> {
                     if (!isAdded()) return;
+                    if (tvLoadingDevices != null) {
+                        tvLoadingDevices.setText("Error loading devices");
+                    }
                     Toast.makeText(getActivity(), "Error loading devices: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                 });
     }

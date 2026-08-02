@@ -38,6 +38,13 @@
             app:exitAnim="@anim/slide_out_left"
             app:popEnterAnim="@anim/slide_in_left"
             app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_settings_to_wifiConfigFragment"
+            app:destination="@id/wifiConfigFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
     </fragment>
 
     <!-- Notification -->
@@ -72,6 +79,13 @@
         <action
             android:id="@+id/action_settings_to_tosFragment"
             app:destination="@id/tosFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_settings_to_wifiConfigFragment"
+            app:destination="@id/wifiConfigFragment"
             app:enterAnim="@anim/slide_in_right"
             app:exitAnim="@anim/slide_out_left"
             app:popEnterAnim="@anim/slide_in_left"
@@ -143,6 +157,13 @@
             app:exitAnim="@anim/slide_out_left"
             app:popEnterAnim="@anim/slide_in_left"
             app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_settings_to_wifiConfigFragment"
+            app:destination="@id/wifiConfigFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
     </fragment>
 
     <fragment
@@ -171,6 +192,13 @@
             app:exitAnim="@anim/slide_out_left"
             app:popEnterAnim="@anim/slide_in_left"
             app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_settings_to_wifiConfigFragment"
+            app:destination="@id/wifiConfigFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
     </fragment>
     <fragment
         android:id="@+id/foggingReportsFragment"
@@ -192,6 +220,13 @@
         <action
             android:id="@+id/action_reportschoiceFragment_to_foggingReportsFragment"
             app:destination="@id/foggingReportsFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_settings_to_wifiConfigFragment"
+            app:destination="@id/wifiConfigFragment"
             app:enterAnim="@anim/slide_in_right"
             app:exitAnim="@anim/slide_out_left"
             app:popEnterAnim="@anim/slide_in_left"
@@ -234,9 +269,16 @@
         tools:layout="@layout/settings_terms" />
 
     <fragment
+        android:id="@+id/wifiConfigFragment"
+        android:name="com.example.basilience.WifiConfigFragment"
+        android:label="Wi-Fi Configuration"
+        tools:layout="@layout/settings_wifi_config" />
+
+    <fragment
         android:id="@+id/DeviceManagementFragment"
         android:name="com.example.basilience.DeviceFragment"
         android:label="devicemanagement"
         tools:layout="@layout/device_main" />
 
 </navigation>
+

@@ -22,6 +22,7 @@ public class Personnel_Main_Fragment extends Fragment {
     private RecyclerView recyclerView;
     private final List<Personnel> list = new ArrayList<>();
     private Personnel_Adapter adapter;
+    private android.widget.TextView tvLoadingPersonnel;
 
     private Database_Helper helper;
 
@@ -41,6 +42,8 @@ public class Personnel_Main_Fragment extends Fragment {
 
         recyclerView = view.findViewById(R.id.recyclerPersonnel);
         recyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
+        
+        tvLoadingPersonnel = view.findViewById(R.id.tvLoadingPersonnel);
 
         Button btnAdd = view.findViewById(R.id.btnAddPersonnel);
 
@@ -86,8 +89,13 @@ public class Personnel_Main_Fragment extends Fragment {
     }
 
     private void loadFarmersFromFirestore() {
+        if (tvLoadingPersonnel != null) tvLoadingPersonnel.setVisibility(View.VISIBLE);
+        if (recyclerView != null) recyclerView.setVisibility(View.GONE);
+
         helper.getMyPersonnelByRole(RoleConstants.ROLE_FARMER)
                 .addOnSuccessListener(qs -> {
+                    if (!isAdded()) return;
+                    if (tvLoadingPersonnel != null) tvLoadingPersonnel.setVisibility(View.GONE);
                     list.clear();
 
                     for (DocumentSnapshot doc : qs.getDocuments()) {
@@ -107,10 +115,23 @@ public class Personnel_Main_Fragment extends Fragment {
                     }
 
                     adapter.notifyDataSetChanged();
+                    
+                    if (recyclerView != null) {
+                        if (list.isEmpty()) {
+                            tvLoadingPersonnel.setText("No personnel found");
+                            tvLoadingPersonnel.setVisibility(View.VISIBLE);
+                        } else {
+                            recyclerView.setVisibility(View.VISIBLE);
+                        }
+                    }
                 })
-                .addOnFailureListener(e ->
-                        NotificationHelper.showError(requireContext(),
-                                "Failed to load farmers: " + e.getMessage())
-                );
+                .addOnFailureListener(e -> {
+                    if (!isAdded()) return;
+                    if (tvLoadingPersonnel != null) {
+                        tvLoadingPersonnel.setText("Failed to load personnel");
+                    }
+                    NotificationHelper.showError(requireContext(),
+                            "Failed to load farmers: " + e.getMessage());
+                });
     }
 }
