@@ -39,9 +39,11 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Wi-Fi Configuration"
-                    android:textSize="25sp"
-                    android:textStyle="bold"
-                    android:textColor="#000000"
+                    android:textSize="28sp"
+                android:fontFamily="sans-serif-black"
+                android:letterSpacing="-0.02"
+                    
+                    android:textColor="#212121"
                     android:gravity="center"
                     android:layout_marginBottom="16dp"/>
 
@@ -64,9 +66,9 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Current ESP32 Status"
-                        android:textStyle="bold"
+                        
                         android:textSize="18sp"
-                        android:textColor="#000000"
+                        android:textColor="#212121"
                         android:layout_marginBottom="12dp"/>
                     
                     <LinearLayout
@@ -84,7 +86,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Checking..."
-                            android:textStyle="bold"
+                            
                             android:textColor="#FF9800"/>
                     </LinearLayout>
                 </LinearLayout>
@@ -95,9 +97,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="New Wi-Fi Credentials"
-                android:textStyle="bold"
+                
                 android:textSize="18sp"
-                android:textColor="#000000"
+                android:textColor="#212121"
                 android:layout_marginBottom="12dp"/>
 
             <com.google.android.material.textfield.TextInputLayout
@@ -156,4 +158,57 @@
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
+
+    <!-- Full-screen semi-transparent loading overlay -->
+    <RelativeLayout
+        android:id="@+id/wifiLoadingOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="10dp"
+        android:visibility="gone">
+        
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="12dp"
+            app:cardBackgroundColor="@color/white">
+
+            <LinearLayout
+                android:layout_width="220dp"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="32dp">
+
+                <ProgressBar
+                    android:layout_width="45dp"
+                    android:layout_height="45dp"
+                    android:indeterminateTint="@color/primary"/>
+
+                <TextView
+                    android:id="@+id/tvWifiLoadingTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="Sending data..."
+                    android:textSize="18sp"
+                    
+                    android:textColor="#212121"/>
+
+                <TextView
+                    android:id="@+id/tvWifiLoadingStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Waiting for ESP32 to reconnect..."
+                    android:textColor="#666666"
+                    android:gravity="center"/>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </RelativeLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

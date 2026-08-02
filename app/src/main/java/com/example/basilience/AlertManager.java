@@ -2,178 +2,230 @@ package com.example.basilience;
 
 import android.util.Log;
 
-import com.google.firebase.firestore.DocumentSnapshot;
-import com.google.firebase.firestore.ListenerRegistration;
-import com.example.basilience.NotificationHelper;
+import androidx.annotation.NonNull;
+
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Listens to the RTDB /alerts and /status nodes for a selected device.
+ * Uses edge detection (false → true) to avoid duplicate notifications.
+ * Writes Firestore notification documents and shows in-app popups.
+ */
 public class AlertManager {
 
+    private static final String TAG = "AlertManager";
+
     private final Database_Helper dbHelper;
-
-    private final Map<String, Boolean> previousStates =
-            new HashMap<>();
-
     private final MainActivity activity;
+
+    // Tracks the last known state of each alert flag to detect edges
+    private final Map<String, Boolean> previousStates = new HashMap<>();
+
+    private DatabaseReference alertsRef;
+    private DatabaseReference statusRef;
+    private ValueEventListener alertsListener;
+    private ValueEventListener statusListener;
+
+    private String deviceId;
 
     public AlertManager(MainActivity activity) {
         this.activity = activity;
-        dbHelper = new Database_Helper();
+        this.dbHelper = new Database_Helper();
     }
-
-    private ListenerRegistration notificationsListener;
-    private String deviceId;
 
     public void setDeviceId(String deviceId) {
         this.deviceId = deviceId;
     }
 
+    // -------------------------------------------------------
+    // Lifecycle
+    // -------------------------------------------------------
+
     public void startListening() {
         if (deviceId == null || deviceId.isEmpty()) {
-            Log.w("AlertManager", "startListening: No deviceId provided, skipping listener.");
+            Log.w(TAG, "startListening: No deviceId provided, skipping.");
             return;
         }
 
-        if (notificationsListener != null) return; // Already listening
+        if (alertsListener != null) return; // Already listening
 
         dbHelper.setSelectedDeviceId(deviceId);
 
-        notificationsListener = dbHelper.listenToNotifications((snapshots, e) -> {
-            if (e != null) {
-                Log.e("AlertManager", "Firestore Listen failed: " + e.getMessage());
-                return;
+        FirebaseDatabase rtdb = FirebaseDatabase.getInstance(
+                "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app");
+
+        // --- Alerts node ---
+        alertsRef = rtdb.getReference("devices").child(deviceId).child("alerts");
+        alertsListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                checkFlag(snapshot, "lowWater");
+                checkFlag(snapshot, "ecLow");
+                checkFlag(snapshot, "phOutOfRange");
+                checkFlag(snapshot, "waterTempOutOfRange");
+                checkFlag(snapshot, "highTemperature");
+                checkFlag(snapshot, "sensorFault");
             }
 
-            if (snapshots != null) {
-                for (DocumentSnapshot doc : snapshots.getDocuments()) {
-                    // Check if notification is already processed via metadata/SharedPreferences if needed
-                    // For now, simple implementation of creating notification from new documents
-                    String message = doc.getString("message");
-                    String type = doc.getString("type");
-                    Long timestamp = doc.getLong("timestamp");
-
-                    if (timestamp != null && (System.currentTimeMillis() - timestamp < 10000)) { // Only show recent ones (last 10s)
-                         activity.runOnUiThread(() ->
-                            NotificationHelper.showNotification(
-                                    activity,
-                                    "System Alert",
-                                    message
-                            )
-                        );
-                    }
-                }
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "Alerts listener cancelled: " + error.getMessage());
             }
-        });
+        };
+        alertsRef.addValueEventListener(alertsListener);
+
+        // --- Status node (for safetyLock and reservoirLocked) ---
+        statusRef = rtdb.getReference("devices").child(deviceId).child("status");
+        statusListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                checkFlag(snapshot, "safetyLock");
+                checkFlag(snapshot, "reservoirLocked");
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "Status listener cancelled: " + error.getMessage());
+            }
+        };
+        statusRef.addValueEventListener(statusListener);
     }
 
     public void stopListening() {
-        if (notificationsListener != null) {
-            notificationsListener.remove();
-            notificationsListener = null;
+        if (alertsRef != null && alertsListener != null) {
+            alertsRef.removeEventListener(alertsListener);
+            alertsListener = null;
         }
+        if (statusRef != null && statusListener != null) {
+            statusRef.removeEventListener(statusListener);
+            statusListener = null;
+        }
+        previousStates.clear();
     }
 
-    private void createNotification(String alertName) {
+    // -------------------------------------------------------
+    // Edge Detection
+    // -------------------------------------------------------
 
+    /**
+     * Checks if a boolean flag has transitioned from false → true.
+     * Only fires a notification on that rising edge, not while it stays true.
+     */
+    private void checkFlag(DataSnapshot snapshot, String key) {
+        Boolean current = snapshot.child(key).getValue(Boolean.class);
+        if (current == null) current = false;
+
+        Boolean previous = previousStates.getOrDefault(key, false);
+
+        if (current && !previous) {
+            // Rising edge detected — fire notification
+            createNotification(key);
+        }
+
+        previousStates.put(key, current);
+    }
+
+    // -------------------------------------------------------
+    // Notification Creation
+    // -------------------------------------------------------
+
+    private void createNotification(String alertKey) {
         String firestoreMessage;
-        String popupMessage;
-
-        switch (alertName) {
-
-            case "phOutOfRange":
-
-                firestoreMessage =
-                        "pH level is outside the safe range.";
-
-                popupMessage =
-                        "⚠ pH OUT OF RANGE\n\n" +
-                                "Current Action:\n" +
-                                "Correcting pH using dosing pumps.";
-
-                break;
-
-            case "ecLow":
-
-                firestoreMessage =
-                        "EC level is below the safe range.";
-
-                popupMessage =
-                        "⚠ EC LOW\n\n" +
-                                "Current Action:\n" +
-                                "Dosing nutrient solution.";
-
-                break;
-
-            case "highTemperature":
-
-                firestoreMessage =
-                        "Temperature is above safe limits.";
-
-                popupMessage =
-                        "⚠ HIGH TEMPERATURE\n\n" +
-                                "Current Action:\n" +
-                                "Activating cooling fans.";
-
-                break;
-
-            case "lowWater":
-
-                firestoreMessage =
-                        "Water level is critically low.";
-
-                popupMessage =
-                        "⚠ LOW WATER LEVEL\n\n" +
-                                "Current Action:\n" +
-                                "Refilling reservoir.";
-
-                break;
-
-            default:
-
-                firestoreMessage =
-                        "System alert detected.";
-
-                popupMessage =
-                        "System alert detected.";
-        }
-
         String popupTitle;
+        String popupBody;
+        String notificationType;
 
-        switch (alertName) {
+        switch (alertKey) {
 
             case "phOutOfRange":
-                popupTitle = "CRITICAL pH ALERT";
+                firestoreMessage = "pH level is outside the safe range.";
+                popupTitle       = "CRITICAL pH ALERT";
+                popupBody        = "⚠ pH OUT OF RANGE\n\nCurrent Action:\nCorrecting pH using dosing pumps.";
+                notificationType = NotificationAdapter.NotificationItem.TYPE_PARAMETER;
                 break;
 
             case "ecLow":
-                popupTitle = "EC WARNING";
+                firestoreMessage = "EC level is below the safe range.";
+                popupTitle       = "EC WARNING";
+                popupBody        = "⚠ EC LOW\n\nCurrent Action:\nDosing nutrient solution.";
+                notificationType = NotificationAdapter.NotificationItem.TYPE_PARAMETER;
                 break;
 
             case "highTemperature":
-                popupTitle = "TEMPERATURE WARNING";
+                firestoreMessage = "Air temperature is above safe limits.";
+                popupTitle       = "TEMPERATURE WARNING";
+                popupBody        = "⚠ HIGH TEMPERATURE\n\nCurrent Action:\nActivating cooling fans.";
+                notificationType = NotificationAdapter.NotificationItem.TYPE_PARAMETER;
+                break;
+
+            case "waterTempOutOfRange":
+                firestoreMessage = "Water temperature is outside the safe range.";
+                popupTitle       = "WATER TEMP WARNING";
+                popupBody        = "⚠ WATER TEMP OUT OF RANGE\n\nCurrent Action:\nActivating reservoir cooling.";
+                notificationType = NotificationAdapter.NotificationItem.TYPE_PARAMETER;
                 break;
 
             case "lowWater":
-                popupTitle = "CRITICAL WATER LEVEL ALERT";
+                firestoreMessage = "Water level is critically low.";
+                popupTitle       = "CRITICAL WATER LEVEL ALERT";
+                popupBody        = "⚠ LOW WATER LEVEL\n\nCurrent Action:\nRefilling reservoir.";
+                notificationType = NotificationAdapter.NotificationItem.TYPE_PARAMETER;
+                break;
+
+            case "sensorFault":
+                firestoreMessage = "One or more sensors are not responding.";
+                popupTitle       = "SENSOR FAULT";
+                popupBody        = "⚠ SENSOR FAULT DETECTED\n\nAutomation has been paused.\nCheck sensor connections.";
+                notificationType = NotificationAdapter.NotificationItem.TYPE_HARDWARE;
+                break;
+
+            case "safetyLock":
+                firestoreMessage = "Safety lock has been activated. All actuators stopped.";
+                popupTitle       = "SAFETY LOCK ACTIVE";
+                popupBody        = "🔒 SAFETY LOCK ACTIVATED\n\nAll actuators have been stopped.\nRestart the device to reset.";
+                notificationType = NotificationAdapter.NotificationItem.TYPE_HARDWARE;
+                break;
+
+            case "reservoirLocked":
+                firestoreMessage = "Reservoir is locked due to an active dosing operation or safety event.";
+                popupTitle       = "RESERVOIR LOCKED";
+                popupBody        = "🔒 RESERVOIR LOCKED\n\nAn automated dosing or safety event is active.";
+                notificationType = NotificationAdapter.NotificationItem.TYPE_HARDWARE;
                 break;
 
             default:
-                popupTitle = "System Alert";
+                firestoreMessage = "A system alert was detected.";
+                popupTitle       = "System Alert";
+                popupBody        = "A system alert was detected. Check device status.";
+                notificationType = NotificationAdapter.NotificationItem.TYPE_INFO;
+                break;
         }
 
-        activity.runOnUiThread(() ->
-                NotificationHelper.showNotification(
-                        activity,
-                        popupTitle,
-                        popupMessage
-                )
-        );
+        // Write persistent notification to Firestore (Handled by Cloud Function to prevent duplicates)
+        // dbHelper.addNotification(firestoreMessage, notificationType);
 
-        dbHelper.addNotification(
-                firestoreMessage,
-                "parameter"
-        );
+        // Show in-app popup (on UI thread)
+        final String finalTitle = popupTitle;
+        final String finalBody = popupBody;
+        final String finalType = notificationType;
+        
+        activity.runOnUiThread(() -> {
+            if (NotificationAdapter.NotificationItem.TYPE_PARAMETER.equals(finalType)) {
+                // Parameter alerts are typically warnings (orange) as requested
+                NotificationHelper.showWarning(activity, finalTitle, finalBody);
+            } else if (NotificationAdapter.NotificationItem.TYPE_HARDWARE.equals(finalType)) {
+                // Hardware issues are also shown as warnings/alerts
+                NotificationHelper.showWarning(activity, finalTitle, finalBody);
+            } else {
+                NotificationHelper.showNotification(activity, finalTitle, finalBody);
+            }
+        });
     }
 }

@@ -4,13 +4,13 @@
 
     <item
         android:id="@+id/DeviceManagementFragment"
-        android:icon="@drawable/nav_home_icon"
+        android:icon="@drawable/ic_device"
         android:title="Devices"
         app:showAsAction="ifRoom" />
 
     <item
         android:id="@+id/personnelFragment"
-        android:icon="@drawable/personnel_icon"
+        android:icon="@drawable/person_24px"
         android:title="Personnel"
         app:showAsAction="ifRoom" />
 

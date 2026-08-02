@@ -15,6 +15,8 @@ import android.text.TextPaint;
 
 import com.google.firebase.Timestamp;
 
+import com.example.basilience.models.FoggingEvent;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -133,9 +135,10 @@ public class CycleReportGenerator {
                 
                 // Table Header
                 paint.setTextSize(12f);
-                paint.setColor(Color.LTGRAY);
+                paint.setColor(Color.parseColor("#2E7D32")); // Dark green header
                 canvas.drawRect(x, y - 15, PAGE_WIDTH - MARGIN, y + 10, paint);
-                paint.setColor(Color.BLACK);
+                paint.setColor(Color.WHITE);
+                paint.setFakeBoldText(true);
                 canvas.drawText("Date", x + 5, y, paint);
                 canvas.drawText("Weight (g)", x + 120, y, paint);
                 canvas.drawText("Source", x + 220, y, paint);
@@ -144,22 +147,37 @@ public class CycleReportGenerator {
                 
                 paint.setFakeBoldText(false);
                 int count = 0;
+                int startY = y - 25 - 15;
                 while (count < ROWS_PER_PAGE && currentHarvestIndex < harvestHistory.size()) {
                     Harvest h = harvestHistory.get(currentHarvestIndex);
+                    
+                    // Alternating row colors
+                    if (count % 2 == 0) {
+                        paint.setColor(Color.parseColor("#F5F5F5"));
+                        canvas.drawRect(x, y - 15, PAGE_WIDTH - MARGIN, y + 10, paint);
+                    }
+                    
+                    paint.setColor(Color.BLACK);
                     canvas.drawText(DateUtils.formatDate(h.getHarvestDate()), x + 5, y, paint);
                     canvas.drawText(String.format(Locale.getDefault(), "%.1f", h.getWeight()), x + 120, y, paint);
                     canvas.drawText(h.getSource(), x + 220, y, paint);
                     canvas.drawText(h.getRecordedByName(), x + 320, y, paint);
                     
-                    y += 25;
+                    // Draw bottom border for the row
                     paint.setColor(Color.LTGRAY);
                     paint.setStrokeWidth(0.5f);
-                    canvas.drawLine(x, y - 15, PAGE_WIDTH - MARGIN, y - 15, paint);
-                    paint.setColor(Color.BLACK);
+                    canvas.drawLine(x, y + 10, PAGE_WIDTH - MARGIN, y + 10, paint);
                     
+                    y += 25;
                     currentHarvestIndex++;
                     count++;
                 }
+                
+                // Draw outer border for the table
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setColor(Color.LTGRAY);
+                canvas.drawRect(x, startY, PAGE_WIDTH - MARGIN, y - 15, paint);
+                paint.setStyle(Paint.Style.FILL);
                 
                 drawFooter(canvas, paint, pageNumber - 1);
                 document.finishPage(page);
@@ -331,5 +349,129 @@ public class CycleReportGenerator {
             return "Status: Temperature is stable and ideal for cultivation.";
         }
         return "The system is maintaining parameters according to the pre-defined environmental profile.";
+    }
+
+    public File generateFoggingReportPdf(String deviceId, String filter, List<FoggingEvent> events, String userName) throws IOException {
+        PdfDocument document = new PdfDocument();
+        int pageNumber = 1;
+        int currentEventIndex = 0;
+        
+        List<FoggingEvent> chronoEvents = new java.util.ArrayList<>(events);
+        java.util.Collections.reverse(chronoEvents);
+
+        List<String[]> rows = new java.util.ArrayList<>();
+        long totalDurationMs = 0;
+        long lastOnTime = -1;
+
+        for (FoggingEvent e : chronoEvents) {
+            if ("ON".equals(e.event)) {
+                lastOnTime = e.timestamp;
+            } else if ("OFF".equals(e.event)) {
+                if (lastOnTime != -1 && e.timestamp > lastOnTime) {
+                    long duration = e.timestamp - lastOnTime;
+                    totalDurationMs += duration;
+                    long durMins = duration / (1000 * 60);
+                    
+                    rows.add(new String[]{
+                        DateUtils.formatDateTime(new Timestamp(e.timestamp / 1000, 0)),
+                        durMins + " mins",
+                        e.isManual ? "Manual" : "Automatic"
+                    });
+                    lastOnTime = -1;
+                }
+            }
+        }
+        
+        // Reverse rows so newest is first
+        java.util.Collections.reverse(rows);
+        long totalMins = totalDurationMs / (1000 * 60);
+
+        if (rows.isEmpty()) {
+            rows.add(new String[]{"No fogging events found", "-", "-"});
+        }
+
+        while (currentEventIndex < rows.size()) {
+            PdfDocument.PageInfo pageInfo = new PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, pageNumber++).create();
+            PdfDocument.Page page = document.startPage(pageInfo);
+            Canvas canvas = page.getCanvas();
+            Paint paint = new Paint();
+
+            int x = MARGIN;
+            int y = 60;
+
+            drawHeader(canvas, paint, x, y, userName, "FOGGING LOG");
+            y += 85;
+
+            paint.setTextSize(18f);
+            paint.setFakeBoldText(true);
+            canvas.drawText("Fogging Duration Analysis (" + filter + ")", x, y, paint);
+            y += 35;
+
+            paint.setTextSize(12f);
+            paint.setFakeBoldText(false);
+            drawLabelValue(canvas, paint, "Device ID:", deviceId, x, y);
+            y += 20;
+            drawLabelValue(canvas, paint, "Total Fogging Events:", String.valueOf(rows.size()), x, y);
+            y += 20;
+            drawLabelValue(canvas, paint, "Total Duration:", totalMins + " mins", x, y);
+            y += 35;
+
+            // Table Header
+            paint.setTextSize(12f);
+            paint.setColor(Color.parseColor("#2E7D32")); 
+            canvas.drawRect(x, y - 15, PAGE_WIDTH - MARGIN, y + 10, paint);
+            paint.setColor(Color.WHITE);
+            paint.setFakeBoldText(true);
+            canvas.drawText("Date & Time", x + 5, y, paint);
+            canvas.drawText("Duration", x + 180, y, paint);
+            canvas.drawText("Trigger Mode", x + 320, y, paint);
+            y += 25;
+            
+            paint.setFakeBoldText(false);
+            int count = 0;
+            int startY = y - 25 - 15;
+
+            while (count < ROWS_PER_PAGE && currentEventIndex < rows.size()) {
+                String[] r = rows.get(currentEventIndex);
+                
+                if (count % 2 == 0) {
+                    paint.setColor(Color.parseColor("#F5F5F5"));
+                    canvas.drawRect(x, y - 15, PAGE_WIDTH - MARGIN, y + 10, paint);
+                }
+                
+                paint.setColor(Color.BLACK);
+                canvas.drawText(r[0], x + 5, y, paint);
+                canvas.drawText(r[1], x + 180, y, paint);
+                canvas.drawText(r[2], x + 320, y, paint);
+                
+                paint.setColor(Color.LTGRAY);
+                paint.setStrokeWidth(0.5f);
+                canvas.drawLine(x, y + 10, PAGE_WIDTH - MARGIN, y + 10, paint);
+                
+                y += 25;
+                currentEventIndex++;
+                count++;
+            }
+            
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setColor(Color.LTGRAY);
+            canvas.drawRect(x, startY, PAGE_WIDTH - MARGIN, y - 15, paint);
+            paint.setStyle(Paint.Style.FILL);
+
+            drawFooter(canvas, paint, pageNumber - 1);
+            document.finishPage(page);
+        }
+
+        File dir = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
+        if (dir != null && !dir.exists()) dir.mkdirs();
+
+        String fileName = "FoggingReport_" + System.currentTimeMillis() + ".pdf";
+        File file = new File(dir, fileName);
+        FileOutputStream fos = new FileOutputStream(file);
+        document.writeTo(fos);
+        document.close();
+        fos.close();
+
+        return file;
     }
 }

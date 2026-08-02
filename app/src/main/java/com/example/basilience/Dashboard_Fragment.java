@@ -44,7 +44,11 @@ public class Dashboard_Fragment extends Fragment {
         View btnBack = view.findViewById(R.id.btnBack);
         if (btnBack != null) {
             btnBack.setVisibility(View.VISIBLE);
-            btnBack.setOnClickListener(v -> navController.popBackStack());
+            btnBack.setOnClickListener(v -> {
+                navController.navigate(R.id.DeviceManagementFragment, null, new androidx.navigation.NavOptions.Builder()
+                        .setPopUpTo(R.id.home, true)
+                        .build());
+            });
         }
 
         // Hardware back button: also go back to Device Manager, don't exit app
@@ -53,7 +57,9 @@ public class Dashboard_Fragment extends Fragment {
                 new OnBackPressedCallback(true) {
                     @Override
                     public void handleOnBackPressed() {
-                        navController.popBackStack();
+                        navController.navigate(R.id.DeviceManagementFragment, null, new androidx.navigation.NavOptions.Builder()
+                                .setPopUpTo(R.id.home, true)
+                                .build());
                     }
                 }
         );

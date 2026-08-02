@@ -41,9 +41,11 @@
                 android:layout_marginBottom="24dp"
                 android:gravity="center"
                 android:text="About Basilience"
-                android:textColor="#000000"
-                android:textSize="25sp"
-                android:textStyle="bold" />
+                android:textColor="#212121"
+                android:textSize="28sp"
+                android:fontFamily="sans-serif-black"
+                android:letterSpacing="-0.02"
+                 />
 
             <TextView
                 android:layout_width="match_parent"

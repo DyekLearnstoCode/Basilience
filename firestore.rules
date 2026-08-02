@@ -48,15 +48,29 @@ service cloud.firestore {
       // CYCLES sub-collection
       match /cycles/{cycleId} {
         allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
-        // Farmers can't create or delete cycles, but can update harvest fields if they are assigned.
+        // Farmers can't create or delete cycles
         allow create, delete: if isAdmin() && isAssignedToDevice(deviceId);
+        // Farmers can update cycle totals when logging a harvest
         allow update: if (isAdmin() && isAssignedToDevice(deviceId)) ||
                         (isFarmer() && isAssignedToDevice(deviceId) &&
-                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['harvestFrequency', 'lastHarvestDate', 'status']));
+                         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                           'harvestFrequency', 'lastHarvestDate', 'status',
+                           'totalHarvestWeight', 'totalHarvestCount', 'nextHarvestDate'
+                         ]));
+
+        // HARVEST LOGS sub-collection
+        match /harvestLogs/{harvestId} {
+          allow read, write: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+        }
       }
 
-      // HARVEST ENTRIES sub-collection
-      match /harvestEntries/{entryId} {
+      // PARAMETER LOGS sub-collection
+      match /parameterLogs/{logId} {
+        allow read, write: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+      }
+
+      // FOGGING LOGS sub-collection
+      match /foggingLogs/{logId} {
         allow read, write: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
       }
     }

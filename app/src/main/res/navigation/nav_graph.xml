@@ -90,6 +90,13 @@
             app:exitAnim="@anim/slide_out_left"
             app:popEnterAnim="@anim/slide_in_left"
             app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_settings_to_devOptionsFragment"
+            app:destination="@id/devOptionsFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
     </fragment>
 
     <!-- Other fragments (Parameters, User Guide, Reports, Cycle, Personnel) -->
@@ -265,7 +272,7 @@
     <fragment
         android:id="@+id/tosFragment"
         android:name="com.example.basilience.ToSFragment"
-        android:label="Terms and Agreements"
+        android:label="Terms of Service"
         tools:layout="@layout/settings_terms" />
 
     <fragment
@@ -280,5 +287,10 @@
         android:label="devicemanagement"
         tools:layout="@layout/device_main" />
 
-</navigation>
+    <fragment
+        android:id="@+id/devOptionsFragment"
+        android:name="com.example.basilience.DevOptionsFragment"
+        android:label="Developer Options"
+        tools:layout="@layout/fragment_dev_options" />
 
+</navigation>

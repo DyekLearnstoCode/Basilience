@@ -44,9 +44,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/dashboard"
-                android:textSize="25sp"
-                android:textStyle="bold"
-                android:textColor="#000000"
+                android:textSize="28sp"
+                android:fontFamily="sans-serif-black"
+                android:letterSpacing="-0.02"
+                
+                android:textColor="#212121"
                 android:gravity="center"
                 android:layout_marginBottom="16dp" />
 
@@ -78,8 +80,8 @@
                     android:layout_weight="1"
                     android:text="@string/parameters_monitoring"
                     android:textSize="17sp"
-                    android:textStyle="bold"
-                    android:textColor="#000000"
+                    
+                    android:textColor="#212121"
                     android:layout_marginStart="12dp" />
 
                 <!-- CIRCLE BUTTON -->
@@ -126,8 +128,8 @@
                     android:layout_weight="1"
                     android:text="@string/feature2"
                     android:textSize="17sp"
-                    android:textStyle="bold"
-                    android:textColor="#000000"
+                    
+                    android:textColor="#212121"
                     android:layout_marginStart="12dp" />
 
                 <!-- CIRCLE BUTTON -->
@@ -174,8 +176,8 @@
                     android:layout_weight="1"
                     android:text="@string/feature4"
                     android:textSize="17sp"
-                    android:textStyle="bold"
-                    android:textColor="#000000"
+                    
+                    android:textColor="#212121"
                     android:layout_marginStart="12dp" />
 
                 <!-- CIRCLE BUTTON -->

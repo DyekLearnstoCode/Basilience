@@ -47,6 +47,7 @@ public class SystemReportsFragment extends Fragment {
     private MaterialButton btnToday, btnWeek, btnMonth, btnYear;
     private ImageButton btnShare;
     private String currentSelectedFilter = "Today";
+    private TextView tvInterpretation;
     private String selectedDeviceId;
     private String userRole = RoleConstants.ROLE_FARMER;
 
@@ -71,6 +72,11 @@ public class SystemReportsFragment extends Fragment {
         if (selectedDeviceId == null || selectedDeviceId.isEmpty()) {
             Toast.makeText(getContext(), "Please select a device first", Toast.LENGTH_SHORT).show();
             // Optional: navigate back if no device is selected
+        } else {
+            // Wire the deviceId into dbHelper so Firestore queries resolve correctly.
+            // Without this, getParameterLogs() always throws "No active device selected"
+            // because Database_Helper tracks its own internal selectedDeviceId field.
+            dbHelper.setSelectedDeviceId(selectedDeviceId);
         }
 
         spinnerParameter = view.findViewById(R.id.spinnerParameter);
@@ -78,6 +84,9 @@ public class SystemReportsFragment extends Fragment {
         tvAverage = view.findViewById(R.id.tvAverage);
         tvHigh = view.findViewById(R.id.tvHigh);
         tvLow = view.findViewById(R.id.tvLow);
+        
+        TextView tvInterpretation = view.findViewById(R.id.tvInterpretation);
+        this.tvInterpretation = tvInterpretation;
 
         btnToday = view.findViewById(R.id.btnToday);
         btnWeek = view.findViewById(R.id.btnWeek);
@@ -141,18 +150,15 @@ public class SystemReportsFragment extends Fragment {
     }
 
     private void showExportOptions() {
-    String[] options = {"Share CSV", "Save as PDF"};
-    androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(requireContext());
-    builder.setTitle("Export Report");
-    builder.setItems(options, (dialog, which) -> {
-        if (which == 0) {
-            exportDataToCSV();
-        } else {
-            exportToPdf();
-        }
-    });
-    builder.show();
-}
+        String[] options = {"Share CSV", "Save as PDF"};
+        NotificationHelper.showSelectionDialog(requireContext(), "Export Report", options, index -> {
+            if (index == 0) {
+                exportDataToCSV();
+            } else {
+                exportToPdf();
+            }
+        });
+    }
 
 private void exportToPdf() {
     if (getContext() == null) return;
@@ -210,10 +216,10 @@ private void exportToPdf() {
     private void updateFilterSelection(String selectedFilter) {
         currentSelectedFilter = selectedFilter;
 
-        btnToday.setBackgroundColor(Color.TRANSPARENT);
-        btnWeek.setBackgroundColor(Color.TRANSPARENT);
-        btnMonth.setBackgroundColor(Color.TRANSPARENT);
-        btnYear.setBackgroundColor(Color.TRANSPARENT);
+        btnToday.setBackgroundResource(R.drawable.bg_chip);
+        btnWeek.setBackgroundResource(R.drawable.bg_chip);
+        btnMonth.setBackgroundResource(R.drawable.bg_chip);
+        btnYear.setBackgroundResource(R.drawable.bg_chip);
 
         btnToday.setTextColor(Color.BLACK);
         btnWeek.setTextColor(Color.BLACK);
@@ -228,7 +234,7 @@ private void exportToPdf() {
             default: activeBtn = btnToday; break;
         }
 
-        activeBtn.setBackgroundColor(getResources().getColor(R.color.primary));
+        activeBtn.setBackgroundResource(R.drawable.bg_chip_selected);
         activeBtn.setTextColor(Color.WHITE);
 
         if (spinnerParameter.getSelectedItem() != null) {
@@ -291,14 +297,22 @@ private void exportToPdf() {
                     lineChart.setData(new LineData(dataSet));
                     lineChart.getDescription().setEnabled(false);
                     lineChart.getLegend().setEnabled(true);
+                    
+                    com.github.mikephil.charting.components.XAxis xAxis = lineChart.getXAxis();
+                    xAxis.setPosition(com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM);
+                    
                     lineChart.invalidate();
 
                     float avg = sum / entries.size();
                     String unit = getUnitForParameter(parameter);
 
-                    tvAverage.setText(String.format("%.1f%s", avg, unit));
-                    tvHigh.setText(String.format("%.1f%s", high, unit));
-                    tvLow.setText(String.format("%.1f%s", low, unit));
+                    tvAverage.setText(String.format(Locale.getDefault(), "%.1f%s", avg, unit));
+                    tvHigh.setText(String.format(Locale.getDefault(), "%.1f%s", high, unit));
+                    tvLow.setText(String.format(Locale.getDefault(), "%.1f%s", low, unit));
+                    
+                    if (tvInterpretation != null) {
+                        tvInterpretation.setText(getInterpretation(parameter, avg));
+                    }
                 })
                 .addOnFailureListener(e -> {
                     Log.e("CHART_FETCH_ERROR", "Failed to fetch logs", e);
@@ -310,6 +324,25 @@ private void exportToPdf() {
      * 🔥 BAGONG FEATURE: Kinukuha ang logs mula sa database, ginagawang CSV string,
      * at isinesend gamit ang Android Share Sheet.
      */
+    private String getInterpretation(String parameter, float avg) {
+        if (parameter.contains("pH")) {
+            if (avg < 5.5) return "pH level is too acidic. Nutrient lockout may occur. Add pH Up.";
+            if (avg > 6.5) return "pH level is too alkaline. Nutrient lockout may occur. Add pH Down.";
+            return "pH level is optimal (5.5 - 6.5) for hydroponic growth.";
+        }
+        if (parameter.contains("EC")) {
+            if (avg < 1.0) return "EC level is low. Plants may be underfed. Increase nutrient concentration.";
+            if (avg > 2.5) return "EC level is high. Risk of nutrient burn. Dilute with fresh water.";
+            return "EC level is within the healthy range for vegetative growth.";
+        }
+        if (parameter.contains("Temperature")) {
+            if (avg < 18) return "Temperatures are too low. Growth may slow down.";
+            if (avg > 30) return "Temperatures are too high. Risk of root rot and bolting.";
+            return "Temperature is stable and ideal for cultivation.";
+        }
+        return "The system is maintaining parameters according to the pre-defined environmental profile.";
+    }
+
     private void exportDataToCSV() {
         if (getContext() == null) return;
 

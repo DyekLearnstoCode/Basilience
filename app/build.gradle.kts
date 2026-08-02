@@ -43,6 +43,7 @@ dependencies {
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.database)
+    implementation("com.google.firebase:firebase-messaging:23.4.1")
 
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("com.airbnb.android:lottie:6.3.0")

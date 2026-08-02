@@ -51,6 +51,17 @@
                 android:textSize="22sp"
                 android:textStyle="bold" />
 
+            <TextView
+                android:id="@+id/tvConnectionStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:gravity="center"
+                android:text="Online"
+                android:textColor="#4CAF50"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
             <!-- ===== GRID ROW 1 ===== -->
             <LinearLayout
                 android:layout_width="match_parent"
@@ -137,6 +148,29 @@
                 android:text="Manual Mode"
                 android:textColor="@color/black"
                 android:textSize="16sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="12dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnTriggerRefill"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Trigger Refill" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnResetSafety"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Reset Safety" />
+            </LinearLayout>
 
             <include
                 android:id="@+id/actWaterPumpValve"

@@ -45,19 +45,21 @@
                 android:layout_height="wrap_content"
                 android:gravity="center"
                 android:text="Parameter Reports"
-                android:textColor="#000000"
-                android:textSize="25sp"
-                android:textStyle="bold" />
+                android:textColor="#212121"
+                android:textSize="28sp"
+                android:fontFamily="sans-serif-black"
+                android:letterSpacing="-0.02" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
                 android:text="Monitor and analyze your system's performance."
-                android:textColor="#666666"
+                android:textColor="#757575"
                 android:textSize="14sp"
-                android:layout_marginTop="4dp"
-                android:layout_marginBottom="20dp" />
+                android:fontFamily="sans-serif-medium"
+                android:layout_marginTop="6dp"
+                android:layout_marginBottom="24dp" />
 
             <!-- SELECTION & FILTER CARD -->
             <com.google.android.material.card.MaterialCardView
@@ -78,10 +80,10 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Configurations"
-                        android:textStyle="bold"
-                        android:textColor="@color/black"
-                        android:textSize="16sp"
-                        android:layout_marginBottom="12dp"/>
+                        android:fontFamily="sans-serif-bold"
+                        android:textColor="#212121"
+                        android:textSize="18sp"
+                        android:layout_marginBottom="16dp"/>
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -102,9 +104,13 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="8dp"
+                            android:paddingStart="12dp"
+                            android:paddingEnd="12dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
                             android:background="@drawable/spinner_outline_bg"
                             android:entries="@array/parameters_array"
-                            android:theme="@style/ThemeOverlay.AppCompat.Light" />/>
+                            android:theme="@style/ThemeOverlay.AppCompat.Light" />
 
                     </LinearLayout>
 
@@ -189,9 +195,9 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Trends"
-                            android:textStyle="bold"
-                            android:textColor="@color/black"
-                            android:textSize="16sp"
+                            android:fontFamily="sans-serif-bold"
+                            android:textColor="#212121"
+                            android:textSize="18sp"
                             android:layout_alignParentStart="true"
                             android:layout_centerVertical="true"/>
 
@@ -233,17 +239,19 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="AVERAGE"
-                                android:textSize="10sp"
-                                android:textColor="#888"
-                                android:textStyle="bold"/>
+                                android:textSize="11sp"
+                                android:textColor="#757575"
+                                android:fontFamily="sans-serif-medium"
+                                android:letterSpacing="0.05"
+                                android:layout_marginBottom="2dp"/>
                             <TextView
                                 android:id="@+id/tvAverage"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="--"
-                                android:textSize="16sp"
-                                android:textStyle="bold"
-                                android:textColor="@color/black"/>
+                                android:textSize="22sp"
+                                android:fontFamily="sans-serif-black"
+                                android:textColor="#212121"/>
                         </LinearLayout>
 
                         <LinearLayout
@@ -256,17 +264,19 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="PEAK"
-                                android:textSize="10sp"
-                                android:textColor="#888"
-                                android:textStyle="bold"/>
+                                android:textSize="11sp"
+                                android:textColor="#757575"
+                                android:fontFamily="sans-serif-medium"
+                                android:letterSpacing="0.05"
+                                android:layout_marginBottom="2dp"/>
                             <TextView
                                 android:id="@+id/tvHigh"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="--"
-                                android:textSize="16sp"
-                                android:textStyle="bold"
-                                android:textColor="@color/black"/>
+                                android:textSize="22sp"
+                                android:fontFamily="sans-serif-black"
+                                android:textColor="#212121"/>
                         </LinearLayout>
 
                         <LinearLayout
@@ -279,19 +289,57 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="LOWEST"
-                                android:textSize="10sp"
-                                android:textColor="#888"
-                                android:textStyle="bold"/>
+                                android:textSize="11sp"
+                                android:textColor="#757575"
+                                android:fontFamily="sans-serif-medium"
+                                android:letterSpacing="0.05"
+                                android:layout_marginBottom="2dp"/>
                             <TextView
                                 android:id="@+id/tvLow"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="--"
-                                android:textSize="16sp"
-                                android:textStyle="bold"
-                                android:textColor="@color/black"/>
+                                android:textSize="22sp"
+                                android:fontFamily="sans-serif-black"
+                                android:textColor="#212121"/>
                         </LinearLayout>
                     </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- INTERPRETATION CARD -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="16dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="@color/celadon">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="System Insights"
+                        android:fontFamily="sans-serif-bold"
+                        android:textColor="#2E7D32"
+                        android:textSize="16sp"
+                        android:layout_marginBottom="8dp"/>
+
+                    <TextView
+                        android:id="@+id/tvInterpretation"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Select a parameter to view insights."
+                        android:textSize="14sp"
+                        android:textColor="#333333"
+                        android:lineSpacingExtra="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

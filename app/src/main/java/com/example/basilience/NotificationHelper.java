@@ -1,10 +1,13 @@
 package com.example.basilience;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.graphics.PorterDuff;
+import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.DrawableRes;
@@ -12,6 +15,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.snackbar.Snackbar;
 
 public class NotificationHelper {
@@ -36,14 +40,22 @@ public class NotificationHelper {
      * Standard error notification
      */
     public static void showError(Context context, String message) {
-        showBaseDialog(context, "Error", message, R.drawable.ic_warning_24, R.color.alert_red, null);
+        showError(context, "Error", message);
+    }
+
+    public static void showError(Context context, String title, String message) {
+        showBaseDialog(context, title, message, R.drawable.ic_warning_24, R.color.alert_red, null);
     }
 
     /**
      * Standard warning notification
      */
     public static void showWarning(Context context, String message) {
-        showBaseDialog(context, "Warning", message, R.drawable.ic_warning_24, R.color.alert_orange, null);
+        showWarning(context, "Warning", message);
+    }
+
+    public static void showWarning(Context context, String title, String message) {
+        showBaseDialog(context, title, message, R.drawable.ic_warning_24, R.color.alert_orange, null);
     }
 
     /**
@@ -82,6 +94,7 @@ public class NotificationHelper {
 
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         View view = LayoutInflater.from(context).inflate(R.layout.dialog_custom_notification, null);
+        applyDialogTheme(context, view, R.color.primary);
 
         ImageView icon = view.findViewById(R.id.dialog_icon);
         TextView tvTitle = view.findViewById(R.id.dialog_title);
@@ -89,14 +102,10 @@ public class NotificationHelper {
         MaterialButton btnPrimary = view.findViewById(R.id.dialog_button);
         MaterialButton btnSecondary = view.findViewById(R.id.dialog_button_secondary);
 
-        int primaryColor = ContextCompat.getColor(context, R.color.primary);
         int blackColor = ContextCompat.getColor(context, R.color.black);
 
-        icon.setImageResource(R.drawable.ic_harvest); // Ensure this exists
-        icon.setColorFilter(primaryColor, PorterDuff.Mode.SRC_IN);
-
-        tvTitle.setText("Harvest Not Ready");
-        tvTitle.setTextColor(primaryColor);
+        if (icon != null) icon.setImageResource(R.drawable.ic_harvest); 
+        if (tvTitle != null) tvTitle.setText("Harvest Not Ready");
 
         // Build improved date hierarchy message
         android.text.SpannableStringBuilder ssb = new android.text.SpannableStringBuilder();
@@ -136,6 +145,7 @@ public class NotificationHelper {
 
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         View view = LayoutInflater.from(context).inflate(R.layout.dialog_custom_notification, null);
+        applyDialogTheme(context, view, R.color.primary);
 
         TextView tvTitle = view.findViewById(R.id.dialog_title);
         TextView tvMessage = view.findViewById(R.id.dialog_message);
@@ -182,6 +192,7 @@ public class NotificationHelper {
 
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         View view = LayoutInflater.from(context).inflate(R.layout.dialog_custom_notification, null);
+        applyDialogTheme(context, view, colorRes);
 
         ImageView icon = view.findViewById(R.id.dialog_icon);
         TextView tvTitle = view.findViewById(R.id.dialog_title);
@@ -189,15 +200,11 @@ public class NotificationHelper {
         MaterialButton btnPrimary = view.findViewById(R.id.dialog_button);
         MaterialButton btnSecondary = view.findViewById(R.id.dialog_button_secondary);
 
-        int color = ContextCompat.getColor(context, colorRes);
-
         tvTitle.setText(title);
-        tvTitle.setTextColor(color);
         tvMessage.setText(message);
 
         if (icon != null) {
             icon.setImageResource(iconRes);
-            icon.setColorFilter(color, PorterDuff.Mode.SRC_IN);
         }
 
         AlertDialog dialog = builder.setView(view).create();
@@ -223,6 +230,94 @@ public class NotificationHelper {
         dialog.show();
     }
 
+    public interface MultiActionCallback {
+        void onItemSelected(int index);
+    }
+
+    /**
+     * Shows a list selection dialog using the custom Basilience UI
+     */
+    public static void showSelectionDialog(Context context, String title, String[] items, MultiActionCallback callback) {
+        if (context == null) return;
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        View view = LayoutInflater.from(context).inflate(R.layout.dialog_custom_notification, null);
+        applyDialogTheme(context, view, R.color.primary);
+
+        TextView tvTitle = view.findViewById(R.id.dialog_title);
+        TextView tvMessage = view.findViewById(R.id.dialog_message);
+        tvMessage.setVisibility(View.GONE); // No message for list selection
+
+        LinearLayout container = (LinearLayout) tvMessage.getParent();
+        
+        // Hide standard buttons
+        view.findViewById(R.id.dialog_button).setVisibility(View.GONE);
+        view.findViewById(R.id.dialog_button_secondary).setVisibility(View.GONE);
+
+        tvTitle.setText(title);
+
+        AlertDialog dialog = builder.setView(view).create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        }
+
+        // Add item buttons
+        for (int i = 0; i < items.length; i++) {
+            MaterialButton btn = new MaterialButton(context, null, com.google.android.material.R.attr.materialButtonStyle);
+            int index = i;
+            btn.setText(items[i]);
+            btn.setAllCaps(false);
+            btn.setCornerRadius((int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 12, context.getResources().getDisplayMetrics()));
+            
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            params.setMargins(0, 0, 0, (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8, context.getResources().getDisplayMetrics()));
+            btn.setLayoutParams(params);
+            
+            btn.setOnClickListener(v -> {
+                dialog.dismiss();
+                if (callback != null) callback.onItemSelected(index);
+            });
+            container.addView(btn);
+        }
+
+        dialog.show();
+    }
+
+    /**
+     * Shows a dialog with a custom view (for forms) while maintaining the Basilience UI style
+     */
+    public static AlertDialog showCustomViewDialog(Context context, String title, View customView) {
+        if (context == null) return null;
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        View root = LayoutInflater.from(context).inflate(R.layout.dialog_custom_notification, null);
+        applyDialogTheme(context, root, R.color.primary);
+
+        TextView tvTitle = root.findViewById(R.id.dialog_title);
+        TextView tvMessage = root.findViewById(R.id.dialog_message);
+        tvMessage.setVisibility(View.GONE);
+        
+        // Hide standard buttons as custom forms usually have their own
+        root.findViewById(R.id.dialog_button).setVisibility(View.GONE);
+        root.findViewById(R.id.dialog_button_secondary).setVisibility(View.GONE);
+
+        tvTitle.setText(title);
+
+        LinearLayout container = (LinearLayout) tvMessage.getParent();
+        container.addView(customView, container.indexOfChild(tvMessage));
+
+        AlertDialog dialog = builder.setView(root).create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        }
+        
+        dialog.show();
+        return dialog;
+    }
+
     /**
      * Legacy support - will be phased out
      */
@@ -233,6 +328,33 @@ public class NotificationHelper {
             showError(context, message);
         } else {
             showInfo(context, title, message);
+        }
+    }
+
+    /**
+     * Applies standard styling to custom dialog views
+     */
+    private static void applyDialogTheme(Context context, View view, int colorRes) {
+        int color = ContextCompat.getColor(context, colorRes);
+        if (view instanceof MaterialCardView) {
+            ((MaterialCardView) view).setStrokeColor(color);
+        }
+
+        ImageView icon = view.findViewById(R.id.dialog_icon);
+        TextView tvTitle = view.findViewById(R.id.dialog_title);
+        MaterialButton btnPrimary = view.findViewById(R.id.dialog_button);
+        MaterialButton btnSecondary = view.findViewById(R.id.dialog_button_secondary);
+
+        if (tvTitle != null) tvTitle.setTextColor(color);
+        if (icon != null) icon.setColorFilter(color, PorterDuff.Mode.SRC_IN);
+        
+        if (btnPrimary != null) {
+            btnPrimary.setBackgroundTintList(ColorStateList.valueOf(color));
+        }
+        
+        if (btnSecondary != null) {
+            btnSecondary.setTextColor(color);
+            btnSecondary.setStrokeColor(ColorStateList.valueOf(color));
         }
     }
 }

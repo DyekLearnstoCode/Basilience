@@ -38,9 +38,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Settings"
-                android:textSize="25sp"
-                android:textStyle="bold"
-                android:textColor="#000000"
+                android:textSize="28sp"
+                android:fontFamily="sans-serif-black"
+                android:letterSpacing="-0.02"
+                
+                android:textColor="#212121"
                 android:gravity="center"
                 android:layout_marginBottom="16dp"/>
 
@@ -70,8 +72,8 @@
                         android:layout_weight="1"
                         android:text="Account Information"
                         android:textSize="17sp"
-                        android:textStyle="bold"
-                        android:textColor="#000000"
+                        
+                        android:textColor="#212121"
                         android:layout_marginStart="12dp" />
 
                     <FrameLayout
@@ -115,8 +117,8 @@
                         android:layout_weight="1"
                         android:text="About Basilience"
                         android:textSize="17sp"
-                        android:textStyle="bold"
-                        android:textColor="#000000"
+                        
+                        android:textColor="#212121"
                         android:layout_marginStart="12dp" />
 
                     <FrameLayout
@@ -160,12 +162,57 @@
                         android:layout_weight="1"
                         android:text="Wi-Fi Configuration"
                         android:textSize="17sp"
-                        android:textStyle="bold"
-                        android:textColor="#000000"
+                        
+                        android:textColor="#212121"
                         android:layout_marginStart="12dp" />
 
                     <FrameLayout
                         android:id="@+id/btnWifiConfig"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:layout_width="50dp"
+                        android:layout_height="50dp"
+                        android:background="@drawable/circle_button"
+                        android:gravity="center">
+
+                        <ImageView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center"
+                            android:src="@drawable/enter_arrow" />
+                    </FrameLayout>
+                </LinearLayout>
+
+                <!-- DEV OPTIONS -->
+                <LinearLayout
+                    android:id="@+id/devOptionsContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="90dp"
+                    android:layout_marginBottom="12dp"
+                    android:background="@drawable/card_option"
+                    android:orientation="horizontal"
+                    android:padding="12dp"
+                    android:visibility="gone"
+                    android:gravity="center_vertical">
+
+                    <ImageView
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:src="@drawable/ic_edit"
+                        app:tint="#000000" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Developer Options"
+                        android:textSize="17sp"
+                        
+                        android:textColor="#212121"
+                        android:layout_marginStart="12dp" />
+
+                    <FrameLayout
+                        android:id="@+id/btnDevOptions"
                         android:clickable="true"
                         android:focusable="true"
                         android:layout_width="50dp"
@@ -202,8 +249,8 @@
                         android:layout_weight="1"
                         android:text="Terms and Agreements"
                         android:textSize="17sp"
-                        android:textStyle="bold"
-                        android:textColor="#000000"
+                        
+                        android:textColor="#212121"
                         android:layout_marginStart="12dp" />
 
                     <FrameLayout

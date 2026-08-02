@@ -58,6 +58,18 @@
                 android:layout_height="wrap_content"
                 android:nestedScrollingEnabled="false" />
 
+            <!-- EMPTY STATE -->
+            <TextView
+                android:id="@+id/tvEmptyNotifications"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="48dp"
+                android:gravity="center"
+                android:text="No notifications yet."
+                android:textColor="@android:color/darker_gray"
+                android:textSize="15sp"
+                android:visibility="gone" />
+
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 

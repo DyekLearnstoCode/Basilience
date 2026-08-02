@@ -14,6 +14,7 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.FileProvider;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.NavController;
@@ -224,13 +225,11 @@ public class HarvestLogFragment extends Fragment {
 
     private void showHarvestDialog(@Nullable Harvest harvest) {
         View dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_add_harvest, null);
-        com.google.android.material.dialog.MaterialAlertDialogBuilder builder =
-                new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext(), R.style.HarvestDialogTheme)
-                        .setView(dialogView);
         
-        androidx.appcompat.app.AlertDialog dialog = builder.create();
-
         TextView tvTitle = dialogView.findViewById(R.id.tvDialogTitle);
+        // Hide the title inside the layout because NotificationHelper provides one
+        tvTitle.setVisibility(View.GONE);
+
         TextInputEditText etWeight = dialogView.findViewById(R.id.etWeight);
         TextInputEditText etNotes = dialogView.findViewById(R.id.etNotes);
         Button btnSave = dialogView.findViewById(R.id.btnSaveHarvest);
@@ -239,14 +238,17 @@ public class HarvestLogFragment extends Fragment {
 
         editingHarvest = harvest;
         currentHarvestSource = "MANUAL";
+        String dialogTitle = "Log New Harvest";
 
         if (harvest != null) {
-            tvTitle.setText("Edit Harvest");
+            dialogTitle = "Edit Harvest";
             etWeight.setText(String.valueOf(harvest.getWeight()));
             etNotes.setText(harvest.getNotes());
             btnSave.setText("Update");
             currentHarvestSource = harvest.getSource();
         }
+
+        AlertDialog dialog = NotificationHelper.showCustomViewDialog(requireContext(), dialogTitle, dialogView);
 
         btnReadSensor.setOnClickListener(v -> {
             com.google.firebase.database.DatabaseReference sensorRef = dbHelper.getSensorsReference();
@@ -266,7 +268,9 @@ public class HarvestLogFragment extends Fragment {
             }
         });
 
-        btnCancel.setOnClickListener(v -> dialog.dismiss());
+        btnCancel.setOnClickListener(v -> {
+            if (dialog != null) dialog.dismiss();
+        });
 
         btnSave.setOnClickListener(v -> {
             String weightStr = etWeight.getText().toString().trim();
@@ -284,8 +288,6 @@ public class HarvestLogFragment extends Fragment {
                 createHarvest(weight, notes, dialog);
             }
         });
-
-        dialog.show();
     }
 
     private void confirmDelete(Harvest harvest) {
@@ -474,25 +476,37 @@ public class HarvestLogFragment extends Fragment {
         TextInputEditText etFrequency = dialogView.findViewById(R.id.etFrequency);
         etFrequency.setText(String.valueOf(currentCycle.getHarvestFrequencyDays()));
 
-        new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
-                .setTitle("Edit Harvest Frequency")
-                .setView(dialogView)
-                .setPositiveButton("Update", (dialog, which) -> {
-                    String input = etFrequency.getText().toString().trim();
-                    if (input.isEmpty()) return;
+        AlertDialog dialog = NotificationHelper.showCustomViewDialog(requireContext(), "Edit Harvest Frequency", dialogView);
+        
+        // Find buttons in the custom layout
+        Button btnUpdate = dialogView.findViewById(R.id.btnUpdate);
+        Button btnCancel = dialogView.findViewById(R.id.btnCancel);
 
-                    int newFreq = Integer.parseInt(input);
-                    if (newFreq < 1 || newFreq > 365) {
-                        NotificationHelper.showError(getContext(), "Frequency must be between 1 and 365 days");
-                        return;
-                    }
+        if (btnUpdate != null) {
+            btnUpdate.setOnClickListener(v -> {
+                String input = etFrequency.getText().toString().trim();
+                if (input.isEmpty()) return;
 
-                    dbHelper.updateHarvestFrequency(cycleId, newFreq)
-                            .addOnSuccessListener(aVoid -> NotificationHelper.showSuccess(getContext(), "Frequency updated"))
-                            .addOnFailureListener(e -> NotificationHelper.showError(getContext(), "Update failed: " + e.getMessage()));
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
+                int newFreq = Integer.parseInt(input);
+                if (newFreq < 1 || newFreq > 365) {
+                    NotificationHelper.showError(getContext(), "Frequency must be between 1 and 365 days");
+                    return;
+                }
+
+                dbHelper.updateHarvestFrequency(cycleId, newFreq)
+                        .addOnSuccessListener(aVoid -> {
+                            NotificationHelper.showSuccess(getContext(), "Frequency updated");
+                            if (dialog != null) dialog.dismiss();
+                        })
+                        .addOnFailureListener(e -> NotificationHelper.showError(getContext(), "Update failed: " + e.getMessage()));
+            });
+        }
+
+        if (btnCancel != null) {
+            btnCancel.setOnClickListener(v -> {
+                if (dialog != null) dialog.dismiss();
+            });
+        }
     }
 
     private void showCompleteCycleConfirmation() {

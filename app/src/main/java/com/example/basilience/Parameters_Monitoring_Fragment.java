@@ -17,6 +17,10 @@ import androidx.navigation.Navigation;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.ListenerRegistration;
+import com.example.basilience.repository.SensorRepository;
+import com.example.basilience.models.SensorData;
+import androidx.lifecycle.MutableLiveData;
+import androidx.lifecycle.Observer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -42,6 +46,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private boolean isDialogShowing = false;
     private boolean isManualMode = false;
     private boolean isActuatorBusy = false; // Prevents double-tap while popup is showing
+    private boolean isReservoirLocked = false; // Tracks if an automatic operation is in progress
 
     // Loading overlay views
     private View actuatorLoadingOverlay;
@@ -72,12 +77,22 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private DatabaseReference sensorsRef;
     private ValueEventListener sensorsListener;
 
+    private TextView tvConnectionStatus;
+    private SensorRepository sensorRepository;
+    private final MutableLiveData<SensorData> sensorLiveData = new MutableLiveData<>();
+    private Long previousLastSeenValue = null;
+    private long lastUpdateTime = 0;
+    private boolean isCurrentlyOnline = false;
+    private final Handler heartbeatHandler = new Handler(Looper.getMainLooper());
+
     private final Actuator waterPumpValve = new Actuator("Water Pump (Valve)", "solenoid");
     private final Actuator canopyFan = new Actuator("Canopy Fan", "canopyFan");
     private final Actuator growLights = new Actuator("Grow Lights", "growLight");
     private final Actuator phUp = new Actuator("pH Up", "phUpPump");
     private final Actuator phDown = new Actuator("pH Down", "phDownPump");
     private final Actuator nutrients = new Actuator("Nutrients (EC)", "growPump");
+    // bloomPump is paired with growPump — not shown as a separate card, tracked for combined state
+    private final Actuator bloomPump = new Actuator("Bloom Pump", "bloomPump");
     private final Actuator fogger = new Actuator("Fogger", "fogger");
     private final Actuator reservoirFan = new Actuator("Reservoir Fan (Blower)", "blower");
     private final Actuator peltier = new Actuator("Peltier (Temp)", "peltier");
@@ -108,35 +123,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         // ===== MODE SWITCH =====
         SwitchMaterial modeSwitch = view.findViewById(R.id.switchMode);
         if (modeSwitch != null) {
-            modeSwitch.setEnabled(false); // Disable until device ID is resolved
+            modeSwitch.setEnabled(false); // disabled until RTDB snapshot arrives and re-attaches listener
             modeSwitch.setAlpha(0.5f);
-            
-            SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
-            String role = prefs.getString("user_role", "FARMER");
-            boolean isAdmin = "ADMIN".equalsIgnoreCase(role);
-
-            modeSwitch.setOnCheckedChangeListener((buttonView, checked) -> {
-                if (isAdmin) {
-                    isManualMode = checked;
-                    modeSwitch.setText("Manual Mode");
-                    
-                    // Optimistically turn off actuator switches in the UI when manual mode is disabled
-                    if (!checked) {
-                        updateActuatorUI(actWaterPumpValve, false);
-                        updateActuatorUI(actCanopyFan, false);
-                        updateActuatorUI(actGrowLights, false);
-                        updateActuatorUI(actPhUp, false);
-                        updateActuatorUI(actPhDown, false);
-                        updateActuatorUI(actNutrients, false);
-                        updateActuatorUI(actFogger, false);
-                        updateActuatorUI(actReservoirFan, false);
-                        updateActuatorUI(actPeltier, false);
-                    }
-                    
-                    updateActuatorControls();
-                    dbHelper.updateManualMode(checked);
-                }
-            });
+            modeSwitch.setOnCheckedChangeListener(null); // listener set inside RTDB onDataChange only
         }
 
         // ===== ACTUATORS =====
@@ -166,6 +155,73 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         actuatorLoadingOverlay = view.findViewById(R.id.actuatorLoadingOverlay);
         tvActuatorLoadingTitle = view.findViewById(R.id.tvActuatorLoadingTitle);
         tvActuatorLoadingStatus = view.findViewById(R.id.tvActuatorLoadingStatus);
+
+        tvConnectionStatus = view.findViewById(R.id.tvConnectionStatus);
+        sensorRepository = new SensorRepository();
+
+        sensorLiveData.observe(getViewLifecycleOwner(), new Observer<SensorData>() {
+            @Override
+            public void onChanged(SensorData sensorData) {
+                if (sensorData != null && isAdded()) {
+                    if (tvTemp != null) tvTemp.setText(String.format("%.1f °C", sensorData.airTemperature));
+                    if (tvHumidity != null) tvHumidity.setText(String.format("%.1f %%", sensorData.humidity));
+                    if (tvWaterTemp != null) tvWaterTemp.setText(String.format("%.1f °C", sensorData.waterTemperature));
+                    if (tvPH != null) tvPH.setText(String.format("%.2f", sensorData.ph));
+                    if (tvEC != null) tvEC.setText(String.format("%.2f", sensorData.ec));
+                    if (tvWaterLevel != null) tvWaterLevel.setText(String.format("%.0f %%", sensorData.waterLevel));
+                }
+            }
+        });
+
+        SharedPreferences localPrefs = requireContext().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
+        String role = localPrefs.getString("user_role", "FARMER");
+        boolean isAdmin = "ADMIN".equalsIgnoreCase(role);
+
+        View btnTriggerRefill = view.findViewById(R.id.btnTriggerRefill);
+        if (btnTriggerRefill != null) {
+            if (!isAdmin) {
+                btnTriggerRefill.setVisibility(View.GONE);
+            }
+            btnTriggerRefill.setEnabled(isAdmin);
+            btnTriggerRefill.setAlpha(isAdmin ? 1.0f : 0.6f);
+            btnTriggerRefill.setOnClickListener(v -> {
+                if (isCurrentlyOnline) {
+                    NotificationHelper.showConfirmation(requireContext(),
+                            "Trigger Refill Operation",
+                            "Are you sure you want to trigger an automated reservoir refill operation?",
+                            "Yes", "No", () -> {
+                                dbHelper.sendOperationRequest("REFILL", "START")
+                                        .addOnSuccessListener(aVoid -> Toast.makeText(getContext(), "Refill operation requested", Toast.LENGTH_SHORT).show())
+                                        .addOnFailureListener(e -> Toast.makeText(getContext(), "Request failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                            });
+                } else {
+                    Toast.makeText(getContext(), "Device is offline", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
+        View btnResetSafety = view.findViewById(R.id.btnResetSafety);
+        if (btnResetSafety != null) {
+            if (!isAdmin) {
+                btnResetSafety.setVisibility(View.GONE);
+            }
+            btnResetSafety.setEnabled(isAdmin);
+            btnResetSafety.setAlpha(isAdmin ? 1.0f : 0.6f);
+            btnResetSafety.setOnClickListener(v -> {
+                if (isCurrentlyOnline) {
+                    NotificationHelper.showConfirmation(requireContext(),
+                            "Reset Safety Lock",
+                            "Are you sure you want to reset the FSM safety lock? This will return the system to normal operations.",
+                            "Yes", "No", () -> {
+                                dbHelper.sendOperationRequest("RESET_SAFETY", "START")
+                                        .addOnSuccessListener(aVoid -> Toast.makeText(getContext(), "Safety reset requested", Toast.LENGTH_SHORT).show())
+                                        .addOnFailureListener(e -> Toast.makeText(getContext(), "Request failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                            });
+                } else {
+                    Toast.makeText(getContext(), "Device is offline", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
 
         startRealTimeMonitoring();
     }
@@ -221,17 +277,15 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
 
         dbHelper.setSelectedDeviceId(deviceId);
+        sensorRepository.startListening(deviceId, sensorLiveData);
+        heartbeatHandler.post(heartbeatRunnable);
 
         View v = getView();
         if (v != null) {
             SwitchMaterial modeSwitch = v.findViewById(R.id.switchMode);
             if (modeSwitch != null) {
-                SharedPreferences localPrefs = requireContext().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
-                String role = localPrefs.getString("user_role", "FARMER");
-                boolean isAdmin = "ADMIN".equalsIgnoreCase(role);
-                
-                modeSwitch.setEnabled(isAdmin);
-                modeSwitch.setAlpha(isAdmin ? 1.0f : 0.6f);
+                modeSwitch.setEnabled(isCurrentlyOnline);
+                modeSwitch.setAlpha(isCurrentlyOnline ? 1.0f : 0.6f);
             }
         }
 
@@ -245,20 +299,25 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (!isAdded()) return;
 
-                DataSnapshot sensors = snapshot.child("sensors");
-                Double temp = sensors.child("airTemperature").getValue(Double.class);
-                Double humidity = sensors.child("humidity").getValue(Double.class);
-                Double waterTemp = sensors.child("waterTemperature").getValue(Double.class);
-                Double ph = sensors.child("ph").getValue(Double.class);
-                Double ec = sensors.child("ec").getValue(Double.class);
-                Double waterLevel = sensors.child("waterLevel").getValue(Double.class);
+                // Sync connection heartbeat
+                if (snapshot.hasChild("deviceInfo/lastSeen")) {
+                    Long lastSeen = snapshot.child("deviceInfo/lastSeen").getValue(Long.class);
+                    if (lastSeen != null) {
+                        if (!lastSeen.equals(previousLastSeenValue)) {
+                            lastUpdateTime = System.currentTimeMillis();
+                            previousLastSeenValue = lastSeen;
+                        }
+                        isCurrentlyOnline = (System.currentTimeMillis() - lastUpdateTime <= 30000);
+                        updateConnectionUI();
+                    }
+                } else {
+                    isCurrentlyOnline = false;
+                    updateConnectionUI();
+                }
 
-                if (temp != null) tvTemp.setText(String.format("%.1f °C", temp));
-                if (humidity != null) tvHumidity.setText(String.format("%.1f %%", humidity));
-                if (waterTemp != null) tvWaterTemp.setText(String.format("%.1f °C", waterTemp));
-                if (ph != null) tvPH.setText(String.format("%.2f", ph));
-                if (ec != null) tvEC.setText(String.format("%.2f", ec));
-                if (waterLevel != null) tvWaterLevel.setText(String.format("%.0f %%", waterLevel));
+                // Sync status: reservoirLocked
+                Boolean reservoirLocked = snapshot.child("status").child("reservoirLocked").getValue(Boolean.class);
+                if (reservoirLocked != null) isReservoirLocked = reservoirLocked;
 
                 // Sync Manual Mode from RTDB
                 Boolean manualMode = snapshot.child("commands").child("manualMode").getValue(Boolean.class);
@@ -270,24 +329,31 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                         modeSwitch.setChecked(isManualMode);
                         modeSwitch.setText("Manual Mode");
                         modeSwitch.setOnCheckedChangeListener((buttonView, checked) -> {
-                            isManualMode = checked;
-                            modeSwitch.setText("Manual Mode");
-                            
-                            // Optimistically turn off actuator switches in the UI when manual mode is disabled
-                            if (!checked) {
-                                updateActuatorUI(actWaterPumpValve, false);
-                                updateActuatorUI(actCanopyFan, false);
-                                updateActuatorUI(actGrowLights, false);
-                                updateActuatorUI(actPhUp, false);
-                                updateActuatorUI(actPhDown, false);
-                                updateActuatorUI(actNutrients, false);
-                                updateActuatorUI(actFogger, false);
-                                updateActuatorUI(actReservoirFan, false);
-                                updateActuatorUI(actPeltier, false);
+                            if (checked) {
+                                // Snap back and show confirmation
+                                modeSwitch.setOnCheckedChangeListener(null);
+                                modeSwitch.setChecked(false);
+                                modeSwitch.setOnCheckedChangeListener((btn, ch) -> onModeSwitchChanged(modeSwitch, ch));
+
+                                String title = "Enable Manual Mode";
+                                String message = "In Manual Mode, automated safety protocols and schedules are paused. Are you sure you want to proceed?";
+
+                                if (isReservoirLocked) {
+                                    title = "Automatic Operation Active";
+                                    message = "The system is currently performing an automatic operation (e.g. refilling, dosing). Enabling manual mode will abort it.\n\nDo you want to continue?";
+                                }
+
+                                NotificationHelper.showConfirmation(requireContext(), title, message, "Enable", "Cancel", () -> {
+                                    isManualMode = true;
+                                    modeSwitch.setOnCheckedChangeListener(null);
+                                    modeSwitch.setChecked(true);
+                                    updateActuatorControls();
+                                    dbHelper.updateManualMode(true);
+                                    modeSwitch.setOnCheckedChangeListener((btn, ch) -> onModeSwitchChanged(modeSwitch, ch));
+                                });
+                                return;
                             }
-                            
-                            updateActuatorControls();
-                            dbHelper.updateManualMode(checked);
+                            onModeSwitchChanged(modeSwitch, checked);
                         });
                     }
                     updateActuatorControls();
@@ -305,7 +371,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                     syncActuatorState(growLights, actGrowLights, actuatorStatus.child(growLights.dbKey));
                     syncActuatorState(phUp, actPhUp, actuatorStatus.child(phUp.dbKey));
                     syncActuatorState(phDown, actPhDown, actuatorStatus.child(phDown.dbKey));
-                    syncActuatorState(nutrients, actNutrients, actuatorStatus.child(nutrients.dbKey));
+                    // nutrients uses both growPump + bloomPump — use combined sync
+                    syncNutrientsState(actuatorStatus.child("growPump"), actuatorStatus.child("bloomPump"));
                     syncActuatorState(fogger, actFogger, actuatorStatus.child(fogger.dbKey));
                     syncActuatorState(reservoirFan, actReservoirFan, actuatorStatus.child(reservoirFan.dbKey));
                     syncActuatorState(peltier, actPeltier, actuatorStatus.child(peltier.dbKey));
@@ -332,7 +399,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
         if (state != null) {
             actuator.state = state;
-            actuator.isOn = (state >= 1); // Consider it "on" in UI terms if it's processing or running
+            actuator.isOn = (state == 1 || state == 2 || state == 4 || state == 5 || state == 6); 
             if (state == 3 && stateSnap.hasChild("reason")) {
                 actuator.reason = stateSnap.child("reason").getValue(String.class);
             } else {
@@ -340,6 +407,57 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             }
             updateActuatorUI(card, actuator);
         }
+    }
+
+    /**
+     * Combines growPump + bloomPump states into the single "nutrients" UI card.
+     * Both pumps are commanded together, so the UI reflects the worst-case state:
+     * - Either REJECTED(3)  → nutrients = REJECTED
+     * - Both  RUNNING(5)    → nutrients = RUNNING (ON)
+     * - Both  OFF(0)        → nutrients = OFF
+     * - Otherwise           → highest intermediate state (whichever is further in the sequence)
+     */
+    private void syncNutrientsState(DataSnapshot growSnap, DataSnapshot bloomSnap) {
+        if (actNutrients == null) return;
+
+        int growState  = getSnapState(growSnap);
+        int bloomState = getSnapState(bloomSnap);
+
+        int combinedState;
+        String combinedReason = null;
+
+        if (growState == 3 || bloomState == 3) {
+            // Either pump rejected — show REJECTED and surface the reason
+            combinedState = 3;
+            if (growState == 3 && growSnap.hasChild("reason"))
+                combinedReason = growSnap.child("reason").getValue(String.class);
+            else if (bloomState == 3 && bloomSnap.hasChild("reason"))
+                combinedReason = bloomSnap.child("reason").getValue(String.class);
+        } else if (growState == 5 && bloomState == 5) {
+            combinedState = 5; // Both fully RUNNING
+        } else if (growState == 0 && bloomState == 0) {
+            combinedState = 0; // Both fully OFF
+        } else {
+            // In-progress: show the highest non-terminal intermediate state
+            combinedState = Math.max(growState, bloomState);
+        }
+
+        nutrients.state  = combinedState;
+        nutrients.isOn   = (combinedState == 1 || combinedState == 2 || combinedState == 4 || combinedState == 5 || combinedState == 6);
+        nutrients.reason = combinedReason;
+        updateActuatorUI(actNutrients, nutrients);
+    }
+
+    /** Reads the integer state from an actuatorStatus snapshot node. Returns 0 (OFF) if absent. */
+    private int getSnapState(DataSnapshot snap) {
+        if (snap == null || !snap.exists()) return 0;
+        if (snap.getValue() instanceof Boolean)
+            return Boolean.TRUE.equals(snap.getValue(Boolean.class)) ? 5 : 0;
+        if (snap.hasChild("state")) {
+            Integer v = snap.child("state").getValue(Integer.class);
+            return v != null ? v : 0;
+        }
+        return 0;
     }
 
     // =========================================================
@@ -356,7 +474,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         // Clear any previous listener first
         toggle.setOnCheckedChangeListener(null);
         toggle.setChecked(actuator.isOn);
-        toggle.setEnabled(isManualMode && !isActuatorBusy);
+        toggle.setEnabled(isManualMode);
 
         toggle.setOnCheckedChangeListener((buttonView, checked) -> {
             if (!isManualMode) {
@@ -445,7 +563,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
      * or REJECTED(3), or a 10s timeout. Shows real-time state labels in the popup.
      */
     private void pollActuatorUntilDone(Actuator actuator, View card, boolean targetState, int attempt) {
-        final int MAX_ATTEMPTS = 10; // 10 * 500ms = 5 seconds max
+        final int MAX_ATTEMPTS = 10; // 10 * 500ms = 5 seconds — allows for 1500ms ESP32 read + write roundtrip
         if (!isAdded()) return;
 
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
@@ -483,14 +601,12 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             }
 
             // Update popup label for intermediate states
-            if (targetState) {
-                // Turning ON
-                if (state == 0 || state == 1 || state == 2) showActuatorLoading("Validating...", "");
-                else if (state == 4 || state == 6) showActuatorLoading("Activating...", "");
+            if (state == 6) {
+                showActuatorLoading("Stopping...", "");
+            } else if (state == 4) {
+                showActuatorLoading("Activating...", "");
             } else {
-                // Turning OFF
-                if (state == 5 || state == 1 || state == 2) showActuatorLoading("Validating...", "");
-                else if (state == 6 || state == 4) showActuatorLoading("Activating...", "");
+                showActuatorLoading("Validating...", "");
             }
 
             // Timeout
@@ -542,9 +658,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (toggle != null) {
             // Update switch position without triggering listener
             toggle.setOnCheckedChangeListener(null);
+            toggle.setOnCheckedChangeListener(null);
             toggle.setChecked(actuator.isOn);
-            boolean isTransitional = (actuator.state == 1 || actuator.state == 2 || actuator.state == 4 || actuator.state == 6);
-            toggle.setEnabled(isManualMode && !isTransitional && !isActuatorBusy);
+            toggle.setEnabled(isManualMode);
             // Re-register listener cleanly
             toggle.setOnCheckedChangeListener(null);
             setupActuatorUI(card, actuator);
@@ -594,15 +710,41 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     }
 
     private void updateActuatorControls() {
-        setActuatorEnabled(actWaterPumpValve, isManualMode);
-        setActuatorEnabled(actCanopyFan, isManualMode);
-        setActuatorEnabled(actGrowLights, isManualMode);
-        setActuatorEnabled(actPhUp, isManualMode);
-        setActuatorEnabled(actPhDown, isManualMode);
-        setActuatorEnabled(actNutrients, isManualMode);
-        setActuatorEnabled(actFogger, isManualMode);
-        setActuatorEnabled(actReservoirFan, isManualMode);
-        setActuatorEnabled(actPeltier, isManualMode);
+        boolean enabled = isManualMode && isCurrentlyOnline;
+        setActuatorEnabled(actWaterPumpValve, enabled);
+        setActuatorEnabled(actCanopyFan, enabled);
+        setActuatorEnabled(actGrowLights, enabled);
+        setActuatorEnabled(actPhUp, enabled);
+        setActuatorEnabled(actPhDown, enabled);
+        setActuatorEnabled(actNutrients, enabled);
+        setActuatorEnabled(actFogger, enabled);
+        setActuatorEnabled(actReservoirFan, enabled);
+        setActuatorEnabled(actPeltier, enabled);
+    }
+
+    /** Shared logic for manual mode toggle — called both directly and from the confirmation dialog. */
+    private void onModeSwitchChanged(SwitchMaterial modeSwitch, boolean checked) {
+        isManualMode = checked;
+        modeSwitch.setText("Manual Mode");
+
+        // Optimistically reset all actuator UIs off when disabling manual mode
+        if (!checked) {
+            showActuatorLoading("Restoring Safety Protocols", "Deactivating all manual overrides...");
+            new Handler(Looper.getMainLooper()).postDelayed(this::hideActuatorLoading, 3000);
+
+            updateActuatorUI(actWaterPumpValve, false);
+            updateActuatorUI(actCanopyFan, false);
+            updateActuatorUI(actGrowLights, false);
+            updateActuatorUI(actPhUp, false);
+            updateActuatorUI(actPhDown, false);
+            updateActuatorUI(actNutrients, false);
+            updateActuatorUI(actFogger, false);
+            updateActuatorUI(actReservoirFan, false);
+            updateActuatorUI(actPeltier, false);
+        }
+
+        updateActuatorControls();
+        dbHelper.updateManualMode(checked);
     }
 
     private void setActuatorEnabled(View card, boolean enabled) {
@@ -619,12 +761,50 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         for (int i = 0; i < warnings.size(); i++) {
             msg.append("• ").append(warnings.get(i)).append(": ").append(actions.get(i)).append("\n");
         }
-        NotificationHelper.showNotification(requireContext(), "System Alert", msg.toString());
+        NotificationHelper.showWarning(requireContext(), "System Alert", msg.toString());
+    }
+
+    private final Runnable heartbeatRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (System.currentTimeMillis() - lastUpdateTime > 30000) {
+                isCurrentlyOnline = false;
+            }
+            updateConnectionUI();
+            heartbeatHandler.postDelayed(this, 5000);
+        }
+    };
+
+    private void updateConnectionUI() {
+        if (tvConnectionStatus == null || !isAdded()) return;
+
+        if (isCurrentlyOnline) {
+            tvConnectionStatus.setText("Online");
+            tvConnectionStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50")); // Green
+        } else {
+            tvConnectionStatus.setText("Offline");
+            tvConnectionStatus.setTextColor(android.graphics.Color.parseColor("#F44336")); // Red
+        }
+
+        View v = getView();
+        if (v != null) {
+            SwitchMaterial modeSwitch = v.findViewById(R.id.switchMode);
+            if (modeSwitch != null) {
+                modeSwitch.setEnabled(isCurrentlyOnline);
+                modeSwitch.setAlpha(isCurrentlyOnline ? 1.0f : 0.6f);
+            }
+        }
+
+        updateActuatorControls();
     }
 
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        heartbeatHandler.removeCallbacks(heartbeatRunnable);
+        if (sensorRepository != null) {
+            sensorRepository.stopListening();
+        }
         if (sensorsRef != null && sensorsListener != null) {
             sensorsRef.removeEventListener(sensorsListener);
         }

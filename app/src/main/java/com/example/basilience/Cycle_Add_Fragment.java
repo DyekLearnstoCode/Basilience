@@ -132,11 +132,7 @@ public class Cycle_Add_Fragment extends Fragment {
             if (!queryDocumentSnapshots.isEmpty()) {
                 if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
                 btnSave.setEnabled(true);
-                new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
-                        .setTitle("Active Cycle Exists")
-                        .setMessage("A device can only have one ACTIVE cycle. Please complete the current cycle before starting a new one.")
-                        .setPositiveButton("OK", null)
-                        .show();
+                NotificationHelper.showWarning(requireContext(), "Active Cycle Exists", "A device can only have one ACTIVE cycle. Please complete the current cycle before starting a new one.");
             } else {
                 proceedWithSaving(view, deviceId);
             }

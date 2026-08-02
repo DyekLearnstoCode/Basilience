@@ -42,9 +42,11 @@
                 android:layout_marginBottom="24dp"
                 android:gravity="center"
                 android:text="Account Information"
-                android:textColor="#000000"
-                android:textSize="25sp"
-                android:textStyle="bold" />
+                android:textColor="#212121"
+                android:textSize="28sp"
+                android:fontFamily="sans-serif-black"
+                android:letterSpacing="-0.02"
+                 />
 
             <!-- FULL NAME -->
             <com.google.android.material.textfield.TextInputLayout
@@ -59,7 +61,7 @@
                     android:id="@+id/etName"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textColor="#000000" />
+                    android:textColor="#212121" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <!-- EMAIL -->
@@ -76,7 +78,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:inputType="textEmailAddress"
-                    android:textColor="#000000" />
+                    android:textColor="#212121" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <!-- PHONE NUMBER -->
@@ -93,7 +95,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:inputType="phone"
-                    android:textColor="#000000" />
+                    android:textColor="#212121" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <!-- UPDATE PROFILE -->

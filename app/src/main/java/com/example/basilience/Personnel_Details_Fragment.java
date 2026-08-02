@@ -181,18 +181,15 @@ public class Personnel_Details_Fragment extends Fragment {
             }
 
             String[] items = deviceIds.toArray(new String[0]);
-            new AlertDialog.Builder(requireContext())
-                    .setTitle("Assign Device")
-                    .setItems(items, (dialog, which) -> {
-                        String selectedId = items[which];
-                        helper.assignDeviceToUser(selectedId, personnelId, RoleConstants.ROLE_FARMER)
-                                .addOnSuccessListener(unused -> {
-                                    NotificationHelper.showSuccess(requireContext(), "Device assigned successfully");
-                                    loadAssignments();
-                                })
-                                .addOnFailureListener(e -> NotificationHelper.showError(requireContext(), "Error: " + e.getMessage()));
-                    })
-                    .show();
+            NotificationHelper.showSelectionDialog(requireContext(), "Assign Device", items, index -> {
+                String selectedId = items[index];
+                helper.assignDeviceToUser(selectedId, personnelId, RoleConstants.ROLE_FARMER)
+                        .addOnSuccessListener(unused -> {
+                            NotificationHelper.showSuccess(requireContext(), "Device assigned successfully");
+                            loadAssignments();
+                        })
+                        .addOnFailureListener(e -> NotificationHelper.showError(requireContext(), "Error: " + e.getMessage()));
+            });
         });
     }
 

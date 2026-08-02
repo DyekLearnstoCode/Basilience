@@ -23,6 +23,18 @@ import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
+import com.google.firebase.messaging.FirebaseMessaging;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.auth.FirebaseAuth;
+import android.os.Build;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import androidx.core.content.ContextCompat;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.activity.result.ActivityResultLauncher;
+import android.util.Log;
+import java.util.HashMap;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -36,10 +48,21 @@ public class MainActivity extends AppCompatActivity {
     private ValueEventListener summaryAlertListener;
     private DatabaseReference summaryStatusRef;
 
+    private final ActivityResultLauncher<String> requestPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
+                if (isGranted) {
+                    Log.d("FCM", "Notification permission granted");
+                } else {
+                    Log.w("FCM", "Notification permission denied");
+                }
+            });
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
+        askNotificationPermission();
+        retrieveAndSaveFCMToken();
         // Ensure status bar icons are dark (for light background)
         WindowInsetsControllerCompat windowInsetsController =
                 new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
@@ -90,7 +113,8 @@ public class MainActivity extends AppCompatActivity {
 
                         // Hide settings button on settings-related screens
                         boolean isSettingsScreen = (id == R.id.settings || id == R.id.accountFragment ||
-                                id == R.id.aboutFragment || id == R.id.tosFragment);
+                                id == R.id.aboutFragment || id == R.id.tosFragment ||
+                                id == R.id.wifiConfigFragment || id == R.id.devOptionsFragment);
                         globalSettings.setVisibility(isSettingsScreen ? View.GONE : View.VISIBLE);
 
                         globalSettings.setOnClickListener(view -> {
@@ -124,6 +148,9 @@ public class MainActivity extends AppCompatActivity {
                         if (RoleConstants.ROLE_FARMER.equalsIgnoreCase(userRole)) {
                             if (bottomNav.getMenu().findItem(R.id.personnelFragment) != null) {
                                 bottomNav.getMenu().findItem(R.id.personnelFragment).setVisible(false);
+                            }
+                            if (bottomNav.getMenu().findItem(R.id.DeviceManagementFragment) != null) {
+                                bottomNav.getMenu().findItem(R.id.DeviceManagementFragment).setVisible(false);
                             }
                         }
                     }
@@ -317,5 +344,43 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void onCancelled(DatabaseError error) {}
                 });
+    }
+
+    private void askNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+                    PackageManager.PERMISSION_GRANTED) {
+                // FCM SDK (and your app) can post notifications.
+            } else if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                // Display an educational UI explaining to the user the features that will be enabled
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
+            } else {
+                // Directly ask for the permission
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
+            }
+        }
+    }
+
+    private void retrieveAndSaveFCMToken() {
+        FirebaseMessaging.getInstance().getToken()
+            .addOnCompleteListener(task -> {
+                if (!task.isSuccessful()) {
+                    Log.w("FCM", "Fetching FCM registration token failed", task.getException());
+                    return;
+                }
+                String token = task.getResult();
+                Log.d("FCM", "FCM Token: " + token);
+                
+                String uid = FirebaseAuth.getInstance().getUid();
+                if (uid != null) {
+                    Map<String, Object> update = new HashMap<>();
+                    update.put("fcmToken", token);
+                    FirebaseFirestore.getInstance().collection("users")
+                            .document(uid)
+                            .update(update)
+                            .addOnSuccessListener(aVoid -> Log.d("FCM", "FCM Token saved to Firestore."))
+                            .addOnFailureListener(e -> Log.e("FCM", "Failed to save FCM token", e));
+                }
+            });
     }
 }

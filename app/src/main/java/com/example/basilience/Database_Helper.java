@@ -39,6 +39,8 @@ public class Database_Helper {
     private final FirebaseFirestore db;
     private final FirebaseDatabase rtdb;
 
+    private static boolean isConnectedListenerRegistered = false;
+
     private String selectedDeviceId;
     private String cachedRole;
 
@@ -57,23 +59,26 @@ public class Database_Helper {
         deviceRef = rtdb.getReference("devices");
 
         // Connectivity Monitoring
-        DatabaseReference connectedRef = rtdb.getReference(".info/connected");
-        connectedRef.addValueEventListener(new com.google.firebase.database.ValueEventListener() {
-            @Override
-            public void onDataChange(@NonNull com.google.firebase.database.DataSnapshot snapshot) {
-                boolean connected = snapshot.getValue(Boolean.class);
-                if (connected) {
-                    Log.d("SensorDebug", "RTDB Connected");
-                } else {
-                    Log.d("SensorDebug", "RTDB Disconnected");
+        if (!isConnectedListenerRegistered) {
+            DatabaseReference connectedRef = rtdb.getReference(".info/connected");
+            connectedRef.addValueEventListener(new com.google.firebase.database.ValueEventListener() {
+                @Override
+                public void onDataChange(@NonNull com.google.firebase.database.DataSnapshot snapshot) {
+                    Boolean connected = snapshot.getValue(Boolean.class);
+                    if (Boolean.TRUE.equals(connected)) {
+                        Log.d("SensorDebug", "RTDB Connected");
+                    } else {
+                        Log.d("SensorDebug", "RTDB Disconnected");
+                    }
                 }
-            }
 
-            @Override
-            public void onCancelled(@NonNull com.google.firebase.database.DatabaseError error) {
-                Log.e("SensorDebug", "Connectivity listener cancelled: " + error.getMessage());
-            }
-        });
+                @Override
+                public void onCancelled(@NonNull com.google.firebase.database.DatabaseError error) {
+                    Log.e("SensorDebug", "Connectivity listener cancelled: " + error.getMessage());
+                }
+            });
+            isConnectedListenerRegistered = true;
+        }
     }
 
     public void setSelectedDeviceId(String deviceId) {
@@ -301,7 +306,7 @@ public class Database_Helper {
             if (isManual != null && isManual) {
                 Map<String, Object> commandData = new HashMap<>();
                 commandData.put("state", isOn);
-                commandData.put("source", "android");
+                commandData.put("source", "manual");
                 commandData.put("timestamp", System.currentTimeMillis());
                 
                 String path = "devices/" + selectedDeviceId + "/commands/" + actuatorName;
@@ -317,28 +322,34 @@ public class Database_Helper {
             return Tasks.forException(new Exception("No device selected"));
 
         return checkAdminTask().onSuccessTask(aVoid -> {
-            DatabaseReference cmdRef = rtdb.getReference("devices").child(selectedDeviceId).child("commands");
+            DatabaseReference deviceRef = rtdb.getReference("devices").child(selectedDeviceId);
             if (!isManual) {
-                Map<String, Object> turnOffData = new HashMap<>();
-                turnOffData.put("state", false);
-                turnOffData.put("source", "android");
-                turnOffData.put("timestamp", System.currentTimeMillis());
+                Map<String, Object> turnOffCmd = new HashMap<>();
+                turnOffCmd.put("state", false);
+                turnOffCmd.put("source", "android");
+                turnOffCmd.put("timestamp", System.currentTimeMillis());
+
+                Map<String, Object> turnOffStatus = new HashMap<>();
+                turnOffStatus.put("state", 0);
+                turnOffStatus.put("source", "android");
+                turnOffStatus.put("timestamp", System.currentTimeMillis());
 
                 Map<String, Object> updates = new HashMap<>();
-                updates.put("manualMode", false);
-                updates.put("solenoid", turnOffData);
-                updates.put("canopyFan", turnOffData);
-                updates.put("growLight", turnOffData);
-                updates.put("phUpPump", turnOffData);
-                updates.put("phDownPump", turnOffData);
-                updates.put("growPump", turnOffData);
-                updates.put("bloomPump", turnOffData);
-                updates.put("fogger", turnOffData);
-                updates.put("blower", turnOffData);
-                updates.put("peltier", turnOffData);
-                return cmdRef.updateChildren(updates);
+                updates.put("commands/manualMode", false);
+                updates.put("commands/solenoid", turnOffCmd);
+                updates.put("commands/canopyFan", turnOffCmd);
+                updates.put("commands/growLight", turnOffCmd);
+                updates.put("commands/phUpPump", turnOffCmd);
+                updates.put("commands/phDownPump", turnOffCmd);
+                updates.put("commands/growPump", turnOffCmd);
+                updates.put("commands/bloomPump", turnOffCmd);
+                updates.put("commands/fogger", turnOffCmd);
+                updates.put("commands/blower", turnOffCmd);
+                updates.put("commands/peltier", turnOffCmd);
+
+                return deviceRef.updateChildren(updates);
             } else {
-                return cmdRef.child("manualMode").setValue(true);
+                return deviceRef.child("commands").child("manualMode").setValue(true);
             }
         });
     }
@@ -757,30 +768,6 @@ public class Database_Helper {
                 .addSnapshotListener(listener);
     }
 
-    public ListenerRegistration listenToNotifications(EventListener<QuerySnapshot> listener) {
-        if (selectedDeviceId == null) return null;
-
-        return db.collection("devices")
-                .document(selectedDeviceId)
-                .collection("notifications")
-                .orderBy("timestamp", Query.Direction.DESCENDING)
-                .addSnapshotListener(listener);
-    }
-
-    public Task<Void> addNotification(String message, String type) {
-        if (selectedDeviceId == null) return Tasks.forException(new Exception("No device selected"));
-
-        Map<String, Object> notification = new HashMap<>();
-        notification.put("message", message);
-        notification.put("timestamp", System.currentTimeMillis());
-        notification.put("type", type);
-
-        return db.collection("devices")
-                .document(selectedDeviceId)
-                .collection("notifications")
-                .document()
-                .set(notification);
-    }
 
     // --------------------
     // DEVICES MANAGEMENT
@@ -955,4 +942,45 @@ public class Database_Helper {
                 });
     }
 
+
+    // --------------------
+    // NOTIFICATIONS (Firestore: devices/{deviceId}/notifications)
+    // --------------------
+
+    /**
+     * Writes a new notification document to Firestore under devices/{deviceId}/notifications.
+     * Called by AlertManager when an alert transitions from false → true.
+     */
+    public void addNotification(String message, String type) {
+        if (selectedDeviceId == null || selectedDeviceId.isEmpty()) return;
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("message", message);
+        data.put("type", type);
+        data.put("timestamp", System.currentTimeMillis());
+
+        db.collection("devices")
+                .document(selectedDeviceId)
+                .collection("notifications")
+                .add(data)
+                .addOnFailureListener(e ->
+                        Log.e("Database_Helper", "Failed to write notification: " + e.getMessage()));
+    }
+
+    /**
+     * Attaches a real-time Firestore listener to devices/{deviceId}/notifications,
+     * ordered by timestamp descending, limited to the most recent 50 entries.
+     */
+    public ListenerRegistration listenToNotifications(EventListener<QuerySnapshot> listener) {
+        if (selectedDeviceId == null || selectedDeviceId.isEmpty()) return null;
+
+        return db.collection("devices")
+                .document(selectedDeviceId)
+                .collection("notifications")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(50)
+                .addSnapshotListener(listener);
+    }
+
 }
+

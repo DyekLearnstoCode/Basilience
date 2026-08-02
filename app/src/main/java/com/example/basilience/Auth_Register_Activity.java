@@ -136,15 +136,12 @@ public class Auth_Register_Activity extends AppCompatActivity {
     private void showVerifyEmailDialog() {
         if (isFinishing() || isDestroyed()) return;
 
-        new AlertDialog.Builder(this)
-                .setTitle("Registration Complete")
-                .setMessage("Please check your email to verify your account before logging in.")
-                .setCancelable(false)
-                .setPositiveButton("OK", (dialog, which) -> {
+        NotificationHelper.showConfirmation(this, "Registration Complete", 
+                "Please check your email to verify your account before logging in.", 
+                "OK", "Cancel", () -> {
                     helper.logout();
                     gotoLogin();
-                })
-                .show();
+                });
     }
 
     private void gotoLogin() {
