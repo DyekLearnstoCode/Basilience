@@ -227,7 +227,13 @@ public class FoggingReportsFragment extends Fragment {
         Map<String, Long> dailyManual = new HashMap<>();
         Map<String, Long> dailyAdaptive = new HashMap<>();
         
-        SimpleDateFormat dayFormat = new SimpleDateFormat("MMM dd", Locale.getDefault());
+        SimpleDateFormat dayFormat;
+        if ("Today".equals(currentSelectedFilter)) {
+            dayFormat = new SimpleDateFormat("hh a", Locale.getDefault());
+        } else {
+            dayFormat = new SimpleDateFormat("MMM dd", Locale.getDefault());
+        }
+        
         List<String> xLabels = new ArrayList<>();
 
         for (FoggingEvent e : chronoEvents) {

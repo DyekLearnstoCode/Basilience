@@ -38,7 +38,7 @@ public class DevOptionsFragment extends Fragment {
     private SwitchCompat switchMockEnable;
     private EditText etPh, etEc, etTemp, etHumidity, etWaterLevel;
     private EditText etMinWaterLevel, etMaxWaterLevel;
-    private Button btnPush, btnPushSettings;
+    private Button btnPush, btnPushSettings, btnInjectLogs;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -66,7 +66,7 @@ public class DevOptionsFragment extends Fragment {
         etMaxWaterLevel = view.findViewById(R.id.etMaxWaterLevel);
         btnPush = view.findViewById(R.id.btnPush);
         btnPushSettings = view.findViewById(R.id.btnPushSettings);
-        Button btnInjectLogs = view.findViewById(R.id.btnInjectLogs);
+        btnInjectLogs = view.findViewById(R.id.btnInjectLogs);
 
         Database_Helper helper = new Database_Helper();
         String currentDeviceId = helper.getSelectedDeviceId();
@@ -188,6 +188,11 @@ public class DevOptionsFragment extends Fragment {
         if (getContext() != null) {
             Toast.makeText(getContext(), "Generating mock logs... Please wait.", Toast.LENGTH_LONG).show();
         }
+        
+        if (btnInjectLogs != null) {
+            btnInjectLogs.setEnabled(false);
+            btnInjectLogs.setText("Injecting...");
+        }
 
         FirebaseFirestore db = FirebaseFirestore.getInstance();
         
@@ -215,9 +220,9 @@ public class DevOptionsFragment extends Fragment {
         Random random = new Random();
         long now = System.currentTimeMillis();
         
-        // 1. Generate 30 Parameter Logs (one per hour for past 30 hours)
-        for (int i = 0; i < 30; i++) {
-            long timestamp = now - (i * 3600000L); // 1 hour intervals back in time
+        // 1. Generate Parameter Logs (1 log every 4 hours for the past 30 days) -> ~180 logs
+        for (int i = 0; i < 180; i++) {
+            long timestamp = now - (i * 14400000L); // 4 hour intervals back in time
             Map<String, Object> log = new HashMap<>();
             log.put("timestamp", timestamp);
             log.put("ph", 5.5 + random.nextDouble() * 1.5); // 5.5 - 7.0
@@ -232,11 +237,11 @@ public class DevOptionsFragment extends Fragment {
             batch.set(ref, log);
         }
 
-        // 2. Generate 15 Fogging Logs (sequential over past 24 hours to prevent overlapping)
+        // 2. Generate Fogging Logs (approx 2 fogging cycles per day for the past 30 days) -> ~60 cycles (120 events)
         long currentSimTime = now;
-        for (int i = 0; i < 15; i++) {
-            // Gap between fogging events: 30 mins to 2 hours
-            long gap = (long)(1800000 + random.nextDouble() * 5400000); 
+        for (int i = 0; i < 60; i++) {
+            // Gap between fogging events: 8 hours to 16 hours (so they span across 30 days)
+            long gap = (long)(28800000L + random.nextDouble() * 28800000L); 
             long offTime = currentSimTime - gap;
             
             // Duration of fogging: 2 to 7 minutes
@@ -270,9 +275,17 @@ public class DevOptionsFragment extends Fragment {
             if (getContext() != null) {
                 Toast.makeText(getContext(), "Mock logs injected! Check Reports.", Toast.LENGTH_SHORT).show();
             }
+            if (btnInjectLogs != null) {
+                btnInjectLogs.setEnabled(true);
+                btnInjectLogs.setText("Inject Mock Firestore Logs");
+            }
         }).addOnFailureListener(e -> {
             if (getContext() != null) {
                 Toast.makeText(getContext(), "Failed to inject: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+            if (btnInjectLogs != null) {
+                btnInjectLogs.setEnabled(true);
+                btnInjectLogs.setText("Inject Mock Firestore Logs");
             }
         });
     }
