@@ -5,7 +5,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
-
+import android.text.InputFilter;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
@@ -47,6 +47,10 @@ public class Personnel_Add_Fragment extends Fragment {
         tvLoadingTitle = view.findViewById(R.id.tvLoadingTitle);
 
         btnSave.setOnClickListener(v -> saveFarmer());
+
+        etPhone.setFilters(new InputFilter[]{
+                new InputFilter.LengthFilter(11)
+        });
     }
 
     private void saveFarmer() {

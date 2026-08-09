@@ -69,6 +69,8 @@ public class Personnel_Details_Fragment extends Fragment {
         btnSave.setVisibility(View.GONE);
         setEditable(false);
 
+
+
         personnelId = getArguments() != null ? getArguments().getString("personnelId") : null;
         if (personnelId == null || personnelId.isEmpty()) {
             NotificationHelper.showError(requireContext(), "Missing personnelId");
@@ -272,6 +274,7 @@ public class Personnel_Details_Fragment extends Fragment {
         }
         // Email is used as the Login ID and cannot be changed here to maintain sync with Auth.
         etEmail.setEnabled(false);
+        etRole.setEnabled(false);
     }
 
     private String safe(String v) { return v != null ? v : ""; }
