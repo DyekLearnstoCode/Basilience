@@ -57,7 +57,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
                 android:gravity="center"
-                android:text="Online"
+                android:text="Checking Status..."
                 android:textColor="#4CAF50"
                 android:textSize="14sp"
                 android:textStyle="bold" />
@@ -206,6 +206,10 @@
 
             <include
                 android:id="@+id/actPeltier"
+                layout="@layout/item_actuator" />
+
+            <include
+                android:id="@+id/actCirculationPump"
                 layout="@layout/item_actuator" />
 
         </LinearLayout>

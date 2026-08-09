@@ -1,200 +1,158 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <com.google.android.material.appbar.AppBarLayout
+    <androidx.coordinatorlayout.widget.CoordinatorLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@android:color/transparent"
-        app:elevation="0dp">
+        android:layout_height="match_parent">
 
-        <com.google.android.material.appbar.CollapsingToolbarLayout
+        <com.google.android.material.appbar.AppBarLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:layout_scrollFlags="scroll|exitUntilCollapsed">
+            android:background="@android:color/transparent"
+            app:elevation="0dp">
 
-            <include layout="@layout/layout_header" />
+            <com.google.android.material.appbar.CollapsingToolbarLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:layout_scrollFlags="scroll|exitUntilCollapsed">
+                <include layout="@layout/layout_header" />
+            </com.google.android.material.appbar.CollapsingToolbarLayout>
+        </com.google.android.material.appbar.AppBarLayout>
 
-        </com.google.android.material.appbar.CollapsingToolbarLayout>
-    </com.google.android.material.appbar.AppBarLayout>
-
-    <androidx.core.widget.NestedScrollView
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_marginTop="@dimen/container_overlap_margin"
-        android:background="@drawable/top_rounded_white"
-        android:elevation="5dp"
-        android:fillViewport="true"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior">
-
-        <LinearLayout
-            android:id="@+id/cardContainer"
+        <androidx.core.widget.NestedScrollView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingTop="@dimen/container_top_padding"
-            android:paddingStart="@dimen/container_side_padding"
-            android:paddingEnd="@dimen/container_side_padding"
-            android:paddingBottom="@dimen/container_side_padding">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Personnel Details"
-                android:textSize="22sp"
-                android:textStyle="bold"
-                android:gravity="center"
-                android:layout_marginBottom="20dp"
-                android:textColor="@android:color/black"/>
-
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/InputFieldStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:hint="Personnel Name">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/etName"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="#000000" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/InputFieldStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:hint="Position">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/etRole"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="#000000" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/InputFieldStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:hint="Email">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/etEmail"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:inputType="textEmailAddress"
-                    android:textColor="#000000" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/InputFieldStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:hint="Phone Number">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/etPhone"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:inputType="phone"
-                    android:textColor="#000000" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnResetPassword"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="24dp"
-                android:text="Send Password Reset Email"
-                android:textColor="@color/primary"
-                app:strokeColor="@color/primary"
-                app:cornerRadius="12dp" />
+            android:layout_height="match_parent"
+            android:layout_marginTop="@dimen/container_overlap_margin"
+            android:background="@drawable/top_rounded_white"
+            android:fillViewport="true"
+            app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
             <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="12dp">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnEdit"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:text="Edit Profile"
-                    android:layout_height="wrap_content"
-                    android:backgroundTint="@color/primary"
-                    android:textColor="@android:color/white"
-                    android:layout_marginEnd="8dp"
-                    app:cornerRadius="12dp"
-                    app:iconGravity="textStart"/>
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnSave"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:text="Save"
-                    android:layout_height="wrap_content"
-                    android:visibility="gone"
-                    android:backgroundTint="@color/primary"
-                    android:textColor="@android:color/white"
-                    android:layout_marginEnd="8dp"
-                    app:cornerRadius="12dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnDelete"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:text="Remove"
-                    android:backgroundTint="#E53935"
-                    android:textColor="@android:color/white"
-                    android:layout_height="wrap_content"
-                    app:cornerRadius="12dp"
-                    app:iconGravity="textStart"/>
-            </LinearLayout>
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:background="#DDDDDD"
-                android:layout_marginTop="24dp"
-                android:layout_marginBottom="24dp" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Assigned Devices"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:layout_marginBottom="12dp"
-                android:textColor="@android:color/black"/>
-
-            <LinearLayout
-                android:id="@+id/layoutAssignedDevices"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:layout_marginBottom="12dp" />
+                android:paddingTop="@dimen/container_top_padding"
+                android:paddingStart="@dimen/container_side_padding"
+                android:paddingEnd="@dimen/container_side_padding"
+                android:paddingBottom="@dimen/container_side_padding">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnAssignDevice"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="+ Assign New Device"
-                android:textColor="@color/primary"
-                android:layout_gravity="center" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="20dp"
+                    android:gravity="center"
+                    android:text="Personnel Details"
+                    android:textColor="@color/black"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
 
-        </LinearLayout>
-    </androidx.core.widget.NestedScrollView>
+                <LinearLayout
+                    android:id="@+id/layoutPersonnelView"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Personnel Name" android:textColor="@color/primary" android:textSize="13sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/tvPersonnelName" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="14dp" android:text="—" android:textColor="@color/black" android:textSize="16sp" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Position" android:textColor="@color/primary" android:textSize="13sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/tvPersonnelRole" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="14dp" android:text="—" android:textColor="@color/black" android:textSize="16sp" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Email" android:textColor="@color/primary" android:textSize="13sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/tvPersonnelEmail" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="14dp" android:text="—" android:textColor="@color/black" android:textSize="16sp" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Phone Number" android:textColor="@color/primary" android:textSize="13sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/tvPersonnelPhone" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="14dp" android:text="—" android:textColor="@color/black" android:textSize="16sp" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Date Added" android:textColor="@color/primary" android:textSize="13sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/tvPersonnelDateAdded" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="20dp" android:text="—" android:textColor="@color/black" android:textSize="16sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnEdit"
+                        style="@style/BasilienceButton.Secondary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Edit Profile" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnResetPassword"
+                        style="@style/BasilienceButton.Secondary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="Change Password" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/layoutPersonnelEdit"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <com.google.android.material.textfield.TextInputLayout style="@style/InputFieldStyle" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="12dp" android:hint="Personnel Name">
+                        <com.google.android.material.textfield.TextInputEditText android:id="@+id/etName" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                    <com.google.android.material.textfield.TextInputLayout style="@style/InputFieldStyle" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="12dp" android:hint="Position">
+                        <com.google.android.material.textfield.TextInputEditText android:id="@+id/etRole" android:layout_width="match_parent" android:layout_height="wrap_content" android:enabled="false" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                    <com.google.android.material.textfield.TextInputLayout style="@style/InputFieldStyle" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="12dp" android:hint="Email">
+                        <com.google.android.material.textfield.TextInputEditText android:id="@+id/etEmail" android:layout_width="match_parent" android:layout_height="wrap_content" android:enabled="false" android:inputType="textEmailAddress" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                    <com.google.android.material.textfield.TextInputLayout style="@style/InputFieldStyle" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="20dp" android:hint="Phone Number">
+                        <com.google.android.material.textfield.TextInputEditText android:id="@+id/etPhone" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="phone" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+                        <com.google.android.material.button.MaterialButton android:id="@+id/btnCancelEdit" style="@style/BasilienceButton.Secondary" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginEnd="6dp" android:layout_weight="1" android:text="Cancel" />
+                        <com.google.android.material.button.MaterialButton android:id="@+id/btnSave" style="@style/BasilienceButton.Primary" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:layout_weight="1" android:text="Save Changes" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnDelete"
+                    style="@style/BasilienceButton.Danger"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Unlink Personnel" />
+
+                <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="24dp" android:layout_marginBottom="20dp" android:background="#DDDDDD" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Assigned Devices"
+                        android:textColor="@color/black"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+
+                    <ImageButton
+                        android:id="@+id/btnAssignDevice"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="Assign device"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_add_24"
+                        app:tint="@color/primary" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/layoutAssignedDevices"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </LinearLayout>
+        </androidx.core.widget.NestedScrollView>
+    </androidx.coordinatorlayout.widget.CoordinatorLayout>
 
     <include layout="@layout/layout_loading" />
-
-</androidx.coordinatorlayout.widget.CoordinatorLayout>
+</FrameLayout>

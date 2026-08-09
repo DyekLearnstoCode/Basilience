@@ -87,15 +87,20 @@ public class Personnel_Add_Fragment extends Fragment {
                 .addOnFailureListener(e -> {
                     showLoading(false, null);
                     btnSave.setEnabled(true);
-                    NotificationHelper.showError(requireContext(), "Failed: " + e.getMessage());
+                    String message = e.getMessage() != null ? e.getMessage() : "Unable to create personnel account.";
+                    if (message.toLowerCase(java.util.Locale.US).contains("already") && message.toLowerCase(java.util.Locale.US).contains("email")) {
+                        message = "This personnel account already exists. Use Add Existing Personnel instead.";
+                    }
+                    NotificationHelper.showError(requireContext(), "Failed: " + message);
                 });
     }
 
     private void showLoading(boolean show, String title) {
-        if (layoutLoading != null) {
+        if (isAdded() && layoutLoading != null) {
             if (show) {
                 if (title != null && tvLoadingTitle != null) tvLoadingTitle.setText(title);
                 layoutLoading.setVisibility(View.VISIBLE);
+                layoutLoading.bringToFront();
             } else {
                 layoutLoading.setVisibility(View.GONE);
             }

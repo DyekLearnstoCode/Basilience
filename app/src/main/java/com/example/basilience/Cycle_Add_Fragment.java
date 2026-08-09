@@ -124,6 +124,7 @@ public class Cycle_Add_Fragment extends Fragment {
         if (layoutLoading != null) {
             tvLoadingTitle.setText(R.string.loading_saving);
             layoutLoading.setVisibility(View.VISIBLE);
+            layoutLoading.bringToFront();
         }
         btnSave.setEnabled(false);
 

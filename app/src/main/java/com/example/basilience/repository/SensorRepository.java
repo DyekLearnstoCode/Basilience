@@ -33,6 +33,7 @@ public class SensorRepository {
 
                 if (!snapshot.exists()) {
                     Log.d("SensorRepository", "Sensors node does not exist.");
+                    liveData.postValue(new SensorData());
                     return;
                 }
 

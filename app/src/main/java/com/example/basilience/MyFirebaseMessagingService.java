@@ -16,7 +16,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
     @Override
     public void onNewToken(@NonNull String token) {
         super.onNewToken(token);
-        Log.d(TAG, "Refreshed token: " + token);
+        Log.d(TAG, "FCM token refreshed for current installation");
         sendRegistrationToServer(token);
     }
 
@@ -28,7 +28,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
 
             FirebaseFirestore.getInstance().collection("users")
                     .document(uid)
-                    .update(update)
+                    .set(update, com.google.firebase.firestore.SetOptions.merge())
                     .addOnSuccessListener(aVoid -> Log.d(TAG, "FCM Token updated successfully."))
                     .addOnFailureListener(e -> Log.e(TAG, "Failed to update FCM token", e));
         }
@@ -40,19 +40,47 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
         
         Log.d(TAG, "From: " + remoteMessage.getFrom());
 
-        // Check if message contains a notification payload.
-        if (remoteMessage.getNotification() != null) {
-            String title = remoteMessage.getNotification().getTitle();
-            String body = remoteMessage.getNotification().getBody();
-            Log.d(TAG, "Message Notification Body: " + body);
+        String title = "Device Alert";
+        String body = "System alert received";
+        String eventId = remoteMessage.getData().get("notificationId");
+        String notificationType = remoteMessage.getData().get("type");
+        String deviceId = remoteMessage.getData().get("deviceId");
 
-            // If the app is in the foreground, we manually show the notification
-            // so the user doesn't miss it.
-            showNotification(title, body);
+        if (remoteMessage.getNotification() != null) {
+            title = remoteMessage.getNotification().getTitle();
+            body = remoteMessage.getNotification().getBody();
+        } else if (remoteMessage.getData().size() > 0) {
+            if (remoteMessage.getData().containsKey("title")) {
+                title = remoteMessage.getData().get("title");
+            }
+            if (remoteMessage.getData().containsKey("body")) {
+                body = remoteMessage.getData().get("body");
+            }
+        }
+
+        if (title != null && body != null) {
+            // Notification payloads are automatically posted by FCM only while the
+            // app is backgrounded. Foreground delivery always posts exactly one tray
+            // card here; only explicitly critical types also receive one popup.
+            showNotification(title, body, eventId);
+            if (isParameterAlert(notificationType)) {
+                MainActivity.showForegroundParameterAlert(notificationType, eventId, deviceId);
+            } else if ("safetyLock".equalsIgnoreCase(notificationType)
+                    || "sensorFault".equalsIgnoreCase(notificationType)) {
+                MainActivity.showForegroundAlert(title, body, eventId);
+            }
         }
     }
 
-    private void showNotification(String title, String messageBody) {
+    private boolean isParameterAlert(String type) {
+        return "lowWater".equalsIgnoreCase(type)
+                || "ecLow".equalsIgnoreCase(type)
+                || "phOutOfRange".equalsIgnoreCase(type)
+                || "highTemperature".equalsIgnoreCase(type)
+                || "waterTempOutOfRange".equalsIgnoreCase(type);
+    }
+
+    private void showNotification(String title, String messageBody, String eventId) {
         android.content.Intent intent = new android.content.Intent(this, MainActivity.class);
         intent.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP);
         android.app.PendingIntent pendingIntent = android.app.PendingIntent.getActivity(this, 0, intent,
@@ -81,6 +109,9 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
             notificationManager.createNotificationChannel(channel);
         }
 
-        notificationManager.notify(0, notificationBuilder.build());
+        int notificationId = eventId != null && !eventId.isEmpty()
+                ? eventId.hashCode()
+                : (title + "|" + messageBody).hashCode();
+        notificationManager.notify(notificationId, notificationBuilder.build());
     }
 }

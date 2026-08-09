@@ -35,18 +35,46 @@ import androidx.activity.result.ActivityResultLauncher;
 import android.util.Log;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.ArrayDeque;
+import java.lang.ref.WeakReference;
 
 public class MainActivity extends AppCompatActivity {
+
+    private static WeakReference<MainActivity> foregroundActivity = new WeakReference<>(null);
+    private static final Map<String, String> activeParameterAlerts = new LinkedHashMap<>();
+    private static final Set<String> presentedParameterEventIds = new HashSet<>();
+    private static String parameterAlertDeviceId;
+    private NotificationHelper.UpdatableParameterDialog parameterAlertDialog;
+    private androidx.appcompat.app.AlertDialog criticalAlertDialog;
+    private boolean criticalAlertShowing;
+    private final ArrayDeque<CriticalAlertRequest> pendingCriticalAlerts = new ArrayDeque<>();
+
+    private static final class CriticalAlertRequest {
+        final String title;
+        final String message;
+
+        CriticalAlertRequest(String title, String message) {
+            this.title = title;
+            this.message = message;
+        }
+    }
 
     private MaterialCardView activeAlertBanner;
     private TextView alertTitle;
     private TextView alertMessage;
 
-    private AlertManager alertManager;
+
     private BottomNavigationView bottomNav;
 
     private ValueEventListener summaryAlertListener;
     private DatabaseReference summaryStatusRef;
+    private ValueEventListener currentParameterAlertListener;
+    private DatabaseReference currentParameterAlertsRef;
+    private String currentParameterAlertDeviceId;
+    private final Map<String, Boolean> currentParameterAlertStates = new HashMap<>();
 
     private final ActivityResultLauncher<String> requestPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
@@ -85,10 +113,32 @@ public class MainActivity extends AppCompatActivity {
         // We will handle it via the destination changed listener or by finding it when fragments are attached.
         
         // 2. ALERT FIXES:
-        alertManager = new AlertManager(this);
+        // AlertManager removed to prevent duplicate notifications (handled by Cloud Functions & FCM)
 
-        // alertManager.startListening(); // <--- REMOVED from startup as per Task 2
-        // startAlertBannerListener();    // <--- REMOVED from startup as per Task 2
+        // Start global connection monitoring
+        SharedPreferences prefs = getSharedPreferences("basilience_prefs", MODE_PRIVATE);
+        String initialDeviceId = prefs.getString("selected_device_id", null);
+        if (initialDeviceId != null) {
+            DeviceConnectionManager.getInstance().monitorDevice(initialDeviceId);
+        }
+        startCurrentParameterAlertListener(initialDeviceId);
+        
+        DeviceConnectionManager.getInstance().getOnlineStatus().observe(this, isOnline -> {
+            // Presence UI observes backend-owned status. Cloud Functions alone create
+            // persistent alert history and send FCM events.
+        });
+
+        prefs.registerOnSharedPreferenceChangeListener((sharedPreferences, key) -> {
+            if ("selected_device_id".equals(key)) {
+                String newDeviceId = sharedPreferences.getString("selected_device_id", null);
+                if (newDeviceId != null) {
+                    DeviceConnectionManager.getInstance().monitorDevice(newDeviceId);
+                } else {
+                    DeviceConnectionManager.getInstance().stopMonitoring();
+                }
+                startCurrentParameterAlertListener(newDeviceId);
+            }
+        });
 
         bottomNav = findViewById(R.id.bottom_navigation);
 
@@ -143,8 +193,7 @@ public class MainActivity extends AppCompatActivity {
                         bottomNav.inflateMenu(R.menu.management_bottom_nav_menu);
                         
                         // RBAC: Hide Personnel for Farmers
-                        SharedPreferences rolePrefs = getSharedPreferences("basilience_prefs", MODE_PRIVATE);
-                        String userRole = rolePrefs.getString("user_role", RoleConstants.ROLE_ADMIN);
+                        String userRole = prefs.getString("user_role", RoleConstants.ROLE_ADMIN);
                         if (RoleConstants.ROLE_FARMER.equalsIgnoreCase(userRole)) {
                             if (bottomNav.getMenu().findItem(R.id.personnelFragment) != null) {
                                 bottomNav.getMenu().findItem(R.id.personnelFragment).setVisible(false);
@@ -158,7 +207,6 @@ public class MainActivity extends AppCompatActivity {
                     if (id == R.id.DeviceManagementFragment) {
                         // Task 2.i: Management Summary Logic
                         startManagementSummaryListener();
-                        alertManager.stopListening();
                     } else {
                         stopManagementSummaryListener();
                     }
@@ -172,8 +220,7 @@ public class MainActivity extends AppCompatActivity {
                             bottomNav.inflateMenu(R.menu.bottom_nav_menu);
                             
                             // RBAC: Hide Reports for Farmers
-                            SharedPreferences rolePrefs = getSharedPreferences("basilience_prefs", MODE_PRIVATE);
-                            String userRole = rolePrefs.getString("user_role", RoleConstants.ROLE_ADMIN);
+                            String userRole = prefs.getString("user_role", RoleConstants.ROLE_ADMIN);
                             if (RoleConstants.ROLE_FARMER.equalsIgnoreCase(userRole)) {
                                 if (bottomNav.getMenu().findItem(R.id.reportschoiceFragment) != null) {
                                     bottomNav.getMenu().findItem(R.id.reportschoiceFragment).setVisible(false);
@@ -183,7 +230,6 @@ public class MainActivity extends AppCompatActivity {
 
                         // RBAC: Navigate away if farmer tries to access reports
                         if (id == R.id.reportschoiceFragment) {
-                            SharedPreferences prefs = getSharedPreferences("basilience_prefs", MODE_PRIVATE);
                             String role = prefs.getString("user_role", RoleConstants.ROLE_ADMIN);
                             if (RoleConstants.ROLE_FARMER.equalsIgnoreCase(role)) {
                                 navController.navigate(R.id.home);
@@ -192,10 +238,7 @@ public class MainActivity extends AppCompatActivity {
 
                         if (id == R.id.home) {
                             // Task 2.ii: Dashboard Logic
-                            SharedPreferences prefs = getSharedPreferences("basilience_prefs", MODE_PRIVATE);
                             String deviceId = prefs.getString("selected_device_id", null);
-                            alertManager.setDeviceId(deviceId);
-                            alertManager.startListening();
                         }
                     } else {
                         bottomNav.setVisibility(View.GONE);
@@ -369,7 +412,7 @@ public class MainActivity extends AppCompatActivity {
                     return;
                 }
                 String token = task.getResult();
-                Log.d("FCM", "FCM Token: " + token);
+                Log.d("FCM", "FCM token retrieved for current user");
                 
                 String uid = FirebaseAuth.getInstance().getUid();
                 if (uid != null) {
@@ -377,10 +420,284 @@ public class MainActivity extends AppCompatActivity {
                     update.put("fcmToken", token);
                     FirebaseFirestore.getInstance().collection("users")
                             .document(uid)
-                            .update(update)
+                            .set(update, com.google.firebase.firestore.SetOptions.merge())
                             .addOnSuccessListener(aVoid -> Log.d("FCM", "FCM Token saved to Firestore."))
                             .addOnFailureListener(e -> Log.e("FCM", "Failed to save FCM token", e));
                 }
             });
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        foregroundActivity = new WeakReference<>(this);
+    }
+
+    @Override
+    protected void onStop() {
+        MainActivity current = foregroundActivity.get();
+        if (current == this) foregroundActivity.clear();
+        super.onStop();
+    }
+
+    public static boolean showForegroundAlert(String title, String message, String eventId) {
+        MainActivity activity = foregroundActivity.get();
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return false;
+
+        String stableId = eventId == null || eventId.trim().isEmpty()
+                ? title + "|" + message
+                : eventId;
+        SharedPreferences prefs = activity.getSharedPreferences("basilience_prefs", MODE_PRIVATE);
+        Set<String> shownIds = new HashSet<>(prefs.getStringSet("shown_critical_alert_ids", new HashSet<>()));
+        if (shownIds.contains(stableId)) return true;
+        shownIds.add(stableId);
+        prefs.edit().putStringSet("shown_critical_alert_ids", shownIds).apply();
+
+        activity.runOnUiThread(() -> activity.enqueueCriticalAlert(title, message));
+        return true;
+    }
+
+    private void enqueueCriticalAlert(String title, String message) {
+        pendingCriticalAlerts.add(new CriticalAlertRequest(title, message));
+        dismissParameterAlertForCritical();
+        showNextCriticalAlert();
+    }
+
+    private void showNextCriticalAlert() {
+        if (criticalAlertShowing) return;
+        CriticalAlertRequest request = pendingCriticalAlerts.poll();
+        if (request == null) {
+            showPendingParameterAlertIfNeeded();
+            return;
+        }
+
+        criticalAlertShowing = true;
+        criticalAlertDialog = NotificationHelper.showCriticalAlert(this, request.title,
+                request.message, () -> {
+                    criticalAlertShowing = false;
+                    criticalAlertDialog = null;
+                    showNextCriticalAlert();
+                });
+        if (criticalAlertDialog == null) {
+            criticalAlertShowing = false;
+            showNextCriticalAlert();
+        }
+    }
+
+    public static boolean showForegroundParameterAlert(String type, String eventId, String deviceId) {
+        MainActivity activity = foregroundActivity.get();
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return false;
+
+        String label = parameterLabel(type);
+        if (label == null) return false;
+        String stableId = eventId == null || eventId.trim().isEmpty()
+                ? (deviceId == null ? "" : deviceId) + "|" + type
+                : eventId;
+
+        activity.runOnUiThread(() -> activity.addForegroundParameterAlert(type, label, stableId, deviceId));
+        return true;
+    }
+
+    private void addForegroundParameterAlert(String type, String label, String eventId, String deviceId) {
+        if (presentedParameterEventIds.contains(eventId)) return;
+
+        if (deviceId != null && deviceId.equals(currentParameterAlertDeviceId)
+                && Boolean.FALSE.equals(currentParameterAlertStates.get(type))) {
+            // The FCM event arrived after the live alert had already recovered.
+            presentedParameterEventIds.add(eventId);
+            return;
+        }
+
+        presentedParameterEventIds.add(eventId);
+
+        if (parameterAlertDeviceId != null && deviceId != null && !parameterAlertDeviceId.equals(deviceId)) {
+            activeParameterAlerts.clear();
+            if (parameterAlertDialog != null && parameterAlertDialog.isShowing()) parameterAlertDialog.dismiss();
+            parameterAlertDialog = null;
+        }
+        parameterAlertDeviceId = deviceId;
+        activeParameterAlerts.put(type, label);
+        if (criticalAlertShowing) return;
+        String content = buildParameterAlertContent();
+
+        if (parameterAlertDialog != null && parameterAlertDialog.isShowing()) {
+            parameterAlertDialog.updateMessage(content);
+            return;
+        }
+        parameterAlertDialog = NotificationHelper.showParameterAlert(this, content,
+                this::openParametersFromAlert, this::dismissParameterAlerts);
+    }
+
+    private void startCurrentParameterAlertListener(String deviceId) {
+        stopCurrentParameterAlertListener();
+
+        if (parameterAlertDeviceId != null
+                && (deviceId == null || !parameterAlertDeviceId.equals(deviceId))) {
+            activeParameterAlerts.clear();
+            if (parameterAlertDialog != null && parameterAlertDialog.isShowing()) {
+                parameterAlertDialog.dismiss();
+            }
+            parameterAlertDialog = null;
+            parameterAlertDeviceId = null;
+        }
+
+        currentParameterAlertStates.clear();
+        currentParameterAlertDeviceId = deviceId;
+
+        if (deviceId == null || deviceId.isEmpty()) {
+            reconcileCurrentParameterAlerts();
+            return;
+        }
+
+        currentParameterAlertsRef = FirebaseDatabase.getInstance(
+                        "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app")
+                .getReference("devices")
+                .child(deviceId)
+                .child("alerts");
+
+        currentParameterAlertListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                currentParameterAlertStates.put("lowWater",
+                        Boolean.TRUE.equals(snapshot.child("lowWater").getValue(Boolean.class)));
+                currentParameterAlertStates.put("ecLow",
+                        Boolean.TRUE.equals(snapshot.child("ecLow").getValue(Boolean.class)));
+                currentParameterAlertStates.put("phOutOfRange",
+                        Boolean.TRUE.equals(snapshot.child("phOutOfRange").getValue(Boolean.class)));
+                currentParameterAlertStates.put("highTemperature",
+                        Boolean.TRUE.equals(snapshot.child("highTemperature").getValue(Boolean.class)));
+                currentParameterAlertStates.put("waterTempOutOfRange",
+                        Boolean.TRUE.equals(snapshot.child("waterTempOutOfRange").getValue(Boolean.class)));
+                reconcileCurrentParameterAlerts();
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("ParameterAlerts", "Current alert listener cancelled", error.toException());
+            }
+        };
+
+        currentParameterAlertsRef.addValueEventListener(currentParameterAlertListener);
+    }
+
+    private void reconcileCurrentParameterAlerts() {
+        if (parameterAlertDeviceId != null
+                && currentParameterAlertDeviceId != null
+                && !parameterAlertDeviceId.equals(currentParameterAlertDeviceId)) {
+            return;
+        }
+
+        boolean removed = false;
+        for (String type : new HashSet<>(activeParameterAlerts.keySet())) {
+            if (Boolean.FALSE.equals(currentParameterAlertStates.get(type))) {
+                activeParameterAlerts.remove(type);
+                removed = true;
+            }
+        }
+
+        if (!removed) return;
+
+        if (activeParameterAlerts.isEmpty()) {
+            if (parameterAlertDialog != null && parameterAlertDialog.isShowing()) {
+                parameterAlertDialog.dismiss();
+            }
+            parameterAlertDialog = null;
+            parameterAlertDeviceId = null;
+        } else if (parameterAlertDialog != null && parameterAlertDialog.isShowing()) {
+            parameterAlertDialog.updateMessage(buildParameterAlertContent());
+        }
+    }
+
+    private void stopCurrentParameterAlertListener() {
+        if (currentParameterAlertsRef != null && currentParameterAlertListener != null) {
+            currentParameterAlertsRef.removeEventListener(currentParameterAlertListener);
+        }
+        currentParameterAlertsRef = null;
+        currentParameterAlertListener = null;
+    }
+
+    private String buildParameterAlertContent() {
+        if (activeParameterAlerts.size() == 1) {
+            String only = activeParameterAlerts.values().iterator().next();
+            if ("Water Level — Low".equals(only)) return "Water Level is below the configured threshold.";
+            if ("EC — Low".equals(only)) return "EC is below the configured range.";
+            if ("pH — Out of Range".equals(only)) return "pH is outside the configured range.";
+            if ("Air Temperature — High".equals(only)) return "Air Temperature is above the configured range.";
+            return "Water Temperature is outside the configured range.";
+        }
+        StringBuilder content = new StringBuilder(activeParameterAlerts.size()
+                + " parameters need attention:");
+        for (String label : activeParameterAlerts.values()) content.append("\n\n• ").append(label);
+        return content.toString();
+    }
+
+    private void dismissParameterAlerts() {
+        activeParameterAlerts.clear();
+        parameterAlertDeviceId = null;
+        parameterAlertDialog = null;
+    }
+
+    private void dismissParameterAlertForCritical() {
+        if (parameterAlertDialog != null && parameterAlertDialog.isShowing()) parameterAlertDialog.dismiss();
+        parameterAlertDialog = null;
+    }
+
+    private void showPendingParameterAlertIfNeeded() {
+        if (criticalAlertShowing || activeParameterAlerts.isEmpty()) return;
+
+        for (String type : new HashSet<>(activeParameterAlerts.keySet())) {
+            if (Boolean.FALSE.equals(currentParameterAlertStates.get(type))) {
+                activeParameterAlerts.remove(type);
+            }
+        }
+        if (activeParameterAlerts.isEmpty()) {
+            parameterAlertDeviceId = null;
+            return;
+        }
+
+        String content = buildParameterAlertContent();
+        if (parameterAlertDialog != null && parameterAlertDialog.isShowing()) {
+            parameterAlertDialog.updateMessage(content);
+        } else {
+            parameterAlertDialog = NotificationHelper.showParameterAlert(this, content,
+                    this::openParametersFromAlert, this::dismissParameterAlerts);
+        }
+    }
+
+    private void openParametersFromAlert() {
+        String deviceId = parameterAlertDeviceId;
+        dismissParameterAlerts();
+        if (deviceId != null && !deviceId.isEmpty()) {
+            getSharedPreferences("basilience_prefs", MODE_PRIVATE).edit()
+                    .putString("selected_device_id", deviceId).apply();
+        }
+        NavHostFragment host = (NavHostFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.nav_host_fragment);
+        if (host == null) return;
+        NavController controller = host.getNavController();
+        if (controller.getCurrentDestination() == null
+                || controller.getCurrentDestination().getId() != R.id.parametersFragment) {
+            controller.navigate(R.id.parametersFragment);
+        }
+    }
+
+    private static String parameterLabel(String type) {
+        if ("lowWater".equalsIgnoreCase(type)) return "Water Level — Low";
+        if ("ecLow".equalsIgnoreCase(type)) return "EC — Low";
+        if ("phOutOfRange".equalsIgnoreCase(type)) return "pH — Out of Range";
+        if ("highTemperature".equalsIgnoreCase(type)) return "Air Temperature — High";
+        if ("waterTempOutOfRange".equalsIgnoreCase(type)) return "Water Temperature — Out of Range";
+        return null;
+    }
+
+    @Override
+    protected void onDestroy() {
+        stopCurrentParameterAlertListener();
+        if (parameterAlertDialog != null && parameterAlertDialog.isShowing()) parameterAlertDialog.dismiss();
+        parameterAlertDialog = null;
+        if (criticalAlertDialog != null && criticalAlertDialog.isShowing()) criticalAlertDialog.dismiss();
+        criticalAlertDialog = null;
+        pendingCriticalAlerts.clear();
+        super.onDestroy();
     }
 }

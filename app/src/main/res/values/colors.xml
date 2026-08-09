@@ -20,6 +20,7 @@
     <color name="text_dark">#0B3D33</color>
     <color name="nav_inactive">#2E4F46</color>
     <color name="nav_active">#000000</color>
+    <color name="icon_secondary_green">#5E8F82</color>
 
     <color name="alert_red">#D32F2F</color>
     <color name="alert_orange">#F57C00</color>

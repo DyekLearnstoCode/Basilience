@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
@@ -18,6 +20,7 @@
             <include layout="@layout/layout_header" />
 
         </com.google.android.material.appbar.CollapsingToolbarLayout>
+
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView
@@ -34,8 +37,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingTop="@dimen/container_top_padding"
             android:paddingStart="@dimen/container_side_padding"
+            android:paddingTop="@dimen/container_top_padding"
             android:paddingEnd="@dimen/container_side_padding"
             android:paddingBottom="@dimen/container_side_padding">
 
@@ -43,46 +46,45 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/dashboard"
-                android:textSize="28sp"
+                android:layout_marginBottom="16dp"
                 android:fontFamily="sans-serif-black"
-                android:letterSpacing="-0.02"
-                
-                android:textColor="#212121"
                 android:gravity="center"
-                android:layout_marginBottom="16dp" />
+                android:letterSpacing="-0.02"
+                android:text="@string/dashboard"
+                android:textColor="#212121"
+                android:textSize="28sp" />
 
-
-            <!-- parameters monitoring -->
+            <!-- PARAMETERS MONITORING -->
             <LinearLayout
                 android:id="@+id/cardParameters"
                 android:layout_width="match_parent"
                 android:layout_height="90dp"
                 android:layout_marginBottom="12dp"
                 android:background="@drawable/card_option"
-                android:orientation="horizontal"
-                android:padding="12dp"
-                android:gravity="center_vertical"
                 android:clickable="true"
                 android:focusable="true"
-                android:foreground="?attr/selectableItemBackground">
+                android:foreground="?attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="12dp">
 
                 <!-- ICON -->
                 <ImageView
                     android:layout_width="40dp"
                     android:layout_height="40dp"
-                    android:src="@drawable/parameters_monitoring_icon" />
+                    android:padding="0dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_parameters_monitoring" />
 
                 <!-- TEXT -->
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
                     android:layout_weight="1"
                     android:text="@string/parameters_monitoring"
-                    android:textSize="17sp"
-                    
                     android:textColor="#212121"
-                    android:layout_marginStart="12dp" />
+                    android:textSize="17sp" />
 
                 <!-- CIRCLE BUTTON -->
                 <FrameLayout
@@ -97,40 +99,42 @@
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
                         android:src="@drawable/enter_arrow" />
+
                 </FrameLayout>
 
             </LinearLayout>
 
-            <!-- user guide  -->
+            <!-- USER GUIDE -->
             <LinearLayout
                 android:id="@+id/cardUserGuide"
                 android:layout_width="match_parent"
                 android:layout_height="90dp"
                 android:layout_marginBottom="12dp"
                 android:background="@drawable/card_option"
-                android:orientation="horizontal"
-                android:padding="12dp"
-                android:gravity="center_vertical"
                 android:clickable="true"
                 android:focusable="true"
-                android:foreground="?attr/selectableItemBackground">
+                android:foreground="?attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="12dp">
 
                 <!-- ICON -->
                 <ImageView
                     android:layout_width="40dp"
                     android:layout_height="40dp"
-                    android:src="@drawable/userguide_icon" />
+                    android:padding="0dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_user_guide" />
 
                 <!-- TEXT -->
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
                     android:layout_weight="1"
                     android:text="@string/feature2"
-                    android:textSize="17sp"
-                    
                     android:textColor="#212121"
-                    android:layout_marginStart="12dp" />
+                    android:textSize="17sp" />
 
                 <!-- CIRCLE BUTTON -->
                 <FrameLayout
@@ -144,41 +148,43 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
-                        android:src="@drawable/enter_arrow"/>
+                        android:src="@drawable/enter_arrow" />
+
                 </FrameLayout>
 
             </LinearLayout>
 
-            <!-- cycle details  -->
+            <!-- CYCLE DETAILS -->
             <LinearLayout
                 android:id="@+id/cardCycle"
                 android:layout_width="match_parent"
                 android:layout_height="90dp"
                 android:layout_marginBottom="12dp"
                 android:background="@drawable/card_option"
-                android:orientation="horizontal"
-                android:padding="12dp"
-                android:gravity="center_vertical"
                 android:clickable="true"
                 android:focusable="true"
-                android:foreground="?attr/selectableItemBackground">
+                android:foreground="?attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="12dp">
 
                 <!-- ICON -->
                 <ImageView
                     android:layout_width="40dp"
                     android:layout_height="40dp"
-                    android:src="@drawable/cycledetails_icon" />
+                    android:padding="0dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_cycle_details" />
 
                 <!-- TEXT -->
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
                     android:layout_weight="1"
                     android:text="@string/feature4"
-                    android:textSize="17sp"
-                    
                     android:textColor="#212121"
-                    android:layout_marginStart="12dp" />
+                    android:textSize="17sp" />
 
                 <!-- CIRCLE BUTTON -->
                 <FrameLayout
@@ -193,14 +199,13 @@
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
                         android:src="@drawable/enter_arrow" />
-                </FrameLayout>
 
+                </FrameLayout>
 
             </LinearLayout>
 
-
-
         </LinearLayout>
+
     </androidx.core.widget.NestedScrollView>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

@@ -1,6 +1,7 @@
 package com.example.basilience;
 
 import android.os.Bundle;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.Button;
 
@@ -13,6 +14,8 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.firebase.firestore.DocumentSnapshot;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.textfield.TextInputEditText;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -46,6 +49,7 @@ public class Personnel_Main_Fragment extends Fragment {
         tvLoadingPersonnel = view.findViewById(R.id.tvLoadingPersonnel);
 
         Button btnAdd = view.findViewById(R.id.btnAddPersonnel);
+        Button btnAddExisting = view.findViewById(R.id.btnAddExistingPersonnel);
 
         NavController navController =
                 Navigation.findNavController(requireActivity(), R.id.nav_host_fragment);
@@ -86,6 +90,7 @@ public class Personnel_Main_Fragment extends Fragment {
 
         // navigate to add fragment
         btnAdd.setOnClickListener(v -> navController.navigate(R.id.action_personnelFragment_to_personneladdFragment));
+        btnAddExisting.setOnClickListener(v -> showAddExistingPersonnelDialog());
     }
 
     private void loadFarmersFromFirestore() {
@@ -118,7 +123,7 @@ public class Personnel_Main_Fragment extends Fragment {
                     
                     if (recyclerView != null) {
                         if (list.isEmpty()) {
-                            tvLoadingPersonnel.setText("No personnel found");
+                            tvLoadingPersonnel.setText("No personnel added yet.");
                             tvLoadingPersonnel.setVisibility(View.VISIBLE);
                         } else {
                             recyclerView.setVisibility(View.VISIBLE);
@@ -133,5 +138,38 @@ public class Personnel_Main_Fragment extends Fragment {
                     NotificationHelper.showError(requireContext(),
                             "Failed to load farmers: " + e.getMessage());
                 });
+    }
+
+    private void showAddExistingPersonnelDialog() {
+        View inputView = LayoutInflater.from(requireContext())
+                .inflate(R.layout.dialog_personnel_email_input, null);
+        TextInputEditText input = inputView.findViewById(R.id.etPersonnelEmail);
+
+        androidx.appcompat.app.AlertDialog dialog = NotificationHelper.showCustomViewDialog(requireContext(), "Add Existing Personnel",
+                "Link an existing unlinked personnel account using its email address.", inputView,
+                "Add", "Cancel", (d, ignored) -> {
+            String email = input.getText().toString().trim();
+            if (email.isEmpty()) { input.setError("Email is required"); return; }
+            MaterialButton positive = d.findViewById(R.id.dialog_button);
+            MaterialButton negative = d.findViewById(R.id.dialog_button_secondary);
+            if (positive != null) positive.setEnabled(false);
+            if (negative != null) negative.setEnabled(false);
+            helper.linkExistingPersonnelByEmail(email).addOnSuccessListener(unused -> {
+                if (!isAdded()) return;
+                d.dismiss();
+                NotificationHelper.showSuccess(requireContext(), "Personnel linked successfully.");
+                loadFarmersFromFirestore();
+            }).addOnFailureListener(e -> {
+                if (!isAdded()) return;
+                if (positive != null) positive.setEnabled(true);
+                if (negative != null) negative.setEnabled(true);
+                NotificationHelper.showError(requireContext(), e.getMessage());
+            });
+        });
+
+        if (dialog != null) {
+            android.widget.ImageView icon = dialog.findViewById(R.id.dialog_icon);
+            if (icon != null) icon.setImageResource(R.drawable.ic_account_info);
+        }
     }
 }

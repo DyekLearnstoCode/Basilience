@@ -74,13 +74,26 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAddPersonnel"
+                style="@style/BasilienceButton.Primary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Add Personnel"
+                android:text="Create Personnel"
                 android:layout_marginTop="16dp"
                 android:backgroundTint="@color/primary"
                 android:textColor="@android:color/white"
                 app:cornerRadius="12dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAddExistingPersonnel"
+                style="@style/BasilienceButton.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Add Existing Personnel"
+                android:textColor="@color/primary"
+                app:cornerRadius="12dp"
+                app:strokeColor="@color/primary"
+                app:strokeWidth="1dp" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

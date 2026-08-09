@@ -13,18 +13,26 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.basilience.models.FoggingEvent;
-import com.github.mikephil.charting.charts.LineChart;
+import com.example.basilience.models.FoggingSession;
+import com.github.mikephil.charting.charts.BarChart;
 import com.github.mikephil.charting.components.XAxis;
-import com.github.mikephil.charting.data.LineData;
-import com.github.mikephil.charting.data.LineDataSet;
-import com.github.mikephil.charting.data.Entry;
+import com.github.mikephil.charting.data.BarData;
+import com.github.mikephil.charting.data.BarDataSet;
+import com.github.mikephil.charting.data.BarEntry;
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter;
 import com.google.android.material.button.MaterialButton;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 
 import android.content.Intent;
 import android.content.res.ColorStateList;
@@ -46,11 +54,23 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import com.example.basilience.models.FoggingSession;
+import com.example.basilience.models.FoggingReportSummary;
+
 public class FoggingReportsFragment extends Fragment {
 
-    private LineChart lineChart;
-    private TextView tvTotalDuration, tvEventCount, tvPrediction;
-    private List<FoggingEvent> currentEvents = new ArrayList<>();
+    private BarChart barChart;
+    private TextView tvTotalDuration, tvEventCount, tvAvgDuration;
+    private TextView tvBreakdownAuto, tvBreakdownAutoDetails, tvBreakdownManual;
+    private TextView tvWaterLevel, tvRefillTime, tvRefillThreshold;
+    private RecyclerView rvRecentActivity;
+    private TextView tvEmptyActivity;
+    private View layoutLoading;
+    
+    private FoggingEventAdapter adapter;
+
+    private List<FoggingEvent> rawEvents = new ArrayList<>();
+    private List<FoggingSession> processedSessions = new ArrayList<>();
 
     private MaterialButton btnToday, btnWeek, btnMonth, btnYear;
     private ImageButton btnShare;
@@ -58,6 +78,8 @@ public class FoggingReportsFragment extends Fragment {
     private String selectedDeviceId;
 
     private FirebaseFirestore db;
+    private double refillStartLevel = 0.0;
+    private boolean cycleLoading = false;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -79,10 +101,29 @@ public class FoggingReportsFragment extends Fragment {
             Toast.makeText(getContext(), "Please select a device first", Toast.LENGTH_SHORT).show();
         }
 
-        lineChart = view.findViewById(R.id.lineChart);
+        barChart = view.findViewById(R.id.barChart);
+        ImageButton btnInfo = view.findViewById(R.id.btnInfo);
+        if (btnInfo != null) {
+            btnInfo.setOnClickListener(v -> showInfoDialog());
+        }
         tvTotalDuration = view.findViewById(R.id.tvTotalDuration);
         tvEventCount = view.findViewById(R.id.tvEventCount);
-        tvPrediction = view.findViewById(R.id.tvPrediction);
+        tvAvgDuration = view.findViewById(R.id.tvAvgDuration);
+        tvBreakdownAuto = view.findViewById(R.id.tvBreakdownAuto);
+        tvBreakdownAutoDetails = view.findViewById(R.id.tvBreakdownAutoDetails);
+        tvBreakdownManual = view.findViewById(R.id.tvBreakdownManual);
+        
+        tvWaterLevel = view.findViewById(R.id.tvWaterLevel);
+        tvRefillTime = view.findViewById(R.id.tvRefillTime);
+        tvRefillThreshold = view.findViewById(R.id.tvRefillThreshold);
+        
+        rvRecentActivity = view.findViewById(R.id.rvRecentActivity);
+        tvEmptyActivity = view.findViewById(R.id.tvEmptyActivity);
+        layoutLoading = view.findViewById(R.id.layoutLoading);
+
+        rvRecentActivity.setLayoutManager(new LinearLayoutManager(getContext()));
+        adapter = new FoggingEventAdapter(new ArrayList<>());
+        rvRecentActivity.setAdapter(adapter);
 
         btnToday = view.findViewById(R.id.btnToday);
         btnWeek = view.findViewById(R.id.btnWeek);
@@ -104,7 +145,7 @@ public class FoggingReportsFragment extends Fragment {
             btnBack.setOnClickListener(v -> navController.popBackStack());
         }
 
-        loadData();
+        fetchConfigAndLoadData();
 
         return view;
     }
@@ -139,21 +180,83 @@ public class FoggingReportsFragment extends Fragment {
     }
 
     private void setupChart() {
-        lineChart.getDescription().setEnabled(false);
-        lineChart.setDrawGridBackground(false);
-        lineChart.getAxisRight().setEnabled(false);
+        barChart.getDescription().setEnabled(false);
+        barChart.setDrawGridBackground(false);
+        barChart.getAxisRight().setEnabled(false);
         
-        XAxis xAxis = lineChart.getXAxis();
+        XAxis xAxis = barChart.getXAxis();
         xAxis.setPosition(XAxis.XAxisPosition.BOTTOM);
         xAxis.setDrawGridLines(false);
         xAxis.setGranularity(1f);
+        barChart.getLegend().setYOffset(8f);
+        barChart.setExtraBottomOffset(8f);
+    }
+
+    private void fetchConfigAndLoadData() {
+        if (selectedDeviceId == null || selectedDeviceId.isEmpty()) return;
+        
+        layoutLoading.setVisibility(View.VISIBLE);
+        layoutLoading.bringToFront();
+        
+        FirebaseDatabase.getInstance("https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("devices").child(selectedDeviceId).child("settings").child("refillStartLevel")
+            .addListenerForSingleValueEvent(new ValueEventListener() {
+                @Override
+                public void onDataChange(@NonNull DataSnapshot snapshot) {
+                    if (snapshot.exists()) {
+                        Double val = snapshot.getValue(Double.class);
+                        if (val != null) refillStartLevel = val;
+                    } else {
+                        refillStartLevel = 25.0; // Fallback
+                    }
+                    tvRefillThreshold.setText("Refill threshold: " + refillStartLevel + "%");
+                    loadData();
+                }
+
+                @Override
+                public void onCancelled(@NonNull DatabaseError error) {
+                    refillStartLevel = 25.0; // Fallback
+                    tvRefillThreshold.setText("Refill threshold: " + refillStartLevel + "% (Offline Fallback)");
+                    loadData();
+                }
+            });
     }
 
     private void loadData() {
         if (selectedDeviceId == null || selectedDeviceId.isEmpty()) return;
+        layoutLoading.setVisibility(View.VISIBLE);
+        layoutLoading.bringToFront();
 
-        long startTime = getStartTimeForFilter(currentSelectedFilter);
+        if ("Cycle".equals(currentSelectedFilter)) {
+            cycleLoading = true;
+            db.collection("devices").document(selectedDeviceId).collection("cycles")
+                .whereEqualTo("status", "ACTIVE")
+                .limit(1)
+                .get()
+                .addOnSuccessListener(queryDocumentSnapshots -> {
+                    if (!queryDocumentSnapshots.isEmpty()) {
+                        DocumentSnapshot doc = queryDocumentSnapshots.getDocuments().get(0);
+                        com.google.firebase.Timestamp ts = doc.getTimestamp("startDate");
+                        if (ts != null) {
+                            fetchFoggingLogs(ts.toDate().getTime(), ts.toDate().getTime());
+                        } else {
+                            fetchFoggingLogs(0, 0); // fallback
+                        }
+                    } else {
+                        Toast.makeText(getContext(), "No active cycle found", Toast.LENGTH_SHORT).show();
+                        fetchFoggingLogs(System.currentTimeMillis(), System.currentTimeMillis()); // Will return empty
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    Toast.makeText(getContext(), "Failed to fetch cycle", Toast.LENGTH_SHORT).show();
+                    layoutLoading.setVisibility(View.GONE);
+                });
+        } else {
+            cycleLoading = false;
+            fetchFoggingLogs(getStartTimeForFilter(currentSelectedFilter), 0);
+        }
+    }
 
+    private void fetchFoggingLogs(long startTime, long cycleStartForBuckets) {
         db.collection("devices")
                 .document(selectedDeviceId)
                 .collection("foggingLogs")
@@ -169,11 +272,12 @@ public class FoggingReportsFragment extends Fragment {
                             events.add(event);
                         }
                     }
-                    processEvents(events);
+                    processEvents(events, cycleStartForBuckets);
                 })
                 .addOnFailureListener(e -> {
                     Log.e("FoggingReports", "Error loading logs", e);
                     Toast.makeText(getContext(), "Failed to load reports", Toast.LENGTH_SHORT).show();
+                    layoutLoading.setVisibility(View.GONE);
                 });
     }
 
@@ -185,14 +289,11 @@ public class FoggingReportsFragment extends Fragment {
         cal.set(Calendar.MILLISECOND, 0);
 
         switch (filter) {
-            case "Week":
-                cal.add(Calendar.DAY_OF_YEAR, -7);
+            case "7 Days":
+                cal.add(Calendar.DAY_OF_YEAR, -6);
                 break;
-            case "Month":
-                cal.add(Calendar.MONTH, -1);
-                break;
-            case "Year":
-                cal.add(Calendar.YEAR, -1);
+            case "30 Days":
+                cal.add(Calendar.DAY_OF_YEAR, -29);
                 break;
             case "Today":
             default:
@@ -201,133 +302,150 @@ public class FoggingReportsFragment extends Fragment {
         return cal.getTimeInMillis();
     }
 
-    private void processEvents(List<FoggingEvent> events) {
-        this.currentEvents = events;
+    private void processEvents(List<FoggingEvent> events, long cycleStartForBuckets) {
+        this.rawEvents = events;
         
-        if (events.isEmpty()) {
-            lineChart.clear();
-            tvTotalDuration.setText("0m");
-            tvEventCount.setText("0");
-            tvPrediction.setText("No fogging data to calculate prediction.");
-            return;
-        }
-
-        tvEventCount.setText(String.valueOf(events.size()));
-
-        // We process in chronological order for durations
-        List<FoggingEvent> chronoEvents = new ArrayList<>(events);
-        Collections.reverse(chronoEvents);
-
-        long totalDurationMs = 0;
-        long lastOnTime = -1;
-        String lastReason = "automatic";
-        boolean lastIsManual = false;
-
-        Map<String, Long> dailyAuto = new HashMap<>();
-        Map<String, Long> dailyManual = new HashMap<>();
-        Map<String, Long> dailyAdaptive = new HashMap<>();
-        
-        SimpleDateFormat dayFormat;
-        if ("Today".equals(currentSelectedFilter)) {
-            dayFormat = new SimpleDateFormat("hh a", Locale.getDefault());
-        } else {
-            dayFormat = new SimpleDateFormat("MMM dd", Locale.getDefault());
+        long reportStartTime = getStartTimeForFilter(currentSelectedFilter);
+        if ("Cycle".equals(currentSelectedFilter)) {
+            reportStartTime = cycleStartForBuckets;
         }
         
-        List<String> xLabels = new ArrayList<>();
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.HOUR_OF_DAY, 0);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        long todayMidnight = cal.getTimeInMillis();
+        if (reportStartTime > todayMidnight) {
+            reportStartTime = todayMidnight; 
+        }
+        
+        cal.set(Calendar.HOUR_OF_DAY, 23);
+        cal.set(Calendar.MINUTE, 59);
+        cal.set(Calendar.SECOND, 59);
+        cal.set(Calendar.MILLISECOND, 999);
+        long reportEndTime = cal.getTimeInMillis();
+        long bucketSizeMs = "Today".equals(currentSelectedFilter) ? (1000L * 60 * 60) : (1000L * 60 * 60 * 24);
 
-        for (FoggingEvent e : chronoEvents) {
-            if ("ON".equals(e.event)) {
-                lastOnTime = e.timestamp;
-                lastReason = e.reason != null ? e.reason.toLowerCase() : "automatic";
-                lastIsManual = e.isManual;
-            } else if ("OFF".equals(e.event)) {
-                if (lastOnTime != -1 && e.timestamp > lastOnTime) {
-                    long duration = e.timestamp - lastOnTime;
-                    totalDurationMs += duration;
+        final long finalStartTime = reportStartTime;
+        final long finalEndTime = reportEndTime;
 
-                    String dayKey = dayFormat.format(new Date(e.timestamp));
-                    if (!xLabels.contains(dayKey)) {
-                        xLabels.add(dayKey);
+        FirebaseDatabase.getInstance("https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("devices").child(selectedDeviceId).child("actuatorStatus").child("fogger").child("running")
+            .addListenerForSingleValueEvent(new ValueEventListener() {
+                @Override
+                public void onDataChange(@NonNull DataSnapshot snapshot) {
+                    boolean isRunning = false;
+                    if (snapshot.exists() && snapshot.getValue(Boolean.class) != null) {
+                        isRunning = snapshot.getValue(Boolean.class);
                     }
-                    
-                    if (lastIsManual || "manual".equals(lastReason)) {
-                        dailyManual.put(dayKey, dailyManual.getOrDefault(dayKey, 0L) + duration);
-                    } else if ("adaptive".equals(lastReason)) {
-                        dailyAdaptive.put(dayKey, dailyAdaptive.getOrDefault(dayKey, 0L) + duration);
-                    } else {
-                        dailyAuto.put(dayKey, dailyAuto.getOrDefault(dayKey, 0L) + duration);
-                    }
-                    
-                    lastOnTime = -1;
+                    continueProcessingEvents(events, finalStartTime, finalEndTime, bucketSizeMs, isRunning);
                 }
+
+                @Override
+                public void onCancelled(@NonNull DatabaseError error) {
+                    continueProcessingEvents(events, finalStartTime, finalEndTime, bucketSizeMs, false);
+                }
+            });
+    }
+
+    private void continueProcessingEvents(List<FoggingEvent> events, long startTime, long endTime, long bucketSizeMs, boolean isRunning) {
+        FoggingReportSummary summary = FoggingReportProcessor.process(events, startTime, endTime, bucketSizeMs, isRunning);
+        this.processedSessions = summary.getCompletedSessions();
+
+        // Update Recent Activity
+        List<FoggingSession> recentList = new ArrayList<>();
+        if (summary.getCurrentlyRunningSession() != null) {
+            recentList.add(summary.getCurrentlyRunningSession());
+        }
+        for (int i = summary.getCompletedSessions().size() - 1; i >= 0 && recentList.size() < 10; i--) {
+            recentList.add(summary.getCompletedSessions().get(i));
+        }
+        adapter.updateData(recentList);
+        
+        if (recentList.isEmpty()) {
+            tvEmptyActivity.setVisibility(View.VISIBLE);
+            rvRecentActivity.setVisibility(View.GONE);
+        } else {
+            tvEmptyActivity.setVisibility(View.GONE);
+            rvRecentActivity.setVisibility(View.VISIBLE);
+        }
+
+        long totalMins = summary.getTotalDurationMs() / 60000;
+        tvTotalDuration.setText(totalMins + "m");
+        tvEventCount.setText(String.valueOf(summary.getCompletedSessions().size()));
+        tvBreakdownAuto.setText((summary.getTotalAutoDurationMs() / 60000) + "m");
+        tvBreakdownAutoDetails.setText(formatAutomaticBreakdown(summary));
+        tvBreakdownManual.setText((summary.getTotalManualDurationMs() / 60000) + "m");
+
+        long reportWindowDays = 1;
+        if ("7 Days".equals(currentSelectedFilter)) reportWindowDays = 7;
+        else if ("30 Days".equals(currentSelectedFilter)) reportWindowDays = 30;
+        else if ("Cycle".equals(currentSelectedFilter)) {
+            reportWindowDays = (endTime - startTime) / (1000L * 60 * 60 * 24);
+            if (reportWindowDays == 0) reportWindowDays = 1;
+        }
+
+        long avgMins = (summary.getTotalDurationMs() / 60000) / reportWindowDays;
+        tvAvgDuration.setText(avgMins + "m");
+
+        // Bucket Generation
+        List<String> xLabels = new ArrayList<>();
+        List<BarEntry> entries = new ArrayList<>();
+        
+        Map<Long, Long> buckets = summary.getBucketAggregations();
+        List<Long> bucketKeys = new ArrayList<>(buckets.keySet());
+        Collections.sort(bucketKeys);
+
+        SimpleDateFormat fmt = "Today".equals(currentSelectedFilter) 
+            ? new SimpleDateFormat("ha", Locale.getDefault())
+            : new SimpleDateFormat("MMM dd", Locale.getDefault());
+
+        for (int i = 0; i < bucketKeys.size(); i++) {
+            long bTime = bucketKeys.get(i);
+            xLabels.add(fmt.format(new Date(bTime)));
+            float mins = buckets.get(bTime) / 60000f;
+            entries.add(new BarEntry(i, mins));
+        }
+        
+        BarDataSet ds = new BarDataSet(entries, "Duration (mins)");
+        ds.setColor(Color.parseColor("#4CAF50"));
+        ds.setDrawValues(false);
+        
+        BarData barData = new BarData(ds);
+        barData.setBarWidth(0.6f);
+        
+        barChart.getXAxis().setValueFormatter(new IndexAxisValueFormatter(xLabels));
+        barChart.setData(barData);
+        barChart.invalidate();
+
+        calculatePrediction(summary.getTotalDurationMs(), summary.getObservedDays());
+    }
+
+    private String formatAutomaticBreakdown(FoggingReportSummary summary) {
+        Map<String, Long> strategyDurations = summary.getAutoStrategyDurationMs();
+        if (strategyDurations.isEmpty()) {
+            return "No strategy details";
+        }
+
+        String[] order = {"startup", "normal", "hot", "cold"};
+        String[] labels = {"Startup", "Normal", "Hot", "Cold"};
+        List<String> parts = new ArrayList<>();
+        for (int i = 0; i < order.length; i++) {
+            Long durationMs = strategyDurations.get(order[i]);
+            if (durationMs != null && durationMs > 0) {
+                parts.add(labels[i] + " " + (durationMs / 60000) + "m");
             }
         }
 
-        long totalMins = totalDurationMs / (1000 * 60);
-        tvTotalDuration.setText(totalMins + "m");
-
-        // Prepare Chart Data
-        List<Entry> autoEntries = new ArrayList<>();
-        List<Entry> manualEntries = new ArrayList<>();
-        List<Entry> adaptiveEntries = new ArrayList<>();
-        
-        for (int i = 0; i < xLabels.size(); i++) {
-            String day = xLabels.get(i);
-            
-            float autoMins = dailyAuto.getOrDefault(day, 0L) / (1000f * 60f);
-            float manualMins = dailyManual.getOrDefault(day, 0L) / (1000f * 60f);
-            float adaptiveMins = dailyAdaptive.getOrDefault(day, 0L) / (1000f * 60f);
-            
-            autoEntries.add(new Entry(i, autoMins));
-            manualEntries.add(new Entry(i, manualMins));
-            adaptiveEntries.add(new Entry(i, adaptiveMins));
-        }
-
-        if (xLabels.isEmpty()) {
-            lineChart.clear();
-        } else {
-            LineDataSet dsAuto = new LineDataSet(autoEntries, "Automatic");
-            dsAuto.setColor(Color.parseColor("#4CAF50")); // Green
-            dsAuto.setCircleColor(Color.parseColor("#4CAF50"));
-            dsAuto.setLineWidth(2f);
-            dsAuto.setCircleRadius(4f);
-            dsAuto.setDrawValues(false);
-            dsAuto.setMode(LineDataSet.Mode.CUBIC_BEZIER);
-
-            LineDataSet dsManual = new LineDataSet(manualEntries, "Manual");
-            dsManual.setColor(Color.parseColor("#2196F3")); // Blue
-            dsManual.setCircleColor(Color.parseColor("#2196F3"));
-            dsManual.setLineWidth(2f);
-            dsManual.setCircleRadius(4f);
-            dsManual.setDrawValues(false);
-            dsManual.setMode(LineDataSet.Mode.CUBIC_BEZIER);
-
-            LineDataSet dsAdaptive = new LineDataSet(adaptiveEntries, "Adaptive");
-            dsAdaptive.setColor(Color.parseColor("#FF9800")); // Orange
-            dsAdaptive.setCircleColor(Color.parseColor("#FF9800"));
-            dsAdaptive.setLineWidth(2f);
-            dsAdaptive.setCircleRadius(4f);
-            dsAdaptive.setDrawValues(false);
-            dsAdaptive.setMode(LineDataSet.Mode.CUBIC_BEZIER);
-            
-            LineData lineData = new LineData(dsAuto, dsManual, dsAdaptive);
-            lineChart.getXAxis().setValueFormatter(new IndexAxisValueFormatter(xLabels));
-            lineChart.setData(lineData);
-            lineChart.getLegend().setEnabled(true);
-            lineChart.invalidate(); // refresh
-        }
-        
-        // Prediction Math
-        calculatePrediction(totalDurationMs, xLabels.size());
+        return parts.isEmpty() ? "No strategy details" : String.join(" · ", parts);
     }
 
-    private void calculatePrediction(long totalDurationMsInPeriod, int daysInPeriod) {
-        if (daysInPeriod == 0) daysInPeriod = 1;
+    private void calculatePrediction(long totalDurationMsInPeriod, int observedDays) {
+        if (observedDays == 0) observedDays = 1;
         float hoursFogged = totalDurationMsInPeriod / (1000f * 60f * 60f);
-        float avgHoursPerDay = hoursFogged / daysInPeriod;
+        float avgHoursPerDay = hoursFogged / observedDays;
         
-        float conversionRate = 4.8f; // Liters per hour
+        float conversionRate = 4.8f; // L/hr
         float dailyConsumptionLiters = avgHoursPerDay * conversionRate;
         
         db.collection("devices").document(selectedDeviceId)
@@ -336,41 +454,59 @@ public class FoggingReportsFragment extends Fragment {
             .limit(1)
             .get()
             .addOnSuccessListener(snapshots -> {
+                layoutLoading.setVisibility(View.GONE);
                 if (!snapshots.isEmpty()) {
                     DocumentSnapshot latest = snapshots.getDocuments().get(0);
                     Double waterLevelPct = latest.getDouble("water_level");
                     if (waterLevelPct == null) {
-                        waterLevelPct = latest.getDouble("waterLevel"); // fallback just in case
+                        waterLevelPct = latest.getDouble("waterLevel");
                     }
                     if (waterLevelPct != null) {
-                        float tankVolumeLiters = 61.7f; // Estimated 61.7L capacity at 100% (65% height of 22x15.5x17 inches reservoir)
-                        float currentLiters = tankVolumeLiters * (waterLevelPct.floatValue() / 100f);
+                        tvWaterLevel.setText(String.format(Locale.getDefault(), "%.0f%%", waterLevelPct));
                         
-                        if (dailyConsumptionLiters > 0) {
-                            float daysRemaining = currentLiters / dailyConsumptionLiters;
-                            String text = String.format(Locale.getDefault(),
-                                "Water Level: %.0f%% (%.1f Liters)\n" +
-                                "Estimated Remaining: %.1f Days\n" +
-                                "(Based on 61.7L tank capacity and an average consumption of %.1f Liters/day).",
-                                waterLevelPct, currentLiters, daysRemaining, dailyConsumptionLiters);
-                            tvPrediction.setText(text);
+                        float tankVolumeLiters = 61.7f;
+                        float currentLiters = tankVolumeLiters * (waterLevelPct.floatValue() / 100f);
+                        float thresholdLiters = tankVolumeLiters * ((float) refillStartLevel / 100f);
+                        
+                        float consumableLiters = currentLiters - thresholdLiters;
+                        
+                        if (consumableLiters <= 0) {
+                            tvRefillTime.setText("Refill overdue");
+                            tvRefillTime.setTextColor(ContextCompat.getColor(tvRefillTime.getContext(), R.color.alert_orange));
+                        } else if (dailyConsumptionLiters > 0) {
+                            float daysRemaining = consumableLiters / dailyConsumptionLiters;
+                            tvRefillTime.setTextColor(ContextCompat.getColor(tvRefillTime.getContext(), R.color.text_dark));
+                            if (daysRemaining >= 1.0f) {
+                                tvRefillTime.setText(String.format(Locale.getDefault(), "~%.1f days", daysRemaining));
+                            } else {
+                                float hours = daysRemaining * 24f;
+                                tvRefillTime.setText(String.format(Locale.getDefault(), "~%.1f hours", hours));
+                            }
                         } else {
-                            tvPrediction.setText(String.format(Locale.getDefault(), "Water Level: %.0f%% (%.1f Liters)\nNot enough fogging data to estimate consumption.", waterLevelPct, currentLiters));
+                            tvRefillTime.setText("Insufficient usage data for estimate");
+                            tvRefillTime.setTextColor(ContextCompat.getColor(tvRefillTime.getContext(), R.color.nav_inactive));
                         }
                     } else {
-                        tvPrediction.setText("Unable to fetch current water level for prediction.");
+                        tvWaterLevel.setText("-");
+                        tvRefillTime.setText("Unknown");
+                        tvRefillTime.setTextColor(ContextCompat.getColor(tvRefillTime.getContext(), R.color.nav_inactive));
                     }
                 } else {
-                    tvPrediction.setText("No parameter logs available to calculate prediction.");
+                    tvWaterLevel.setText("-");
+                    tvRefillTime.setText("Insufficient usage data for estimate");
+                    tvRefillTime.setTextColor(ContextCompat.getColor(tvRefillTime.getContext(), R.color.nav_inactive));
                 }
             })
             .addOnFailureListener(e -> {
-                tvPrediction.setText("Failed to load water level data.");
+                layoutLoading.setVisibility(View.GONE);
+                tvWaterLevel.setText("-");
+                tvRefillTime.setText("Unknown (Error loading data)");
+                tvRefillTime.setTextColor(ContextCompat.getColor(tvRefillTime.getContext(), R.color.nav_inactive));
             });
     }
 
     private void exportPdf() {
-        if (getContext() == null || currentEvents == null || currentEvents.isEmpty()) {
+        if (getContext() == null || processedSessions == null || processedSessions.isEmpty()) {
             Toast.makeText(getContext(), "No data to export", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -384,7 +520,8 @@ public class FoggingReportsFragment extends Fragment {
                 SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
                 String userName = prefs.getString("user_name", "User");
                 
-                File pdfFile = generator.generateFoggingReportPdf(selectedDeviceId, currentSelectedFilter, currentEvents, userName);
+                // Pass the processed sessions to the generator
+                File pdfFile = generator.generateFoggingReportPdf(selectedDeviceId, currentSelectedFilter, processedSessions, userName);
 
                 if (getActivity() != null) {
                     getActivity().runOnUiThread(() -> {
@@ -407,5 +544,19 @@ public class FoggingReportsFragment extends Fragment {
                 }
             }
         }).start();
+    }
+
+    private void showInfoDialog() {
+        if (getContext() == null) return;
+        NotificationHelper.showInfo(requireContext(), "How to use Fogging Reports",
+                "What does this page do?\n" +
+                    "This page shows you exactly when and how long the fogger ran. It helps you track water usage and tells you when the reservoir needs to be refilled.\n\n" +
+                    "Why is this useful?\n" +
+                    "By seeing how much water the fogger uses each day, the system predicts when the tank will run low, so you can refill it before the plants run out of water.\n\n" +
+                    "How to use it?\n" +
+                    "• Use the buttons (Today, 7 Days, etc.) to see past fogging times.\n" +
+                    "• The 'Water Outlook' section estimates your remaining water based on recent usage.\n" +
+                    "• 'Recent Activity' lists the exact times the fogger turned on.",
+                "Got it");
     }
 }

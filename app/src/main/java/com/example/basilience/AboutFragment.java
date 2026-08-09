@@ -1,14 +1,24 @@
 package com.example.basilience;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.TextView;
+import android.widget.Toast;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 public class AboutFragment extends Fragment {
+    private static final String PREFS_NAME = "basilience_prefs";
+    private static final String KEY_DEVELOPER_MODE_ENABLED = "developer_mode_enabled";
+    private static final int DEV_MODE_TAP_TARGET = 7;
+
+    private int developerModeTapCount = 0;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -26,6 +36,32 @@ public class AboutFragment extends Fragment {
             btnBack.setOnClickListener(v -> {
                 androidx.navigation.Navigation.findNavController(view).popBackStack();
             });
+        }
+
+        TextView tvVersion = view.findViewById(R.id.tvVersion);
+        if (tvVersion != null) {
+            tvVersion.setOnClickListener(v -> handleVersionTap());
+        }
+    }
+
+    private void handleVersionTap() {
+        if (getContext() == null) return;
+
+        SharedPreferences prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        if (prefs.getBoolean(KEY_DEVELOPER_MODE_ENABLED, false)) {
+            Toast.makeText(getContext(), "Developer Mode is already enabled", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        developerModeTapCount++;
+        int remaining = DEV_MODE_TAP_TARGET - developerModeTapCount;
+
+        if (remaining <= 0) {
+            prefs.edit().putBoolean(KEY_DEVELOPER_MODE_ENABLED, true).apply();
+            developerModeTapCount = 0;
+            Toast.makeText(getContext(), "Developer Mode enabled", Toast.LENGTH_LONG).show();
+        } else if (remaining <= 3) {
+            Toast.makeText(getContext(), remaining + " more taps to enable Developer Mode", Toast.LENGTH_SHORT).show();
         }
     }
 }

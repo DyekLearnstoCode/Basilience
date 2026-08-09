@@ -1,8 +1,11 @@
 package com.example.basilience;
 
-import android.app.AlertDialog;
 import android.content.SharedPreferences;
+import android.content.Context;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -18,35 +21,54 @@ import androidx.navigation.NavController;
 import androidx.navigation.Navigation;
 
 import com.google.android.material.textfield.TextInputEditText;
-import com.google.firebase.database.DataSnapshot;
-import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
-import android.os.Handler;
-import android.os.Looper;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class WifiConfigFragment extends Fragment {
+
+    private static final String TAG = "WiFiConfig";
+    private static final long RECONNECT_CONFIRMATION_TIMEOUT_MS = 45000L;
 
     private TextInputEditText etSsid, etPassword;
     private TextView tvWifiStatus;
     private Button btnSaveWifi, btnCancelWifi;
     private ImageView btnBack;
 
-    // Loading overlay
     private View wifiLoadingOverlay;
     private TextView tvWifiLoadingTitle, tvWifiLoadingStatus;
 
     private DatabaseReference deviceRef;
-    private ValueEventListener statusListener;
-
-    private Handler heartbeatHandler = new Handler(Looper.getMainLooper());
-    private long lastUpdateTime = 0;
+    private String selectedDeviceId;
+    private ValueEventListener wifiStatusListener;
+    private ValueEventListener onlineStatusListener;
+    private ValueEventListener lastServerSeenListener;
     private boolean isCurrentlyOnline = false;
-    private static final String CREDENTIALS_KEY = "BasilienceSecureWiFiKey123";
+    private Boolean lastReportedWifiConnected = null;
+    private boolean setupApReachable = false;
+    private boolean awaitingReconnect = false;
+    private boolean reconnectSuccessDialogShown = false;
+    private Long lastServerSeen = null;
+    private long provisioningAttemptStartTime = 0L;
+    private Long provisioningAttemptStartLastSeen = null;
+    private String pendingProvisioningSsid = "";
+    private boolean initialApCheck = true;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private ExecutorService networkExecutor;
+
+    private final Runnable reconnectTimeout = () -> {
+        if (!awaitingReconnect || !isAdded()) return;
+        Log.d(TAG, "[WiFiSuccessTrace] reconnect timeout fired");
+        awaitingReconnect = false;
+        provisioningAttemptStartLastSeen = null;
+        hideLoading();
+        NotificationHelper.showInfo(requireContext(), "Credentials Saved",
+                "The Wi-Fi credentials were saved, but the device has not reconnected yet. " +
+                        "If the password is invalid, reconnect to Basilience-Setup and try again.");
+    };
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
@@ -56,6 +78,7 @@ public class WifiConfigFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+        networkExecutor = Executors.newSingleThreadExecutor();
 
         etSsid = view.findViewById(R.id.etSsid);
         etPassword = view.findViewById(R.id.etPassword);
@@ -83,13 +106,16 @@ public class WifiConfigFragment extends Fragment {
             Toast.makeText(getContext(), "Device ID not found", Toast.LENGTH_SHORT).show();
             return;
         }
+        selectedDeviceId = deviceId;
 
         deviceRef = FirebaseDatabase.getInstance("https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app")
                 .getReference("devices").child(deviceId);
+        Log.d(TAG, "[WiFiSuccessTrace] listener path=devices/" + selectedDeviceId + "/status");
 
         btnSaveWifi.setOnClickListener(v -> handleSaveCredentials());
+        attachWifiStatusListener();
+        checkSetupApReachability();
 
-        monitorEspStatus();
     }
 
     private void handleSaveCredentials() {
@@ -101,103 +127,251 @@ public class WifiConfigFragment extends Fragment {
             return;
         }
 
-        NotificationHelper.showConfirmation(requireContext(), 
-                "Change Wi-Fi Credentials?", 
-                "This will send the new Wi-Fi credentials to the ESP32. The device will disconnect and attempt to reconnect using these details. Proceed?", 
-                "Yes", "Cancel", () -> {
-                    if (isCurrentlyOnline) {
-                        sendWifiCommand(ssid, password);
-                    } else {
-                        sendWifiCommandLocal(ssid, password);
-                    }
-                });
-    }
-
-    private void sendWifiCommand(String ssid, String password) {
-        if (deviceRef == null) return;
-
-        showLoading("Sending credentials...", "Writing to ESP32...");
-
-        String encryptedSsid = encryptString(ssid, CREDENTIALS_KEY);
-        String encryptedPassword = encryptString(password, CREDENTIALS_KEY);
-
-        Map<String, Object> commandData = new HashMap<>();
-        commandData.put("ssid", encryptedSsid);
-        commandData.put("password", encryptedPassword);
-        commandData.put("timestamp", System.currentTimeMillis());
-
-        deviceRef.child("commands").child("wifiConfig").setValue(commandData)
-                .addOnSuccessListener(aVoid -> {
-                    showLoading("Credentials sent!", "Waiting for ESP32 to restart Wi-Fi...");
-                    etSsid.setText("");
-                    etPassword.setText("");
-                    
-                    // The ESP32 will disconnect shortly, and the heartbeat monitor will catch it.
-                    // We can hide the loader after a few seconds so the user can see the status text.
-                    new Handler(Looper.getMainLooper()).postDelayed(this::hideLoading, 3000);
-                })
-                .addOnFailureListener(e -> {
-                    hideLoading();
-                    Toast.makeText(getContext(), "Failed to send credentials: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                });
+        NotificationHelper.showConfirmation(requireContext(),
+                "Change Wi-Fi Credentials?",
+                "Connect this phone to the ESP32 'Basilience-Setup' Wi-Fi network, then Basilience will send the credentials directly to the ESP32 over the local setup page. Firebase is not required for this step.",
+                "Send Locally", "Cancel", () -> sendWifiCommandLocal(ssid, password));
     }
 
     private void sendWifiCommandLocal(String ssid, String password) {
-        showLoading("Connecting to ESP32...", "Sending credentials via Local Wi-Fi...");
-        
-        new Thread(() -> {
+        if (networkExecutor == null || networkExecutor.isShutdown()) return;
+        // Capture before /setup so a fast reconnect cannot become this attempt's baseline.
+        provisioningAttemptStartTime = System.currentTimeMillis();
+        provisioningAttemptStartLastSeen = lastServerSeen;
+        reconnectSuccessDialogShown = false;
+        showLoading("Sending Wi-Fi configuration...", "Using the Basilience-Setup local Wi-Fi network...");
+        btnSaveWifi.setEnabled(false);
+        Context appContext = requireContext().getApplicationContext();
+
+        networkExecutor.execute(() -> {
             try {
-                java.net.URL url = new java.net.URL("http://192.168.4.1/setup");
-                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("POST");
-                conn.setDoOutput(true);
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
-                
-                String postData = "ssid=" + java.net.URLEncoder.encode(ssid, "UTF-8") + 
-                                  "&password=" + java.net.URLEncoder.encode(password, "UTF-8");
-                
-                java.io.OutputStream os = conn.getOutputStream();
-                os.write(postData.getBytes("UTF-8"));
-                os.flush();
-                os.close();
-                
-                int responseCode = conn.getResponseCode();
-                
-                new Handler(Looper.getMainLooper()).post(() -> {
+                int responseCode = LocalProvisioningClient.sendCredentials(appContext, ssid, password);
+
+                mainHandler.post(() -> {
+                    if (!isAdded()) return;
+                    btnSaveWifi.setEnabled(true);
                     if (responseCode == 200) {
-                        showLoading("Credentials sent!", "ESP32 is restarting...");
+                        awaitingReconnect = false;
+                        provisioningAttemptStartLastSeen = null;
+                        hideLoading();
                         etSsid.setText("");
                         etPassword.setText("");
-                        new Handler(Looper.getMainLooper()).postDelayed(this::hideLoading, 3000);
+                        mainHandler.removeCallbacks(reconnectTimeout);
+                        NotificationHelper.showSuccessAcknowledgement(requireContext(), "Wi-Fi Configuration Saved",
+                                "Your new Wi-Fi credentials were saved successfully. Basilience will reconnect to the network automatically.", null);
                     } else {
+                        provisioningAttemptStartLastSeen = null;
                         hideLoading();
-                        Toast.makeText(getContext(), "Failed to send to ESP32: HTTP " + responseCode, Toast.LENGTH_LONG).show();
+                        NotificationHelper.showError(requireContext(), "Provisioning Failed",
+                                "The ESP32 rejected the Wi-Fi configuration (HTTP " + responseCode + ").");
                     }
                 });
-                
+
             } catch (Exception e) {
-                new Handler(Looper.getMainLooper()).post(() -> {
+                mainHandler.post(() -> {
+                    if (!isAdded()) return;
+                    btnSaveWifi.setEnabled(true);
+                    provisioningAttemptStartLastSeen = null;
                     hideLoading();
-                    Toast.makeText(getContext(), "Could not connect to ESP32. Are you connected to 'Basilience-Setup' Wi-Fi?", Toast.LENGTH_LONG).show();
+                    NotificationHelper.showError(requireContext(), "Wi-Fi Configuration Failed",
+                            "Wi-Fi configuration could not be sent.\nReconnect to Basilience-Setup and try again.");
                 });
             }
-        }).start();
+        });
     }
 
-    private String encryptString(String input, String key) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < input.length(); i++) {
-            char c = input.charAt(i);
-            char k = key.charAt(i % key.length());
-            sb.append(String.format("%02x", (c ^ k)));
+    private void attachWifiStatusListener() {
+        if (deviceRef == null) return;
+
+        onlineStatusListener = deviceRef.child("status").child("online").addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull com.google.firebase.database.DataSnapshot snapshot) {
+                boolean online = Boolean.TRUE.equals(snapshot.getValue(Boolean.class));
+                if (isCurrentlyOnline != online) {
+                    Log.d(TAG, "online=" + online);
+                }
+                isCurrentlyOnline = online;
+                updateStatusUI();
+                maybeConfirmProvisioningReconnect();
+            }
+
+            @Override
+            public void onCancelled(@NonNull com.google.firebase.database.DatabaseError error) {
+                Log.w(TAG, "online listener cancelled", error.toException());
+            }
+        });
+
+        wifiStatusListener = deviceRef.child("status").child("wifiConnected").addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull com.google.firebase.database.DataSnapshot snapshot) {
+                Boolean connected = snapshot.getValue(Boolean.class);
+                if (lastReportedWifiConnected == null || !lastReportedWifiConnected.equals(connected)) {
+                    Log.d(TAG, "wifiConnected=" + connected);
+                }
+                lastReportedWifiConnected = connected;
+                updateStatusUI();
+                maybeConfirmProvisioningReconnect();
+            }
+
+            @Override
+            public void onCancelled(@NonNull com.google.firebase.database.DatabaseError error) {
+                lastReportedWifiConnected = null;
+                updateStatusUI();
+            }
+        });
+
+        lastServerSeenListener = deviceRef.child("status").child("lastServerSeen").addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull com.google.firebase.database.DataSnapshot snapshot) {
+                Long seen = snapshot.getValue(Long.class);
+                if (seen != null && !seen.equals(lastServerSeen)) {
+                    Log.d(TAG, "lastServerSeen updated");
+                }
+                lastServerSeen = seen;
+                maybeConfirmProvisioningReconnect();
+            }
+
+            @Override
+            public void onCancelled(@NonNull com.google.firebase.database.DatabaseError error) {
+                Log.w(TAG, "lastServerSeen listener cancelled", error.toException());
+            }
+        });
+    }
+
+    private void maybeConfirmProvisioningReconnect() {
+        // Local /status is authoritative for a local provisioning attempt. Firebase
+        // state remains available for normal status UI but cannot complete this flow.
+        if (awaitingReconnect) return;
+        boolean freshHeartbeat = hasFreshHeartbeatForProvisioningAttempt();
+        Log.d(TAG, "[WiFiSuccessTrace] pending=" + awaitingReconnect
+                + " online=" + isCurrentlyOnline
+                + " wifiConnected=" + lastReportedWifiConnected
+                + " lastServerSeen=" + lastServerSeen
+                + " baseline=" + provisioningAttemptStartLastSeen
+                + " freshHeartbeat=" + freshHeartbeat
+                + " dialogShown=" + reconnectSuccessDialogShown);
+        Log.d(TAG, "[WiFiSuccessTrace] successCheck = pending && online && wifiConnected && freshHeartbeat && !dialogShown");
+
+        if (!awaitingReconnect) {
+            Log.d(TAG, "[WiFiSuccessTrace] blocked: pending=false");
+            return;
         }
-        return sb.toString();
+        if (!isAdded()) {
+            Log.d(TAG, "[WiFiSuccessTrace] blocked: fragment not added");
+            return;
+        }
+        if (!isCurrentlyOnline) {
+            Log.d(TAG, "[WiFiSuccessTrace] blocked: online=false");
+            return;
+        }
+        if (!Boolean.TRUE.equals(lastReportedWifiConnected)) {
+            Log.d(TAG, "[WiFiSuccessTrace] blocked: wifiConnected=" + lastReportedWifiConnected);
+            return;
+        }
+        if (!freshHeartbeat) {
+            Log.d(TAG, "[WiFiSuccessTrace] blocked: lastServerSeen not newer");
+            return;
+        }
+        if (reconnectSuccessDialogShown) {
+            Log.d(TAG, "[WiFiSuccessTrace] blocked: dialogShown=true");
+            return;
+        }
+
+        awaitingReconnect = false;
+        reconnectSuccessDialogShown = true;
+        mainHandler.removeCallbacks(reconnectTimeout);
+        hideLoading();
+        Log.d(TAG, "[WiFiSuccessTrace] SHOWING WIFI CONNECTED DIALOG");
+        NotificationHelper.showSuccessAcknowledgement(requireContext(), "Wi-Fi Connected",
+                "Your Basilience device is now connected to the new Wi-Fi network.", null);
+        Log.d(TAG, "[WiFiSuccessTrace] WIFI CONNECTED DIALOG display call returned");
+    }
+
+    private void pollLocalProvisioningStatus() {
+        if (!awaitingReconnect || networkExecutor == null || networkExecutor.isShutdown()) return;
+        Context appContext = requireContext().getApplicationContext();
+        networkExecutor.execute(() -> {
+            try {
+                LocalProvisioningClient.ProvisioningStatus status =
+                        LocalProvisioningClient.getProvisioningStatus(appContext);
+                mainHandler.post(() -> handleLocalProvisioningStatus(status));
+            } catch (Exception ignored) {
+                Log.d(TAG, "[PROVISION-TRACE] Android /status failed: " + ignored);
+                // The AP can be briefly busy while switching to AP+STA; retry while bounded.
+                mainHandler.postDelayed(this::pollLocalProvisioningStatus, 1000);
+            }
+        });
+    }
+
+    private void handleLocalProvisioningStatus(LocalProvisioningClient.ProvisioningStatus status) {
+        Log.d(TAG, "[PROVISION-TRACE] connected result delivered to WifiConfigFragment");
+        Log.d(TAG, "[PROVISION-TRACE] fragmentAdded=" + isAdded()
+                + " activityAvailable=" + (getActivity() != null)
+                + " pollingAttemptActive=" + awaitingReconnect
+                + " successDialogShown=" + reconnectSuccessDialogShown);
+        if (!isAdded() || !awaitingReconnect) return;
+        if (status.connected || "connected".equals(status.status)) {
+            awaitingReconnect = false;
+            reconnectSuccessDialogShown = true;
+            mainHandler.removeCallbacks(reconnectTimeout);
+            hideLoading();
+            String connectedSsid = status.ssid.isEmpty() ? pendingProvisioningSsid : status.ssid;
+            Log.d(TAG, "[PROVISION-TRACE] SHOW WIFI CONNECTED DIALOG");
+            NotificationHelper.showSuccessAcknowledgement(requireContext(), "Wi-Fi Connected",
+                    "Your Basilience device is now connected to " + connectedSsid + ".", null);
+            Log.d(TAG, "[PROVISION-TRACE] WIFI CONNECTED DIALOG SHOWN");
+            return;
+        }
+        if ("connection_failed".equals(status.status)) {
+            Log.d(TAG, "[PROVISION-TRACE] provisioning failed");
+            awaitingReconnect = false;
+            mainHandler.removeCallbacks(reconnectTimeout);
+            hideLoading();
+            NotificationHelper.showError(requireContext(), "Wi-Fi Connection Failed",
+                    "The device could not connect to the selected Wi-Fi network. Check the network name and password, then try again.");
+            return;
+        }
+        mainHandler.postDelayed(this::pollLocalProvisioningStatus, 1000);
+    }
+
+    private boolean hasFreshHeartbeatForProvisioningAttempt() {
+        if (lastServerSeen == null) return false;
+        if (provisioningAttemptStartLastSeen != null) {
+            return lastServerSeen > provisioningAttemptStartLastSeen;
+        }
+        return lastServerSeen >= provisioningAttemptStartTime;
+    }
+
+    private void checkSetupApReachability() {
+        if (networkExecutor == null || networkExecutor.isShutdown() || awaitingReconnect) return;
+        final boolean showDetectionLoading = initialApCheck;
+        if (showDetectionLoading) {
+            initialApCheck = false;
+            showLoading("Detecting Provisioning Mode...", "Checking 192.168.4.1/status on the local Wi-Fi network...");
+        }
+        Context appContext = requireContext().getApplicationContext();
+        networkExecutor.execute(() -> {
+            boolean reachable = LocalProvisioningClient.isSetupApReachable(appContext);
+
+            mainHandler.post(() -> {
+                if (!isAdded()) return;
+                setupApReachable = reachable;
+                if (showDetectionLoading) {
+                    hideLoading();
+                    if (!reachable && !isCurrentlyOnline) {
+                        NotificationHelper.showError(requireContext(), "Unable to reach ESP32",
+                                "Make sure your phone is connected to Basilience-Setup.");
+                    }
+                }
+                updateStatusUI();
+            });
+        });
     }
 
     private void showLoading(String title, String status) {
-        if (wifiLoadingOverlay != null) {
+        if (isAdded() && wifiLoadingOverlay != null) {
             wifiLoadingOverlay.setVisibility(View.VISIBLE);
+            wifiLoadingOverlay.bringToFront();
             if (tvWifiLoadingTitle != null) tvWifiLoadingTitle.setText(title);
             if (tvWifiLoadingStatus != null) {
                 tvWifiLoadingStatus.setText(status);
@@ -207,64 +381,56 @@ public class WifiConfigFragment extends Fragment {
     }
 
     private void hideLoading() {
-        if (wifiLoadingOverlay != null) {
+        if (isAdded() && wifiLoadingOverlay != null) {
             wifiLoadingOverlay.setVisibility(View.GONE);
         }
     }
 
-    private void monitorEspStatus() {
-        if (deviceRef == null) return;
-
-        statusListener = new ValueEventListener() {
-            @Override
-            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                if (snapshot.hasChild("deviceInfo/lastSeen")) {
-                    lastUpdateTime = snapshot.child("deviceInfo/lastSeen").getValue(Long.class);
-                    isCurrentlyOnline = true;
-                    updateStatusUI();
-                }
-            }
-
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {
-                tvWifiStatus.setText("Error reading status");
-            }
-        };
-        
-        deviceRef.addValueEventListener(statusListener);
-        heartbeatHandler.post(heartbeatRunnable);
-    }
-
-    private final Runnable heartbeatRunnable = new Runnable() {
-        @Override
-        public void run() {
-            // ESP32 uploads device info every 10-15 seconds. If we haven't seen an update in 20 seconds, it's offline.
-            if (System.currentTimeMillis() - lastUpdateTime > 20000) {
-                isCurrentlyOnline = false;
-            }
-            updateStatusUI();
-            heartbeatHandler.postDelayed(this, 5000);
-        }
-    };
-
     private void updateStatusUI() {
         if (tvWifiStatus == null || !isAdded()) return;
-        
-        if (isCurrentlyOnline) {
-            tvWifiStatus.setText("Online (Connected via Internet)");
-            tvWifiStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50")); // Green
+
+        if (setupApReachable) {
+            tvWifiStatus.setText("Provisioning Mode\nConnected to Basilience-Setup");
+            tvWifiStatus.setTextColor(android.graphics.Color.parseColor("#FF9800"));
+        } else if (isCurrentlyOnline) {
+            if (Boolean.TRUE.equals(lastReportedWifiConnected)) {
+                tvWifiStatus.setText("Device Online - Wi-Fi Connected");
+            } else if (Boolean.FALSE.equals(lastReportedWifiConnected)) {
+                tvWifiStatus.setText("Device Online - Wi-Fi Disconnected");
+            } else {
+                tvWifiStatus.setText("Device Online - Wi-Fi state unknown");
+            }
+            tvWifiStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50"));
         } else {
-            tvWifiStatus.setText("Offline. Please connect your phone to 'Basilience-Setup' Wi-Fi network.");
-            tvWifiStatus.setTextColor(android.graphics.Color.parseColor("#F44336")); // Red
+            tvWifiStatus.setText("Device Offline");
+            tvWifiStatus.setTextColor(android.graphics.Color.parseColor("#F44336"));
         }
     }
 
     @Override
+    public void onResume() {
+        super.onResume();
+        checkSetupApReachability();
+    }
+
+    @Override
     public void onDestroyView() {
-        super.onDestroyView();
-        heartbeatHandler.removeCallbacks(heartbeatRunnable);
-        if (deviceRef != null && statusListener != null) {
-            deviceRef.removeEventListener(statusListener);
+        awaitingReconnect = false;
+        provisioningAttemptStartLastSeen = null;
+        mainHandler.removeCallbacksAndMessages(null);
+        if (networkExecutor != null) {
+            networkExecutor.shutdownNow();
+            networkExecutor = null;
         }
+        if (deviceRef != null && wifiStatusListener != null) {
+            deviceRef.child("status").child("wifiConnected").removeEventListener(wifiStatusListener);
+        }
+        if (deviceRef != null && onlineStatusListener != null) {
+            deviceRef.child("status").child("online").removeEventListener(onlineStatusListener);
+        }
+        if (deviceRef != null && lastServerSeenListener != null) {
+            deviceRef.child("status").child("lastServerSeen").removeEventListener(lastServerSeenListener);
+        }
+        super.onDestroyView();
     }
 }

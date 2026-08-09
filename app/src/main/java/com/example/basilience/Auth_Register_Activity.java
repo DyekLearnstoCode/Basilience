@@ -4,7 +4,6 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.TextView;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
@@ -34,7 +33,7 @@ public class Auth_Register_Activity extends AppCompatActivity {
         etConfirmPassword = findViewById(R.id.etConfirmPassword);
         btnSignup = findViewById(R.id.btnSignup);
         tvLogin = findViewById(R.id.tvLogin);
-        layoutLoading = findViewById(0); // Gamitin ang tamang ID nito (e.g., R.id.layoutLoading)
+        layoutLoading = findViewById(R.id.layoutLoading);
         tvLoadingTitle = findViewById(R.id.tvLoadingTitle);
 
         btnSignup.setOnClickListener(v -> registerUser());
@@ -42,8 +41,10 @@ public class Auth_Register_Activity extends AppCompatActivity {
     }
 
     private void showLoading(boolean show, String message) {
+        if (isFinishing() || isDestroyed()) return;
         if (tvLoadingTitle != null && message != null) tvLoadingTitle.setText(message);
         if (layoutLoading != null) layoutLoading.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (show && layoutLoading != null) layoutLoading.bringToFront();
         if (btnSignup != null) btnSignup.setEnabled(!show);
     }
 
@@ -129,16 +130,19 @@ public class Auth_Register_Activity extends AppCompatActivity {
                 .addOnFailureListener(e -> {
                     if (isFinishing() || isDestroyed()) return;
                     showLoading(false, null);
-                    NotificationHelper.showError(this, "Registration failed: " + e.getMessage());
+                    if (e instanceof com.google.firebase.auth.FirebaseAuthUserCollisionException) {
+                        showAccountAlreadyExistsDialog();
+                    } else {
+                        NotificationHelper.showError(this, "Registration failed: " + e.getMessage());
+                    }
                 });
     }
 
     private void showVerifyEmailDialog() {
         if (isFinishing() || isDestroyed()) return;
 
-        NotificationHelper.showConfirmation(this, "Registration Complete", 
-                "Please check your email to verify your account before logging in.", 
-                "OK", "Cancel", () -> {
+        NotificationHelper.showSuccessAcknowledgement(this, "Registration Complete",
+                "Please check your email to verify your account before logging in.", () -> {
                     helper.logout();
                     gotoLogin();
                 });
@@ -146,5 +150,23 @@ public class Auth_Register_Activity extends AppCompatActivity {
 
     private void gotoLogin() {
         finish();
+    }
+
+    private void showAccountAlreadyExistsDialog() {
+        NotificationHelper.showTripleActionDialog(this, "Account Already Exists",
+                "An existing Basilience account uses this email. Please sign in or reset your password.",
+                "Sign In", "Forgot Password", "Cancel",
+                new NotificationHelper.TripleActionCallback() {
+                    @Override
+                    public void onAction1() {
+                        finish();
+                    }
+
+                    @Override
+                    public void onAction2() {
+                        startActivity(new Intent(Auth_Register_Activity.this,
+                                Auth_ForgotPass_Activity.class));
+                    }
+                });
     }
 }

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -33,35 +34,51 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingTop="@dimen/container_top_padding"
+            android:paddingTop="@dimen/report_content_top_padding"
             android:paddingStart="@dimen/container_side_padding"
             android:paddingEnd="@dimen/container_side_padding"
             android:paddingBottom="@dimen/container_side_padding">
 
             <!-- Title -->
-            <TextView
-                android:id="@+id/tvTitle"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center"
-                android:text="Fogging Activity"
-                android:textColor="#212121"
-                android:textSize="28sp"
-                android:fontFamily="sans-serif-black"
-                android:letterSpacing="-0.02" />
+                android:orientation="horizontal"
+                android:gravity="center">
+                
+                <TextView
+                    android:id="@+id/tvTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Fogging Report"
+                    android:textColor="#212121"
+                    android:textSize="28sp"
+                    android:fontFamily="sans-serif-black"
+                    android:letterSpacing="-0.02" />
+                    
+                <ImageButton
+                    android:id="@+id/btnInfo"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:layout_marginStart="8dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_info_outline"
+                    android:tint="#757575"
+                    android:contentDescription="Help" />
+            </LinearLayout>
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:text="Monitor historical fogger usage and durations."
+                android:text="Operational and historical usage summary."
                 android:textColor="#757575"
                 android:textSize="14sp"
                 android:fontFamily="sans-serif-medium"
                 android:layout_marginTop="6dp"
                 android:layout_marginBottom="24dp" />
 
-            <!-- SELECTION & FILTER CARD -->
+            <!-- TIME FILTER -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -76,32 +93,22 @@
                     android:orientation="vertical"
                     android:padding="16dp">
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Time Filter"
-                        android:fontFamily="sans-serif-bold"
-                        android:textColor="#212121"
-                        android:textSize="18sp"
-                        android:layout_marginBottom="16dp"/>
-
                     <LinearLayout
                         android:id="@+id/filterRow"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:gravity="center"
-                        android:orientation="horizontal"
-                        android:layout_marginBottom="16dp">
+                        android:orientation="horizontal">
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnToday"
                             style="@style/FilterChipSelected"
                             android:layout_width="0dp"
                             android:layout_weight="1"
-                            android:layout_height="35dp"
+                            android:layout_height="40dp"
                             android:text="Today"
                             android:layout_marginEnd="4dp"
-                            android:textSize="10sp"
+                            android:textSize="12sp"
                             android:padding="0dp"
                             app:backgroundTint="@null" />
 
@@ -110,10 +117,10 @@
                             style="@style/FilterChip"
                             android:layout_width="0dp"
                             android:layout_weight="1"
-                            android:layout_height="35dp"
-                            android:text="Week"
+                            android:layout_height="40dp"
+                            android:text="7 Days"
                             android:layout_marginEnd="4dp"
-                            android:textSize="10sp"
+                            android:textSize="12sp"
                             android:padding="0dp"
                             app:backgroundTint="@null" />
 
@@ -122,10 +129,10 @@
                             style="@style/FilterChip"
                             android:layout_width="0dp"
                             android:layout_weight="1"
-                            android:layout_height="35dp"
-                            android:text="Month"
+                            android:layout_height="40dp"
+                            android:text="30 Days"
                             android:layout_marginEnd="4dp"
-                            android:textSize="10sp"
+                            android:textSize="12sp"
                             android:padding="0dp"
                             app:backgroundTint="@null" />
 
@@ -134,17 +141,16 @@
                             style="@style/FilterChip"
                             android:layout_width="0dp"
                             android:layout_weight="1"
-                            android:layout_height="35dp"
-                            android:text="Year"
-                            android:textSize="10sp"
+                            android:layout_height="40dp"
+                            android:text="Cycle"
+                            android:textSize="12sp"
                             android:padding="0dp"
                             app:backgroundTint="@null" />
                     </LinearLayout>
-
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- DATA VISUALIZATION CARD (CHART) -->
+            <!-- PERFORMANCE SUMMARY CARD -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -167,7 +173,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Trends"
+                            android:text="Fogger Performance"
                             android:fontFamily="sans-serif-bold"
                             android:textColor="#212121"
                             android:textSize="18sp"
@@ -184,25 +190,14 @@
                             android:src="@drawable/saveas_icon" />
                     </RelativeLayout>
 
-                    <!-- Using LineChart for durations -->
-                    <com.github.mikephil.charting.charts.LineChart
-                        android:id="@+id/lineChart"
-                        android:layout_width="match_parent"
-                        android:layout_height="250dp"
-                        android:layout_marginTop="16dp" />
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:background="#EEEEEE"
-                        android:layout_marginTop="16dp"
-                        android:layout_marginBottom="16dp"/>
-
+                    <!-- Stats Row -->
                     <LinearLayout
                         android:id="@+id/statsLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal">
+                        android:orientation="horizontal"
+                        android:weightSum="3"
+                        android:layout_marginBottom="16dp">
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -213,8 +208,8 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="TOTAL DURATION"
-                                android:textSize="11sp"
+                                android:text="TOTAL RUNTIME"
+                                android:textSize="10sp"
                                 android:textColor="#757575"
                                 android:fontFamily="sans-serif-medium"
                                 android:letterSpacing="0.05"
@@ -223,8 +218,8 @@
                                 android:id="@+id/tvTotalDuration"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="0m"
-                                android:textSize="22sp"
+                                android:text="-"
+                                android:textSize="18sp"
                                 android:fontFamily="sans-serif-black"
                                 android:textColor="#212121"/>
                         </LinearLayout>
@@ -238,8 +233,8 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="EVENTS"
-                                android:textSize="11sp"
+                                android:text="SESSIONS"
+                                android:textSize="10sp"
                                 android:textColor="#757575"
                                 android:fontFamily="sans-serif-medium"
                                 android:letterSpacing="0.05"
@@ -248,24 +243,158 @@
                                 android:id="@+id/tvEventCount"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="0"
-                                android:textSize="22sp"
+                                android:text="-"
+                                android:textSize="18sp"
+                                android:fontFamily="sans-serif-black"
+                                android:textColor="#212121"/>
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="AVG / DAY"
+                                android:textSize="10sp"
+                                android:textColor="#757575"
+                                android:fontFamily="sans-serif-medium"
+                                android:letterSpacing="0.05"
+                                android:layout_marginBottom="2dp"/>
+                            <TextView
+                                android:id="@+id/tvAvgDuration"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="-"
+                                android:textSize="18sp"
                                 android:fontFamily="sans-serif-black"
                                 android:textColor="#212121"/>
                         </LinearLayout>
                     </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="#EEEEEE"
+                        android:layout_marginBottom="12dp"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Daily Fogging Runtime"
+                        android:fontFamily="sans-serif-medium"
+                        android:textColor="#424242"
+                        android:textSize="14sp"/>
+
+                    <com.github.mikephil.charting.charts.BarChart
+                        android:id="@+id/barChart"
+                        android:layout_width="match_parent"
+                        android:layout_height="230dp"
+                        android:layout_marginTop="8dp"
+                        android:layout_marginBottom="4dp" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginTop="8dp"
+                        android:background="#EEEEEE" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="Runtime Summary"
+                        android:textColor="@color/text_dark"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <!-- Responsive runtime breakdown -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="10dp"
+                        android:baselineAligned="false">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="2"
+                            android:orientation="vertical"
+                            android:paddingEnd="12dp">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:maxLines="1"
+                                android:text="Automatic"
+                                android:textColor="@color/nav_inactive"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvBreakdownAuto"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="-"
+                                android:textColor="@color/text_dark"
+                                android:textSize="22sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvBreakdownAutoDetails"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:lineSpacingExtra="2dp"
+                                android:text="No strategy details"
+                                android:textColor="@color/nav_inactive"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:paddingStart="12dp">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:maxLines="1"
+                                android:text="Manual"
+                                android:textColor="@color/nav_inactive"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvBreakdownManual"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:maxLines="1"
+                                android:text="-"
+                                android:textColor="@color/text_dark"
+                                android:textSize="22sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
-            
-            <!-- PREDICTION CARD -->
+
+            <!-- WATER OUTLOOK CARD -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
                 android:layout_marginBottom="16dp"
                 app:cardCornerRadius="12dp"
                 app:cardElevation="2dp"
-                app:cardBackgroundColor="@color/celadon">
+                app:cardBackgroundColor="@color/background_light">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -276,24 +405,177 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="System Insights"
+                        android:text="Water Outlook"
                         android:fontFamily="sans-serif-bold"
-                        android:textColor="#2E7D32"
-                        android:textSize="16sp"
-                        android:layout_marginBottom="8dp"/>
+                        android:textColor="@color/text_dark"
+                        android:textSize="18sp"
+                        android:layout_marginBottom="12dp"/>
 
-                    <TextView
-                        android:id="@+id/tvPrediction"
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Calculating remaining nutrient solution..."
-                        android:textSize="14sp"
-                        android:textColor="#333333"
-                        android:lineSpacingExtra="4dp" />
+                        android:orientation="horizontal"
+                        android:weightSum="2">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Current Reservoir"
+                                android:textSize="12sp"
+                                android:textColor="@color/nav_inactive"/>
+                            <TextView
+                                android:id="@+id/tvWaterLevel"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="-"
+                                android:textSize="22sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/text_dark"/>
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:gravity="end"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Estimated Refill"
+                                android:textSize="12sp"
+                                android:textAlignment="viewEnd"
+                                android:textColor="@color/nav_inactive"/>
+                            <TextView
+                                android:id="@+id/tvRefillTime"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="-"
+                                android:textAlignment="viewEnd"
+                                android:textSize="22sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/text_dark"/>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvRefillThreshold"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Refill threshold: -"
+                        android:textSize="12sp"
+                        android:textColor="@color/nav_inactive"
+                        android:layout_marginTop="12dp"/>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Estimated from recent fogger usage"
+                        android:textSize="12sp"
+                        android:textColor="@color/nav_inactive"
+                        android:layout_marginTop="4dp"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- RECENT ACTIVITY CARD -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="@android:color/white">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="8dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Recent Activity"
+                        android:fontFamily="sans-serif-bold"
+                        android:textColor="#212121"
+                        android:textSize="16sp"
+                        android:layout_marginStart="16dp"
+                        android:layout_marginBottom="8dp"/>
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rvRecentActivity"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:clipToPadding="false"
+                        android:nestedScrollingEnabled="false"
+                        android:overScrollMode="never"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp" />
+
+                    <TextView
+                        android:id="@+id/tvEmptyActivity"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="No recent activity"
+                        android:gravity="center"
+                        android:textColor="#9E9E9E"
+                        android:padding="16dp"
+                        android:visibility="gone"/>
+
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
+
+    <!-- LOADING OVERLAY -->
+    <RelativeLayout
+        android:id="@+id/layoutLoading"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#33000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="10dp"
+        android:visibility="gone">
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="12dp"
+            app:cardBackgroundColor="@color/white">
+
+            <LinearLayout
+                android:layout_width="220dp"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="32dp">
+
+                <ProgressBar
+                    android:layout_width="45dp"
+                    android:layout_height="45dp"
+                    android:indeterminateTint="@color/primary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:text="Loading report..."
+                    android:textColor="@color/primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:gravity="center"/>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </RelativeLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

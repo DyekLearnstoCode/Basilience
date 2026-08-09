@@ -65,12 +65,27 @@ public class Cycle_Details_Fragment extends Fragment {
         } else {
             if (btnAddCycle != null) {
                 btnAddCycle.setVisibility(View.VISIBLE);
-                // Add Cycle -> go to CycleAddFragment
                 btnAddCycle.setOnClickListener(v -> {
-                    Bundle args = new Bundle();
-                    // Pass the next cycle number based on current list size
-                    args.putInt("cycleNo", cycles.size() + 1);
-                    navController.navigate(R.id.action_cycleDetailsFragment_to_cycleaddFragment, args);
+                    String deviceId = prefs.getString("selected_device_id", null);
+                    if (deviceId == null) {
+                        NotificationHelper.showError(requireContext(), "No device selected");
+                        return;
+                    }
+                    btnAddCycle.setEnabled(false);
+                    dbHelper.getActiveCycle(deviceId).addOnCompleteListener(task -> {
+                        btnAddCycle.setEnabled(true);
+                        if (!isAdded()) return;
+                        if (!task.isSuccessful()) {
+                            NotificationHelper.showError(requireContext(), "Unable to verify the current growth cycle.");
+                        } else if (!task.getResult().isEmpty()) {
+                            NotificationHelper.showWarning(requireContext(), "Active Cycle Exists",
+                                    "Complete the current active cycle before adding another cycle.");
+                        } else {
+                            Bundle args = new Bundle();
+                            args.putInt("cycleNo", cycles.size() + 1);
+                            navController.navigate(R.id.action_cycleDetailsFragment_to_cycleaddFragment, args);
+                        }
+                    });
                 });
             }
         }

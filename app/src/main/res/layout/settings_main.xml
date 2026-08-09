@@ -1,4 +1,7 @@
-<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<?xml version="1.0" encoding="utf-8"?>
+
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
@@ -16,16 +19,17 @@
             <include layout="@layout/layout_header" />
 
         </com.google.android.material.appbar.CollapsingToolbarLayout>
+
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:layout_marginTop="@dimen/container_overlap_margin"
         android:background="@drawable/top_rounded_white"
         android:elevation="5dp"
         android:fillViewport="true"
         android:overScrollMode="never"
-        android:layout_marginTop="@dimen/container_overlap_margin"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <LinearLayout
@@ -34,17 +38,17 @@
             android:orientation="vertical"
             android:padding="@dimen/container_side_padding">
 
+            <!-- TITLE -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Settings"
-                android:textSize="28sp"
+                android:layout_marginBottom="16dp"
                 android:fontFamily="sans-serif-black"
-                android:letterSpacing="-0.02"
-                
-                android:textColor="#212121"
                 android:gravity="center"
-                android:layout_marginBottom="16dp"/>
+                android:letterSpacing="-0.02"
+                android:text="Settings"
+                android:textColor="#212121"
+                android:textSize="28sp" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -57,32 +61,33 @@
                     android:layout_height="90dp"
                     android:layout_marginBottom="12dp"
                     android:background="@drawable/card_option"
+                    android:gravity="center_vertical"
                     android:orientation="horizontal"
-                    android:padding="12dp"
-                    android:gravity="center_vertical">
+                    android:padding="12dp">
 
                     <ImageView
                         android:layout_width="40dp"
                         android:layout_height="40dp"
-                        android:src="@drawable/accinfo_icon" />
+                        android:padding="0dp"
+                        android:scaleType="fitCenter"
+                        android:src="@drawable/ic_account_info" />
 
                     <TextView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
                         android:layout_weight="1"
                         android:text="Account Information"
-                        android:textSize="17sp"
-                        
                         android:textColor="#212121"
-                        android:layout_marginStart="12dp" />
+                        android:textSize="17sp" />
 
                     <FrameLayout
                         android:id="@+id/btnAccount"
-                        android:clickable="true"
-                        android:focusable="true"
                         android:layout_width="50dp"
                         android:layout_height="50dp"
                         android:background="@drawable/circle_button"
+                        android:clickable="true"
+                        android:focusable="true"
                         android:gravity="center">
 
                         <ImageView
@@ -90,11 +95,10 @@
                             android:layout_height="wrap_content"
                             android:layout_gravity="center"
                             android:src="@drawable/enter_arrow" />
+
                     </FrameLayout>
+
                 </LinearLayout>
-
-
-
 
                 <!-- ABOUT -->
                 <LinearLayout
@@ -102,32 +106,33 @@
                     android:layout_height="90dp"
                     android:layout_marginBottom="12dp"
                     android:background="@drawable/card_option"
+                    android:gravity="center_vertical"
                     android:orientation="horizontal"
-                    android:padding="12dp"
-                    android:gravity="center_vertical">
+                    android:padding="12dp">
 
                     <ImageView
                         android:layout_width="40dp"
                         android:layout_height="40dp"
-                        android:src="@drawable/about_icon" />
+                        android:padding="0dp"
+                        android:scaleType="fitCenter"
+                        android:src="@drawable/ic_info" />
 
                     <TextView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
                         android:layout_weight="1"
                         android:text="About Basilience"
-                        android:textSize="17sp"
-                        
                         android:textColor="#212121"
-                        android:layout_marginStart="12dp" />
+                        android:textSize="17sp" />
 
                     <FrameLayout
                         android:id="@+id/btnAbout"
-                        android:clickable="true"
-                        android:focusable="true"
                         android:layout_width="50dp"
                         android:layout_height="50dp"
                         android:background="@drawable/circle_button"
+                        android:clickable="true"
+                        android:focusable="true"
                         android:gravity="center">
 
                         <ImageView
@@ -135,89 +140,46 @@
                             android:layout_height="wrap_content"
                             android:layout_gravity="center"
                             android:src="@drawable/enter_arrow" />
+
                     </FrameLayout>
+
                 </LinearLayout>
 
-                <!-- WIFI CONFIG -->
-                <LinearLayout
-                    android:id="@+id/wifiConfigContainer"
-                    android:layout_width="match_parent"
-                    android:layout_height="90dp"
-                    android:layout_marginBottom="12dp"
-                    android:background="@drawable/card_option"
-                    android:orientation="horizontal"
-                    android:padding="12dp"
-                    android:visibility="gone"
-                    android:gravity="center_vertical">
-
-                    <ImageView
-                        android:layout_width="40dp"
-                        android:layout_height="40dp"
-                        android:src="@drawable/baseline_wifi_24"
-                        app:tint="#000000" />
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Wi-Fi Configuration"
-                        android:textSize="17sp"
-                        
-                        android:textColor="#212121"
-                        android:layout_marginStart="12dp" />
-
-                    <FrameLayout
-                        android:id="@+id/btnWifiConfig"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:layout_width="50dp"
-                        android:layout_height="50dp"
-                        android:background="@drawable/circle_button"
-                        android:gravity="center">
-
-                        <ImageView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_gravity="center"
-                            android:src="@drawable/enter_arrow" />
-                    </FrameLayout>
-                </LinearLayout>
-
-                <!-- DEV OPTIONS -->
+                <!-- DEVELOPER OPTIONS -->
                 <LinearLayout
                     android:id="@+id/devOptionsContainer"
                     android:layout_width="match_parent"
                     android:layout_height="90dp"
                     android:layout_marginBottom="12dp"
                     android:background="@drawable/card_option"
+                    android:gravity="center_vertical"
                     android:orientation="horizontal"
                     android:padding="12dp"
-                    android:visibility="gone"
-                    android:gravity="center_vertical">
+                    android:visibility="gone">
 
                     <ImageView
                         android:layout_width="40dp"
                         android:layout_height="40dp"
-                        android:src="@drawable/ic_edit"
-                        app:tint="#000000" />
+                        android:padding="0dp"
+                        android:scaleType="fitCenter"
+                        android:src="@drawable/ic_edit" />
 
                     <TextView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
                         android:layout_weight="1"
                         android:text="Developer Options"
-                        android:textSize="17sp"
-                        
                         android:textColor="#212121"
-                        android:layout_marginStart="12dp" />
+                        android:textSize="17sp" />
 
                     <FrameLayout
                         android:id="@+id/btnDevOptions"
-                        android:clickable="true"
-                        android:focusable="true"
                         android:layout_width="50dp"
                         android:layout_height="50dp"
                         android:background="@drawable/circle_button"
+                        android:clickable="true"
+                        android:focusable="true"
                         android:gravity="center">
 
                         <ImageView
@@ -225,7 +187,9 @@
                             android:layout_height="wrap_content"
                             android:layout_gravity="center"
                             android:src="@drawable/enter_arrow" />
+
                     </FrameLayout>
+
                 </LinearLayout>
 
                 <!-- TERMS -->
@@ -234,32 +198,33 @@
                     android:layout_height="90dp"
                     android:layout_marginBottom="12dp"
                     android:background="@drawable/card_option"
+                    android:gravity="center_vertical"
                     android:orientation="horizontal"
-                    android:padding="12dp"
-                    android:gravity="center_vertical">
+                    android:padding="12dp">
 
                     <ImageView
                         android:layout_width="40dp"
                         android:layout_height="40dp"
-                        android:src="@drawable/terms_icon" />
+                        android:padding="0dp"
+                        android:scaleType="fitCenter"
+                        android:src="@drawable/ic_terms_and_conditions" />
 
                     <TextView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
                         android:layout_weight="1"
                         android:text="Terms and Agreements"
-                        android:textSize="17sp"
-                        
                         android:textColor="#212121"
-                        android:layout_marginStart="12dp" />
+                        android:textSize="17sp" />
 
                     <FrameLayout
                         android:id="@+id/btnTerms"
-                        android:clickable="true"
-                        android:focusable="true"
                         android:layout_width="50dp"
                         android:layout_height="50dp"
                         android:background="@drawable/circle_button"
+                        android:clickable="true"
+                        android:focusable="true"
                         android:gravity="center">
 
                         <ImageView
@@ -267,12 +232,15 @@
                             android:layout_height="wrap_content"
                             android:layout_gravity="center"
                             android:src="@drawable/enter_arrow" />
+
                     </FrameLayout>
+
                 </LinearLayout>
 
             </LinearLayout>
 
         </LinearLayout>
+
     </androidx.core.widget.NestedScrollView>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

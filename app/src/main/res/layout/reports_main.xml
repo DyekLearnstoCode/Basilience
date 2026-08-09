@@ -61,8 +61,10 @@
                 android:backgroundTint="@color/primary" >
 
                 <ImageView
-                    android:layout_width="80dp"
-                    android:layout_height="80dp"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:padding="3dp"
+                    android:scaleType="centerInside"
                     android:src="@drawable/parameters_icon"/>
 
                 <TextView
@@ -103,8 +105,10 @@
                 android:backgroundTint="@color/primary">
 
                 <ImageView
-                    android:layout_width="80dp"
-                    android:layout_height="80dp"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:padding="3dp"
+                    android:scaleType="centerInside"
                     android:src="@drawable/reports_icon"/>
 
                 <TextView
