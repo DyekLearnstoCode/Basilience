@@ -50,15 +50,6 @@ public class Auth_Login_Activity extends AppCompatActivity {
         boolean isLoggedIn = prefs.getBoolean(KEY_IS_LOGGED_IN, false);
         String currentUid = helper.getCurrentUid();
 
-        if (isLoggedIn && currentUid != null) {
-            // User chose "Remember Me" and is still authenticated in Firebase
-            Intent intent = new Intent(this, MainActivity.class);
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-            startActivity(intent);
-            finish();
-            return;
-        }
-
         setContentView(R.layout.auth_login);
         keepSplash[0] = false;
 
@@ -77,6 +68,10 @@ public class Auth_Login_Activity extends AppCompatActivity {
         tvSignup.setVisibility(android.view.View.VISIBLE);
         tvSignup.setOnClickListener(v -> startActivity(new Intent(this, Auth_Register_Activity.class)));
         tvForgotPassword.setOnClickListener(v -> startActivity(new Intent(this, Auth_ForgotPass_Activity.class)));
+
+        if (isLoggedIn && currentUid != null) {
+            revalidateRememberedSession(currentUid);
+        }
     }
 
     private void showLoading(boolean show, String message) {
@@ -95,6 +90,10 @@ public class Auth_Login_Activity extends AppCompatActivity {
 
         if (email.isEmpty() || password.isEmpty()) {
             NotificationHelper.showError(this, "Please fill all fields");
+            return;
+        }
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            NotificationHelper.showError(this, "Please enter a valid email address");
             return;
         }
 
@@ -158,7 +157,7 @@ public class Auth_Login_Activity extends AppCompatActivity {
                                     showBackendUnavailable();
                                 } else {
                                     showLoading(false, null);
-                                    NotificationHelper.showError(this, "Failed to load profile: " + e.getMessage());
+                                    NotificationHelper.showError(this, "Unable to load your Basilience account profile.");
                                 }
                             });
                 },
@@ -167,9 +166,46 @@ public class Auth_Login_Activity extends AppCompatActivity {
                     if (isBackendReachabilityFailure(e)) {
                         NotificationHelper.showError(this, BACKEND_UNAVAILABLE_MESSAGE);
                     } else {
-                        NotificationHelper.showError(this, "LOGIN FAILED: " + e.getMessage());
+                        NotificationHelper.showError(this, "Email or password is incorrect.");
                     }
                 });
+    }
+
+    private void revalidateRememberedSession(String uid) {
+        showLoading(true, "Restoring session...");
+        awaitBackendTask(helper.getUserProfile(uid), document -> {
+            String role = document.exists() ? document.getString("role") : null;
+            if (!RoleConstants.ROLE_ADMIN.equalsIgnoreCase(role)
+                    && !RoleConstants.ROLE_FARMER.equalsIgnoreCase(role)) {
+                clearInvalidSession();
+                NotificationHelper.showInfo(this, "Account Profile Missing",
+                        "Your saved sign-in is no longer linked to a valid Basilience profile.");
+                return;
+            }
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                    .putString("user_role", role)
+                    .putString("owner_uid", document.getString("ownerAdminUid"))
+                    .apply();
+            navigateToMain();
+        }, error -> {
+            if (isBackendReachabilityFailure(error)) {
+                showBackendUnavailable();
+            } else {
+                clearInvalidSession();
+                NotificationHelper.showError(this, "Unable to restore your Basilience session.");
+            }
+        });
+    }
+
+    private void clearInvalidSession() {
+        helper.logout();
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .remove(KEY_IS_LOGGED_IN)
+                .remove("user_role")
+                .remove("owner_uid")
+                .remove("selected_device_id")
+                .apply();
+        showLoading(false, null);
     }
 
     private <T> void awaitBackendTask(Task<T> task, OnSuccessListener<T> onSuccess, OnFailureListener onFailure) {

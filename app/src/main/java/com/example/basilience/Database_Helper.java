@@ -4,10 +4,13 @@ import static android.content.ContentValues.TAG;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
+import com.google.android.gms.tasks.TaskCompletionSource;
 import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.Timestamp;
@@ -36,6 +39,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Database_Helper {
 
@@ -123,18 +127,51 @@ public class Database_Helper {
         return auth.sendPasswordResetEmail(email);
     }
 
-    public void logout() {
+    public Task<Void> logout() {
         String uid = getCurrentUid();
-        if (uid != null) {
-            db.collection("users").document(uid).update("fcmToken", FieldValue.delete())
-                    .addOnFailureListener(error -> Log.w(TAG, "Unable to clear FCM token during logout", error));
-            // Invalidate this installation token so a different account on the same
-            // phone receives a newly-owned token at its next MainActivity startup.
-            FirebaseMessaging.getInstance().deleteToken()
-                    .addOnFailureListener(error -> Log.w(TAG, "Unable to invalidate FCM token during logout", error));
+        if (uid == null) {
+            auth.signOut();
+            cachedRole = null;
+            return Tasks.forResult(null);
         }
-        auth.signOut();
-        cachedRole = null;
+
+        FirebaseMessaging messaging = FirebaseMessaging.getInstance();
+        Task<Void> cleanup = messaging.getToken().continueWithTask(tokenTask -> {
+            Task<Void> firestoreCleanup;
+            if (tokenTask.isSuccessful() && tokenTask.getResult() != null) {
+                String installationToken = tokenTask.getResult();
+                DocumentReference userRef = db.collection("users").document(uid);
+                firestoreCleanup = db.runTransaction(transaction -> {
+                    DocumentSnapshot user = transaction.get(userRef);
+                    if (installationToken.equals(user.getString("fcmToken"))) {
+                        transaction.update(userRef, "fcmToken", FieldValue.delete());
+                    }
+                    return null;
+                });
+            } else {
+                Log.w(TAG, "Unable to read installation token during logout", tokenTask.getException());
+                firestoreCleanup = Tasks.forResult(null);
+            }
+
+            return firestoreCleanup
+                    .addOnFailureListener(error -> Log.w(TAG,
+                            "Unable to clear FCM token during logout", error))
+                    .continueWithTask(ignored -> messaging.deleteToken());
+        }).addOnFailureListener(error -> Log.w(TAG,
+                "Unable to invalidate FCM token during logout", error));
+
+        TaskCompletionSource<Void> completion = new TaskCompletionSource<>();
+        AtomicBoolean finished = new AtomicBoolean(false);
+        Runnable finishSignOut = () -> {
+            if (!finished.compareAndSet(false, true)) return;
+            auth.signOut();
+            cachedRole = null;
+            completion.setResult(null);
+        };
+
+        cleanup.addOnCompleteListener(ignored -> finishSignOut.run());
+        new Handler(Looper.getMainLooper()).postDelayed(finishSignOut, 5000L);
+        return completion.getTask();
     }
 
     public String getCurrentUid() {
@@ -594,6 +631,11 @@ public class Database_Helper {
 
     public Task<Void> addHarvestTransaction(String cycleId, Harvest harvest) {
         if (selectedDeviceId == null) return Tasks.forException(new Exception("No device selected"));
+        if (harvest == null || !Double.isFinite(harvest.getWeight()) || harvest.getWeight() <= 0.0
+                || harvest.getHarvestDate() == null) {
+            return Tasks.forException(new IllegalArgumentException(
+                    "Harvest requires a positive weight and valid timestamp."));
+        }
 
         DocumentReference cycleRef = db.collection("devices").document(selectedDeviceId)
                 .collection("cycles").document(cycleId);

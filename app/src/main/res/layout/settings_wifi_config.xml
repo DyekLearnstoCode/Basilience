@@ -87,7 +87,7 @@
                             android:layout_height="wrap_content"
                             android:text="Checking..."
                             
-                            android:textColor="#FF9800"/>
+                            android:textColor="@color/device_status_reconnecting"/>
                     </LinearLayout>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>

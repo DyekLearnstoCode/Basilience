@@ -2,12 +2,15 @@ package com.example.basilience;
 
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.core.content.ContextCompat;
 
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
@@ -69,6 +72,17 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
         private final View vStatusDot;
         private ValueEventListener statusListener;
         private DatabaseReference statusRef;
+        private Boolean backendOnline;
+        private Long lastServerSeen;
+        private boolean provisioning;
+        private final Handler statusHandler = new Handler(Looper.getMainLooper());
+        private final Runnable refreshStatus = new Runnable() {
+            @Override
+            public void run() {
+                applyResolvedStatus();
+                statusHandler.postDelayed(this, 2_000L);
+            }
+        };
 
         public DeviceViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -94,8 +108,10 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
                 statusRef.removeEventListener(statusListener);
             }
 
-            // Set initial state from Firestore model
-            applyStatus(device.isOnline(), device.getStatus());
+            backendOnline = null;
+            lastServerSeen = null;
+            provisioning = false;
+            applyStatus(DeviceConnectivityState.RECONNECTING);
 
             // Realtime listener for live status updates
             if (device.getDeviceId() != null) {
@@ -105,21 +121,11 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
                 statusListener = new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        Boolean statusOnline = snapshot.child("status/online").getValue(Boolean.class);
-                        Boolean wifiConn = snapshot.child("status/wifiConnected").getValue(Boolean.class);
-
-                        boolean isOnline = statusOnline != null && statusOnline;
-                        boolean isWifiConnected = wifiConn == null || wifiConn;
-
-                        if (isOnline && !isWifiConnected) {
-                            applyStatusCustom("CONNECTING", "Connecting to Internet", Color.parseColor("#2196F3")); // Blue
-                        } else if (isOnline) {
-                            applyStatusCustom("ONLINE", "Online", Color.parseColor("#4CAF50")); // Green
-                        } else {
-                            // wifiConnected is only the ESP32's last reported value. Once the
-                            // device is offline it cannot be presented as a current Wi-Fi state.
-                            applyStatusCustom("OFFLINE", "Device Offline", Color.parseColor("#F44336")); // Wi-Fi state is stale/unknown
-                        }
+                        backendOnline = snapshot.child("status/online").getValue(Boolean.class);
+                        lastServerSeen = snapshot.child("status/lastServerSeen").getValue(Long.class);
+                        provisioning = Boolean.TRUE.equals(
+                                snapshot.child("status/provisioning").getValue(Boolean.class));
+                        applyResolvedStatus();
                     }
 
                     @Override
@@ -127,6 +133,8 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
                 };
 
                 statusRef.addValueEventListener(statusListener);
+                statusHandler.removeCallbacks(refreshStatus);
+                statusHandler.post(refreshStatus);
             }
 
             itemView.setOnClickListener(v -> {
@@ -149,22 +157,22 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
                 statusRef = null;
                 statusListener = null;
             }
+            statusHandler.removeCallbacks(refreshStatus);
+            backendOnline = null;
+            lastServerSeen = null;
+            provisioning = false;
         }
 
-        private void applyStatus(boolean isOnline, String rawStatus) {
-            if (rawStatus != null && rawStatus.equalsIgnoreCase("CONNECTING")) {
-                applyStatusCustom("CONNECTING", "Connecting to Internet", Color.parseColor("#2196F3")); // Blue
-            } else if (isOnline) {
-                applyStatusCustom("ONLINE", "Online", Color.parseColor("#4CAF50")); // Green
-            } else {
-                applyStatusCustom("OFFLINE", "Device Offline", Color.parseColor("#F44336")); // Wi-Fi state is stale/unknown
-            }
+        private void applyResolvedStatus() {
+            applyStatus(DeviceConnectionManager.resolveState(
+                    backendOnline, lastServerSeen, provisioning, System.currentTimeMillis()));
         }
 
-        private void applyStatusCustom(String code, String label, int color) {
-            tvDeviceStatus.setText(label);
+        private void applyStatus(DeviceConnectivityState state) {
+            tvDeviceStatus.setText(state.getLabel());
             tvDeviceStatus.setTextColor(Color.parseColor("#757575"));
             if (vStatusDot != null) {
+                int color = ContextCompat.getColor(itemView.getContext(), state.getColorRes());
                 vStatusDot.setBackgroundTintList(ColorStateList.valueOf(color));
             }
         }

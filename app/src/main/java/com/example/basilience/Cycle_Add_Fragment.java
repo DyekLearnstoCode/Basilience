@@ -148,7 +148,20 @@ public class Cycle_Add_Fragment extends Fragment {
         String freqStr = etHarvestFrequency.getText().toString().trim();
         int frequency = 5;
         if (!freqStr.isEmpty()) {
-            frequency = Integer.parseInt(freqStr);
+            try {
+                frequency = Integer.parseInt(freqStr);
+            } catch (NumberFormatException error) {
+                btnSave.setEnabled(true);
+                if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                etHarvestFrequency.setError("Enter a valid number of days");
+                return;
+            }
+        }
+        if (frequency <= 0 || frequency > 365) {
+            btnSave.setEnabled(true);
+            if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+            etHarvestFrequency.setError("Frequency must be between 1 and 365 days");
+            return;
         }
 
         Cycle newCycle = new Cycle(cycleNo, startDateTimestamp, "ACTIVE");

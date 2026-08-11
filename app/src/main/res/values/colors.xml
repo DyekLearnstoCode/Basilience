@@ -27,6 +27,9 @@
     <color name="alert_text">#FFFFFF</color>
 
     <!-- Status Colors -->
+    <color name="device_status_online">#4CAF50</color>
+    <color name="device_status_reconnecting">#F9A825</color>
+    <color name="device_status_offline">#D32F2F</color>
     <color name="status_completed_text">#757575</color>
     <color name="status_completed_background">#E0E0E0</color>
     <color name="status_completed_border">#BDBDBD</color>

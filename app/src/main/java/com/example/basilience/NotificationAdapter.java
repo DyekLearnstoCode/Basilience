@@ -25,6 +25,8 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         public static final String TYPE_PARAMETER = "parameter";
         public static final String TYPE_HARVEST = "harvest";
         public static final String TYPE_HARDWARE = "hardware";
+        public static final String TYPE_CONNECTIVITY_OFFLINE = "connectivity_offline";
+        public static final String TYPE_CONNECTIVITY_RECOVERY = "connectivity_recovery";
         public static final String TYPE_INFO = "info";
 
         public String docId;
@@ -135,6 +137,14 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
                 title = "HARDWARE ISSUE";
                 iconRes = R.drawable.ic_hardware_orange;
                 color = 0xFFEF6C00;
+            } else if (NotificationItem.TYPE_CONNECTIVITY_OFFLINE.equals(item.type)) {
+                title = "DEVICE UNREACHABLE";
+                iconRes = R.drawable.ic_error_red;
+                color = 0xFFD32F2F;
+            } else if (NotificationItem.TYPE_CONNECTIVITY_RECOVERY.equals(item.type)) {
+                title = "DEVICE BACK ONLINE";
+                iconRes = R.drawable.ic_hardware_orange;
+                color = 0xFF2E7D32;
             }
 
             contentHolder.tvTitle.setText(title);

@@ -14,9 +14,53 @@ admin.initializeApp({
 
 setGlobalOptions({ maxInstances: 10, region: "asia-southeast1" });
 
-const OFFLINE_CHECK_DELAY_SECONDS = 20;
-const OFFLINE_TIMEOUT_MS = 15000;
+// Firmware publishes sensors every 10 seconds and now spends up to 20 seconds
+// restoring Wi-Fi. Forty seconds covers three missed heartbeats plus ordinary
+// write/jitter latency; the task runs after that threshold has safely elapsed.
+const OFFLINE_CHECK_DELAY_SECONDS = 45;
+const OFFLINE_TIMEOUT_MS = 40000;
+const CONNECTIVITY_FCM_TTL_MS = 3 * 60 * 1000;
+// Manual setup commonly requires switching the phone to the ESP32 AP, entering
+// credentials, and waiting for a restart. Ten minutes avoids false alarms during
+// that workflow while still allowing a forgotten/dead setup session to expire.
+const PROVISIONING_GRACE_MS = 10 * 60 * 1000;
 const MANILA_TIME_ZONE = "Asia/Manila";
+
+function isInvalidFcmTokenError(error) {
+    const code = error && error.code;
+    return code === "messaging/registration-token-not-registered"
+        || code === "messaging/invalid-registration-token";
+}
+
+async function cleanupInvalidFcmTokens(db, tokens, response, context) {
+    const invalidTokens = new Set();
+    response.responses.forEach((result, index) => {
+        if (!result.success && isInvalidFcmTokenError(result.error) && tokens[index]) {
+            invalidTokens.add(tokens[index]);
+        }
+    });
+
+    for (const token of invalidTokens) {
+        const users = await db.collection("users").where("fcmToken", "==", token).get();
+        for (const userDoc of users.docs) {
+            await db.runTransaction(async transaction => {
+                const current = await transaction.get(userDoc.ref);
+                if (current.exists && current.get("fcmToken") === token) {
+                    transaction.update(userDoc.ref, {
+                        fcmToken: admin.firestore.FieldValue.delete()
+                    });
+                }
+            });
+        }
+        logger.info("Removed invalid FCM token", {context, matchingUsers: users.size});
+    }
+}
+
+async function sendMulticastWithCleanup(db, message, context) {
+    const response = await admin.messaging().sendEachForMulticast(message);
+    await cleanupInvalidFcmTokens(db, message.tokens || [], response, context);
+    return response;
+}
 
 exports.changePersonnelPassword = onCall(async (request) => {
     if (!request.auth) {
@@ -203,11 +247,11 @@ async function createHarvestReminder(db, deviceId, cycleId, nextHarvestDate, rem
     const userTokens = await getDeviceUserTokens(db, deviceId);
     if (userTokens.length === 0) return;
     try {
-        const response = await admin.messaging().sendEachForMulticast({
+        const response = await sendMulticastWithCleanup(db, {
             notification: {title, body: message},
             data: {title, body: message, type: "HARVEST_REMINDER", deviceId, notificationId},
             tokens: userTokens
-        });
+        }, "harvest-reminder");
         logger.info("Harvest FCM send result", {
             deviceId, cycleId, notificationId, tokenCount: userTokens.length,
             successCount: response.successCount, failureCount: response.failureCount
@@ -295,7 +339,8 @@ exports.onAlertUpdated = onValueUpdated({
     const alertKeys = [
         { key: "lowWater", title: "Low Water Level", message: "The reservoir water level is below the configured refill threshold.", type: "parameter" },
         { key: "ecLow", title: "Low EC Level", message: "EC level is below the safe range.", type: "parameter" },
-        { key: "phOutOfRange", title: "pH Out of Range", message: "pH level is outside the safe range.", type: "parameter" },
+        { key: "phLow", title: "pH Low", message: "pH level is below the configured safe range.", type: "parameter" },
+        { key: "phHigh", title: "pH High", message: "pH level is above the configured safe range.", type: "parameter" },
         { key: "waterTempOutOfRange", title: "Water Temperature Alert", message: "Water temperature is outside the safe range.", type: "parameter" },
         { key: "highTemperature", title: "High Air Temperature", message: "Air temperature is above safe limits.", type: "parameter" },
         { key: "sensorFault", title: "Sensor Fault", message: "One or more sensors are not responding.", type: "hardware" }
@@ -311,14 +356,23 @@ exports.onAlertUpdated = onValueUpdated({
                 .doc(deviceId)
                 .collection("notifications");
 
-            await notificationRef.doc(notificationId).set({
+            const document = notificationRef.doc(notificationId);
+            try {
+                await document.create({
                 title: alert.title,
                 message: alert.message,
                 type: alert.type,
                 timestamp: Date.now(),
                 isRead: false,
                 eventId: notificationId
-            });
+                });
+            } catch (error) {
+                if (error && (error.code === 6 || error.code === "already-exists")) {
+                    logger.info("Alert event already handled", {deviceId, notificationId});
+                    continue;
+                }
+                throw error;
+            }
             
             logger.info(`Alert generated and saved to Firestore for ${deviceId}: ${alert.key}`);
 
@@ -341,72 +395,106 @@ exports.onAlertUpdated = onValueUpdated({
                 };
 
                 try {
-                    const response = await admin.messaging().sendEachForMulticast(message);
+                    const response = await sendMulticastWithCleanup(db, message, "parameter-alert");
                     logger.info(`${response.successCount} messages were sent successfully`);
                 } catch (error) {
-                    logger.error("Error sending FCM messages:", error);
+                    await document.delete();
+                    throw error;
                 }
             }
         }
     }
 });
 
-async function handleDeviceOffline(eventId, deviceId, wasOnline, isOnline) {
-    logger.info(`handleDeviceOffline for ${deviceId}: wasOnline=${wasOnline}, isOnline=${isOnline}`);
+async function handleDeviceConnectivityTransition(eventId, deviceId, wasOnline, isOnline) {
+    const wentOffline = wasOnline === true && isOnline === false;
+    const cameOnline = wasOnline === false && isOnline === true;
+    if (!wentOffline && !cameOnline) return;
 
-    if (wasOnline !== false && isOnline === false) {
-        const notificationId = `${eventId}_offline`;
-        const db = admin.firestore();
-        logger.info(`Device went offline: ${deviceId}`);
+    logger.info(`[PRESENCE] ${deviceId} ${wentOffline ? "ONLINE -> OFFLINE" : "OFFLINE -> ONLINE"}`);
 
-        const notificationRef = db.collection("devices")
-            .doc(deviceId)
-            .collection("notifications");
+    const suffix = wentOffline ? "unreachable" : "online";
+    const notificationId = `${eventId}_${suffix}`;
+    const title = wentOffline ? "Basilience Device Unreachable" : "Basilience Device Back Online";
+    const body = wentOffline
+        ? "Basilience can no longer communicate with the device. Check the device power or network connection. Local automation may still be running if the device has power."
+        : `${deviceId} is back online and communicating normally.`;
+    const notificationType = wentOffline ? "OFFLINE_ALERT" : "ONLINE_RECOVERY";
+    const db = admin.firestore();
+    const realtimeDb = admin.database();
+    const statusSnapshot = await realtimeDb.ref(`/devices/${deviceId}/status`).once("value");
+    const currentStatus = statusSnapshot.val() || {};
+    const generatedAt = Date.now();
+    const lastServerSeen = Number(currentStatus.lastServerSeen);
+    const presenceState = wentOffline ? "OFFLINE" : "ONLINE";
+    const historyType = wentOffline ? "connectivity_offline" : "connectivity_recovery";
+    const document = db.collection("devices").doc(deviceId)
+        .collection("notifications").doc(notificationId);
 
-        await notificationRef.doc(notificationId).set({
-            title: "Device Offline",
-            message: `Connection to device ${deviceId} was lost.`,
-            type: "hardware",
-            timestamp: Date.now(),
+    // The RTDB event id is stable across Cloud Function retries. Creating this
+    // deterministic document is the idempotency gate for both history and FCM.
+    try {
+        await document.create({
+            title,
+            message: body,
+            type: historyType,
+            subtype: historyType,
+            timestamp: generatedAt,
+            generatedAt,
+            lastServerSeen: Number.isFinite(lastServerSeen) ? lastServerSeen : null,
+            presenceState,
             isRead: false,
             eventId: notificationId
         });
-
-        const userTokens = await getDeviceUserTokens(db, deviceId);
-        logger.info(`Found ${userTokens.length} user tokens for FCM push notification.`);
-
-        if (userTokens.length > 0) {
-            const message = {
-                notification: {
-                    title: `Device Offline`,
-                    body: `Connection to device ${deviceId} was lost.`
-                },
-                data: {
-                    title: `Device Offline`,
-                    body: `Connection to device ${deviceId} was lost.`,
-                    type: "OFFLINE_ALERT",
-                    deviceId: deviceId || "",
-                    notificationId
-                },
-                android: {
-                    priority: "high",
-                    notification: {
-                        sound: "default",
-                        channelId: "alerts"
-                    }
-                },
-                tokens: userTokens
-            };
-
-            try {
-                const response = await admin.messaging().sendEachForMulticast(message);
-                logger.info(`Offline notification sent successfully to ${response.successCount} tokens.`);
-            } catch (error) {
-                logger.error("Error sending offline FCM messages:", error);
-            }
-        } else {
-            logger.warn(`No FCM tokens found for device ${deviceId}.`);
+        if (cameOnline) {
+            logger.info("[NOTIFICATION] Device recovery event created", {deviceId, notificationId});
         }
+    } catch (error) {
+        if (error && (error.code === 6 || error.code === "already-exists")) {
+            logger.info("Connectivity event already handled", {deviceId, notificationId});
+            return;
+        }
+        throw error;
+    }
+
+    const userTokens = await getDeviceUserTokens(db, deviceId);
+    if (userTokens.length === 0) {
+        logger.warn(`No FCM tokens found for device ${deviceId}.`);
+        return;
+    }
+
+    const message = {
+        data: {
+            title,
+            body,
+            type: notificationType,
+            deviceId: deviceId || "",
+            notificationId,
+            eventId: notificationId,
+            generatedAt: String(generatedAt),
+            lastServerSeen: Number.isFinite(lastServerSeen) ? String(lastServerSeen) : "",
+            presenceState
+        },
+        android: {
+            priority: "high",
+            ttl: CONNECTIVITY_FCM_TTL_MS,
+            collapseKey: `device_connectivity_${deviceId}`
+        },
+        tokens: userTokens
+    };
+
+    try {
+        const response = await sendMulticastWithCleanup(db, message, "device-connectivity");
+        logger.info("Connectivity notification sent", {
+            deviceId,
+            notificationType,
+            successCount: response.successCount
+        });
+    } catch (error) {
+        // A transport-level failure occurred before multicast returned a result.
+        // Remove the idempotency gate so the platform retry can safely try again.
+        await document.delete();
+        throw error;
     }
 }
 
@@ -414,7 +502,11 @@ exports.onDeviceOffline = onValueUpdated({
     ref: "/devices/{deviceId}/status/online",
     instance: "basilience-database-default-rtdb"
 }, async (event) => {
-    await handleDeviceOffline(event.id, event.params.deviceId, event.data.before.val(), event.data.after.val());
+    await handleDeviceConnectivityTransition(
+        event.id,
+        event.params.deviceId,
+        event.data.before.val(),
+        event.data.after.val());
 });
 
 exports.onHarvestCreated = onDocumentCreated("devices/{deviceId}/cycles/{cycleId}/harvestLogs/{harvestId}", async (event) => {
@@ -474,7 +566,7 @@ exports.onHarvestCreated = onDocumentCreated("devices/{deviceId}/cycles/{cycleId
         };
 
         try {
-            const response = await admin.messaging().sendEachForMulticast(fcmMessage);
+            const response = await sendMulticastWithCleanup(db, fcmMessage, "harvest-recorded");
             logger.info("Harvest recorded FCM send result", {
                 deviceId, cycleId, harvestId, notificationId,
                 successCount: response.successCount,
@@ -616,14 +708,7 @@ exports.trackDeviceHeartbeat = onValueWritten({
 
         await db.ref().update(updates);
 
-        const queue = getFunctions().taskQueue("locations/asia-southeast1/functions/delayedOfflineCheck");
-        await queue.enqueue({
-            deviceId,
-            expectedLastServerSeen: heartbeatAt
-        }, {
-            scheduleDelaySeconds: OFFLINE_CHECK_DELAY_SECONDS,
-            dispatchDeadlineSeconds: 60
-        });
+        await enqueueOfflineCheck(deviceId, heartbeatAt, OFFLINE_CHECK_DELAY_SECONDS);
 
         logger.info("trackDeviceHeartbeat: heartbeat recorded and delayed offline check scheduled", {
             deviceId,
@@ -633,6 +718,42 @@ exports.trackDeviceHeartbeat = onValueWritten({
     } catch (error) {
         logger.error(`Error updating heartbeat for ${deviceId}:`, error);
     }
+});
+
+async function enqueueOfflineCheck(deviceId, expectedLastServerSeen, delaySeconds) {
+    const queue = getFunctions().taskQueue(
+        "locations/asia-southeast1/functions/delayedOfflineCheck");
+    await queue.enqueue({deviceId, expectedLastServerSeen}, {
+        scheduleDelaySeconds: Math.max(1, Math.ceil(delaySeconds)),
+        dispatchDeadlineSeconds: 60
+    });
+}
+
+exports.trackProvisioningState = onValueUpdated({
+    ref: "/devices/{deviceId}/status/provisioning",
+    instance: "basilience-database-default-rtdb"
+}, async event => {
+    const before = event.data.before.val() === true;
+    const after = event.data.after.val() === true;
+    if (before === after) return;
+
+    const deviceId = event.params.deviceId;
+    const statusRef = admin.database().ref(`/devices/${deviceId}/status`);
+    if (after) {
+        await statusRef.update({provisioningStartedAt: Date.now()});
+        logger.info("Provisioning grace started", {deviceId, graceMs: PROVISIONING_GRACE_MS});
+        return;
+    }
+
+    await statusRef.child("provisioningStartedAt").remove();
+    const status = (await statusRef.once("value")).val() || {};
+    const lastServerSeen = Number(status.lastServerSeen);
+    if (status.online === true && Number.isFinite(lastServerSeen)) {
+        // Restore normal presence evaluation after intentional provisioning. A
+        // fresh heartbeat invalidates this task through the expected timestamp.
+        await enqueueOfflineCheck(deviceId, lastServerSeen, OFFLINE_CHECK_DELAY_SECONDS);
+    }
+    logger.info("Provisioning grace ended", {deviceId});
 });
 
 exports.delayedOfflineCheck = onTaskDispatched({
@@ -668,6 +789,30 @@ exports.delayedOfflineCheck = onTaskDispatched({
                 expectedLastServerSeen
             });
             return;
+        }
+
+        const initialStatus = initialSnapshot.val() || {};
+        if (initialStatus.online === true
+                && Number(initialStatus.lastServerSeen) === expectedLastServerSeen
+                && initialStatus.provisioning === true) {
+            const provisioningStartedAt = Number(initialStatus.provisioningStartedAt);
+            const elapsedMs = Number.isFinite(provisioningStartedAt)
+                ? Date.now() - provisioningStartedAt : 0;
+            if (!Number.isFinite(provisioningStartedAt) || elapsedMs < PROVISIONING_GRACE_MS) {
+                const remainingMs = Number.isFinite(provisioningStartedAt)
+                    ? PROVISIONING_GRACE_MS - Math.max(0, elapsedMs)
+                    : PROVISIONING_GRACE_MS;
+                await enqueueOfflineCheck(
+                    deviceId, expectedLastServerSeen, Math.ceil(remainingMs / 1000));
+                logger.info("delayedOfflineCheck: provisioning grace active", {
+                    deviceId,
+                    expectedLastServerSeen,
+                    provisioningStartedAt: Number.isFinite(provisioningStartedAt)
+                        ? provisioningStartedAt : null,
+                    remainingMs
+                });
+                return;
+            }
         }
 
         let transactionAttempts = 0;
@@ -715,6 +860,37 @@ exports.delayedOfflineCheck = onTaskDispatched({
     }
 });
 
+exports.sendTestOfflineNotification = onValueWritten({
+    ref: "/devices/{deviceId}/debug/testNotifications/offline/{testId}",
+    instance: "basilience-database-default-rtdb"
+}, async event => {
+    if (!event.data.after.exists()) return;
+    const deviceId = event.params.deviceId;
+    const testId = event.params.testId;
+    const db = admin.firestore();
+    const tokens = await getDeviceUserTokens(db, deviceId);
+    try {
+        if (tokens.length > 0) {
+            await sendMulticastWithCleanup(db, {
+                notification: {
+                    title: "TEST — Device Unreachable",
+                    body: `${deviceId} test notification. Real connectivity was not changed.`
+                },
+                data: {
+                    title: "TEST — Device Unreachable",
+                    body: `${deviceId} test notification. Real connectivity was not changed.`,
+                    type: "TEST_OFFLINE_ALERT",
+                    deviceId,
+                    notificationId: `test_offline_${testId}`
+                },
+                tokens
+            }, "test-offline");
+        }
+    } finally {
+        await event.data.after.ref.remove();
+    }
+});
+
 exports.onStatusUpdated = onValueUpdated({
     ref: "/devices/{deviceId}/status",
     instance: "basilience-database-default-rtdb"
@@ -738,14 +914,23 @@ exports.onStatusUpdated = onValueUpdated({
                 .doc(deviceId)
                 .collection("notifications");
 
-            await notificationRef.doc(notificationId).set({
+            const document = notificationRef.doc(notificationId);
+            try {
+                await document.create({
                 title: status.title,
                 message: status.message,
                 type: status.type,
                 timestamp: Date.now(),
                 isRead: false,
                 eventId: notificationId
-            });
+                });
+            } catch (error) {
+                if (error && (error.code === 6 || error.code === "already-exists")) {
+                    logger.info("Status event already handled", {deviceId, notificationId});
+                    continue;
+                }
+                throw error;
+            }
             
             logger.info(`Status alert generated and saved to Firestore for ${deviceId}: ${status.key}`);
 
@@ -768,10 +953,11 @@ exports.onStatusUpdated = onValueUpdated({
                 };
 
                 try {
-                    const response = await admin.messaging().sendEachForMulticast(message);
+                    const response = await sendMulticastWithCleanup(db, message, "status-alert");
                     logger.info(`Status FCM: ${response.successCount} messages were sent successfully`);
                 } catch (error) {
-                    logger.error("Error sending Status FCM messages:", error);
+                    await document.delete();
+                    throw error;
                 }
             }
         }

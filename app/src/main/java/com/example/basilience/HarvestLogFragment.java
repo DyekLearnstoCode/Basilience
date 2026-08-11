@@ -239,6 +239,10 @@ public class HarvestLogFragment extends Fragment {
         Button btnCancel = dialogView.findViewById(R.id.btnCancel);
         Button btnReadSensor = dialogView.findViewById(R.id.btnReadSensor);
 
+        // No load-cell/weight publisher exists in the ESP32 firmware. Do not
+        // present a control that can only read a fabricated/stale RTDB field.
+        btnReadSensor.setVisibility(View.GONE);
+
         editingHarvest = harvest;
         currentHarvestSource = "MANUAL";
         String dialogTitle = "Log New Harvest";
@@ -253,24 +257,6 @@ public class HarvestLogFragment extends Fragment {
 
         AlertDialog dialog = NotificationHelper.showCustomViewDialog(requireContext(), dialogTitle, dialogView);
 
-        btnReadSensor.setOnClickListener(v -> {
-            com.google.firebase.database.DatabaseReference sensorRef = dbHelper.getSensorsReference();
-            if (sensorRef != null) {
-                sensorRef.child("weight").get().addOnSuccessListener(snapshot -> {
-                    if (snapshot.exists()) {
-                        Double weight = snapshot.getValue(Double.class);
-                        if (weight != null) {
-                            etWeight.setText(String.valueOf(weight));
-                            currentHarvestSource = "SENSOR";
-                            NotificationHelper.showSuccess(getContext(), "Weight read from sensor");
-                        }
-                    }
-                }).addOnFailureListener(e -> NotificationHelper.showError(getContext(), "Failed to read sensor: " + e.getMessage()));
-            } else {
-                NotificationHelper.showError(getContext(), "No active device context for sensors.");
-            }
-        });
-
         btnCancel.setOnClickListener(v -> {
             if (dialog != null) dialog.dismiss();
         });
@@ -282,7 +268,17 @@ public class HarvestLogFragment extends Fragment {
                 return;
             }
 
-            double weight = Double.parseDouble(weightStr);
+            final double weight;
+            try {
+                weight = Double.parseDouble(weightStr);
+            } catch (NumberFormatException error) {
+                etWeight.setError("Enter a valid numeric weight");
+                return;
+            }
+            if (!Double.isFinite(weight) || weight <= 0.0) {
+                etWeight.setError("Weight must be greater than zero");
+                return;
+            }
             String notes = etNotes.getText().toString().trim();
             btnSave.setEnabled(false);
 

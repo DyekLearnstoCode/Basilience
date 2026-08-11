@@ -51,6 +51,7 @@ public class DevOptionsFragment extends Fragment {
     private View containerMockData, containerRefillLevels, containerWifiConfig;
 
     private boolean isCurrentlyOnline = false;
+    private DeviceConnectivityState connectivityState = DeviceConnectivityState.RECONNECTING;
     private Boolean lastReportedWifiConnected = null;
     private boolean setupApReachable = false;
     private boolean loadingMockState = true;
@@ -108,10 +109,20 @@ public class DevOptionsFragment extends Fragment {
                 }
 
                 if (devId != null) {
-                    // Cloud Functions remain the only notification-history writer.
-                    h.getDeviceReference().child("status").child("online").setValue(false);
-                    h.getDeviceReference().child("deviceInfo").child("online").setValue(false);
-                    Toast.makeText(getContext(), "Offline transition sent; backend will create the alert.", Toast.LENGTH_SHORT).show();
+                    DatabaseReference testRef = h.getDeviceReference()
+                            .child("debug")
+                            .child("testNotifications")
+                            .child("offline")
+                            .push();
+                    Map<String, Object> request = new HashMap<>();
+                    request.put("requestedAt", com.google.firebase.database.ServerValue.TIMESTAMP);
+                    testRef.setValue(request)
+                            .addOnSuccessListener(unused -> Toast.makeText(getContext(),
+                                    "Test notification requested; device presence was not changed.",
+                                    Toast.LENGTH_SHORT).show())
+                            .addOnFailureListener(error -> Toast.makeText(getContext(),
+                                    "Unable to request test notification.",
+                                    Toast.LENGTH_SHORT).show());
                 } else {
                     Toast.makeText(getContext(), "No selected device", Toast.LENGTH_SHORT).show();
                 }
@@ -174,8 +185,10 @@ public class DevOptionsFragment extends Fragment {
         btnInjectLogs.setOnClickListener(v -> injectMockFirestoreLogs(fDeviceId));
 
         // Observe online status for Wi-Fi config UI
-        DeviceConnectionManager.getInstance().getOnlineStatus().observe(getViewLifecycleOwner(), isOnline -> {
-            isCurrentlyOnline = isOnline != null ? isOnline : false;
+        DeviceConnectionManager.getInstance().getConnectivityState().observe(getViewLifecycleOwner(), state -> {
+            connectivityState = state == null
+                    ? DeviceConnectivityState.RECONNECTING : state;
+            isCurrentlyOnline = connectivityState == DeviceConnectivityState.ONLINE;
             renderWifiStatusUI();
             checkSetupApReachability();
         });
@@ -494,20 +507,13 @@ public class DevOptionsFragment extends Fragment {
         if (tvWifiStatus == null || !isAdded()) return;
 
         if (setupApReachable) {
-            tvWifiStatus.setText("Provisioning Mode\nConnected to Basilience-Setup");
-            tvWifiStatus.setTextColor(Color.parseColor("#FF9800"));
-        } else if (isCurrentlyOnline) {
-            if (Boolean.TRUE.equals(lastReportedWifiConnected)) {
-                tvWifiStatus.setText("Device Online - Wi-Fi Connected");
-            } else if (Boolean.FALSE.equals(lastReportedWifiConnected)) {
-                tvWifiStatus.setText("Device Online - Wi-Fi Disconnected");
-            } else {
-                tvWifiStatus.setText("Device Online - Wi-Fi state unknown");
-            }
-            tvWifiStatus.setTextColor(Color.parseColor("#4CAF50"));
+            tvWifiStatus.setText("● Provisioning");
+            tvWifiStatus.setTextColor(androidx.core.content.ContextCompat.getColor(
+                    requireContext(), R.color.device_status_reconnecting));
         } else {
-            tvWifiStatus.setText("Device Offline");
-            tvWifiStatus.setTextColor(Color.parseColor("#F44336"));
+            tvWifiStatus.setText("● " + connectivityState.getLabel());
+            tvWifiStatus.setTextColor(androidx.core.content.ContextCompat.getColor(
+                    requireContext(), connectivityState.getColorRes()));
         }
     }
 

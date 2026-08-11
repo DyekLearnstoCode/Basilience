@@ -15,6 +15,7 @@ import androidx.fragment.app.Fragment;
 import androidx.navigation.Navigation;
 
 import com.google.android.material.switchmaterial.SwitchMaterial;
+import com.google.android.material.button.MaterialButton;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.example.basilience.repository.SensorRepository;
@@ -25,6 +26,8 @@ import androidx.lifecycle.Observer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import android.os.Handler;
 import android.os.Looper;
@@ -90,10 +93,17 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private ValueEventListener sensorsListener;
 
     private TextView tvConnectionStatus;
+    private MaterialButton btnRetryWifiConfiguration;
     private SensorRepository sensorRepository;
     private final MutableLiveData<SensorData> sensorLiveData = new MutableLiveData<>();
     private Long previousLastSeenValue = null;
     private boolean isCurrentlyOnline = false;
+    private DeviceConnectivityState connectivityState = DeviceConnectivityState.RECONNECTING;
+    private boolean setupApReachable = false;
+    private boolean setupApCheckInProgress = false;
+    private boolean setupApCheckCompleted = false;
+    private String selectedDeviceId;
+    private ExecutorService connectivityExecutor;
 
     private final Actuator waterPumpValve = new Actuator("Water Pump (Valve)", "solenoid");
     private final Actuator canopyFan = new Actuator("Canopy Fan", "canopyFan");
@@ -175,7 +185,31 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         tvActuatorLoadingStatus = view.findViewById(R.id.tvActuatorLoadingStatus);
 
         tvConnectionStatus = view.findViewById(R.id.tvConnectionStatus);
+        btnRetryWifiConfiguration = view.findViewById(R.id.btnRetryWifiConfiguration);
+        connectivityExecutor = Executors.newSingleThreadExecutor();
+        if (btnRetryWifiConfiguration != null) {
+            btnRetryWifiConfiguration.setOnClickListener(v ->
+                    Navigation.findNavController(v).navigate(R.id.wifiConfigFragment));
+        }
         sensorRepository = new SensorRepository();
+
+        DeviceConnectionManager.getInstance().getConnectivityState().observe(
+                getViewLifecycleOwner(), state -> {
+                    connectivityState = state == null
+                            ? DeviceConnectivityState.RECONNECTING : state;
+                    isCurrentlyOnline = connectivityState == DeviceConnectivityState.ONLINE;
+                    if (isCurrentlyOnline) {
+                        setupApReachable = false;
+                        setupApCheckCompleted = false;
+                        if (selectedDeviceId != null) {
+                            NotificationHelper.clearWifiConfigurationRequiredNotification(
+                                    requireContext(), selectedDeviceId);
+                        }
+                    } else if (selectedDeviceId != null) {
+                        confirmSetupApReachability(selectedDeviceId);
+                    }
+                    updateConnectionUI();
+                });
 
         sensorLiveData.observe(getViewLifecycleOwner(), new Observer<SensorData>() {
             @Override
@@ -305,6 +339,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (getContext() == null) return;
         SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
         String deviceId = prefs.getString("selected_device_id", null);
+        selectedDeviceId = deviceId;
 
         if (deviceId == null) {
             Log.e("Monitoring", "No device selected");
@@ -332,16 +367,6 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (!isAdded()) return;
-
-                // Sync authoritative online status
-                Boolean onlineStatus = snapshot.child("status").child("online").getValue(Boolean.class);
-                if (onlineStatus != null) {
-                    isCurrentlyOnline = onlineStatus;
-                    updateConnectionUI();
-                } else {
-                    isCurrentlyOnline = false;
-                    updateConnectionUI();
-                }
 
                 // Sync status: reservoirLocked & safetyLock
                 Boolean reservoirLocked = snapshot.child("status").child("reservoirLocked").getValue(Boolean.class);
@@ -1052,15 +1077,15 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private void updateConnectionUI() {
         if (tvConnectionStatus == null || !isAdded()) return;
 
-        if (!isCurrentlyOnline) {
-            tvConnectionStatus.setText("Device Offline");
-            tvConnectionStatus.setTextColor(android.graphics.Color.parseColor("#F44336")); // Red
-        } else if (isSafetyLock) {
-            tvConnectionStatus.setText("SAFETY LOCK ACTIVE");
-            tvConnectionStatus.setTextColor(android.graphics.Color.parseColor("#F44336")); // Red
-        } else {
-            tvConnectionStatus.setText("Online");
-            tvConnectionStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50")); // Green
+        DeviceConnectivityState displayState = setupApReachable
+                ? DeviceConnectivityState.RECONNECTING : connectivityState;
+        String label = setupApReachable ? "Provisioning" : displayState.getLabel();
+        tvConnectionStatus.setText("● " + label);
+        tvConnectionStatus.setTextColor(androidx.core.content.ContextCompat.getColor(
+                requireContext(), displayState.getColorRes()));
+
+        if (btnRetryWifiConfiguration != null) {
+            btnRetryWifiConfiguration.setVisibility(isCurrentlyOnline ? View.GONE : View.VISIBLE);
         }
 
         View v = getView();
@@ -1075,6 +1100,27 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         updateActuatorControls();
     }
 
+    private void confirmSetupApReachability(String deviceId) {
+        if (setupApCheckCompleted || setupApCheckInProgress
+                || connectivityExecutor == null || connectivityExecutor.isShutdown()) return;
+        setupApCheckInProgress = true;
+        android.content.Context appContext = requireContext().getApplicationContext();
+        connectivityExecutor.execute(() -> {
+            boolean reachable = LocalProvisioningClient.isSetupApReachable(appContext);
+            mainHandler.post(() -> {
+                setupApCheckInProgress = false;
+                if (!isAdded() || isCurrentlyOnline) return;
+                setupApCheckCompleted = true;
+                setupApReachable = reachable;
+                if (reachable) {
+                    NotificationHelper.showWifiConfigurationRequiredNotification(
+                            requireContext(), deviceId);
+                }
+                updateConnectionUI();
+            });
+        });
+    }
+
     @Override
     public void onDestroyView() {
         actuatorCommandFinished = true;
@@ -1084,6 +1130,10 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             actuatorCommandRunnable = null;
         }
         mainHandler.removeCallbacksAndMessages(null);
+        if (connectivityExecutor != null) {
+            connectivityExecutor.shutdownNow();
+            connectivityExecutor = null;
+        }
         isActuatorBusy = false;
         if (sensorRepository != null) {
             sensorRepository.stopListening();

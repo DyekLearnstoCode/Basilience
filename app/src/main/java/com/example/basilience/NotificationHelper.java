@@ -1,8 +1,12 @@
 package com.example.basilience;
 
 import android.app.Activity;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.ContextWrapper;
+import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.PorterDuff;
 import android.util.TypedValue;
@@ -15,12 +19,62 @@ import android.widget.TextView;
 import androidx.annotation.DrawableRes;
 import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
+import androidx.core.app.NotificationCompat;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.snackbar.Snackbar;
 
 public class NotificationHelper {
+
+    private static final String CONNECTIVITY_PREFS = "connectivity_notifications";
+    private static final String WIFI_NOTIFICATION_CHANNEL = "wifi_configuration";
+
+    public static void showWifiConfigurationRequiredNotification(Context context, String deviceId) {
+        Context appContext = context.getApplicationContext();
+        String key = "wifi_configuration_required_" + deviceId;
+        android.content.SharedPreferences prefs = appContext.getSharedPreferences(
+                CONNECTIVITY_PREFS, Context.MODE_PRIVATE);
+        if (prefs.getBoolean(key, false)) return;
+
+        NotificationManager manager = (NotificationManager) appContext.getSystemService(
+                Context.NOTIFICATION_SERVICE);
+        if (manager == null) return;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(new NotificationChannel(
+                    WIFI_NOTIFICATION_CHANNEL,
+                    "Wi-Fi Configuration",
+                    NotificationManager.IMPORTANCE_DEFAULT));
+        }
+
+        Intent intent = new Intent(appContext, MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.putExtra(MainActivity.EXTRA_OPEN_WIFI_CONFIGURATION, true);
+        PendingIntent pendingIntent = PendingIntent.getActivity(appContext,
+                key.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(
+                appContext, WIFI_NOTIFICATION_CHANNEL)
+                .setSmallIcon(R.drawable.basilience_logo)
+                .setContentTitle("Wi-Fi Configuration Required")
+                .setContentText("The Basilience device is powered and running locally, but normal Wi-Fi connectivity is unavailable.")
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(
+                        "The Basilience device is powered and running locally, but normal Wi-Fi connectivity is unavailable. Open Wi-Fi Configuration to reconnect the device."))
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT);
+        manager.notify(key.hashCode(), builder.build());
+        prefs.edit().putBoolean(key, true).apply();
+    }
+
+    public static void clearWifiConfigurationRequiredNotification(Context context, String deviceId) {
+        Context appContext = context.getApplicationContext();
+        String key = "wifi_configuration_required_" + deviceId;
+        NotificationManager manager = (NotificationManager) appContext.getSystemService(
+                Context.NOTIFICATION_SERVICE);
+        if (manager != null) manager.cancel(key.hashCode());
+        appContext.getSharedPreferences(CONNECTIVITY_PREFS, Context.MODE_PRIVATE)
+                .edit().remove(key).apply();
+    }
 
     public static final class UpdatableParameterDialog {
         private final AlertDialog dialog;

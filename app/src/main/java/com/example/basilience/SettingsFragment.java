@@ -86,19 +86,16 @@ public class SettingsFragment extends Fragment {
     private void performLogout() {
         NotificationHelper.showConfirmation(requireContext(), "Logout", "Are you sure you want to log out?", () -> {
             Database_Helper helper = new Database_Helper();
-            helper.logout();
-
-            // Clear session preferences
-            if (getActivity() != null) {
+            helper.logout().addOnCompleteListener(task -> {
+                if (!isAdded() || getActivity() == null) return;
                 android.content.SharedPreferences prefs = getActivity().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
                 prefs.edit().clear().apply();
 
-                // Redirect to Login
                 android.content.Intent intent = new android.content.Intent(getActivity(), Auth_Login_Activity.class);
                 intent.setFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK);
                 startActivity(intent);
                 getActivity().finish();
-            }
+            });
         });
     }
 }

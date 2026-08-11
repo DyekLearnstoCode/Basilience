@@ -56,7 +56,7 @@
                     android:layout_height="10dp"
                     android:layout_marginStart="8dp"
                     android:background="@drawable/circle_button"
-                    app:backgroundTint="#F44336" />
+                    app:backgroundTint="@color/device_status_reconnecting" />
             </LinearLayout>
 
             <TextView

@@ -48,6 +48,10 @@ public class Auth_ForgotPass_Activity extends AppCompatActivity {
             NotificationHelper.showError(this, "Please enter a valid email");
             return;
         }
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            NotificationHelper.showError(this, "Please enter a valid email address");
+            return;
+        }
 
         // Show Loading Overlay
         layoutLoading.setVisibility(View.VISIBLE);
@@ -63,7 +67,7 @@ public class Auth_ForgotPass_Activity extends AppCompatActivity {
                     btnResetPassword.setEnabled(true);
                     NotificationHelper.showSuccessAcknowledgement(this,
                             "Password Reset Email Sent",
-                            "A password reset link has been sent to " + email + ". Please check your inbox.",
+                            "If a Basilience account uses this email, a reset link has been sent. Please check your inbox.",
                             this::finish);
                 })
                 .addOnFailureListener(e -> {
@@ -71,7 +75,8 @@ public class Auth_ForgotPass_Activity extends AppCompatActivity {
                     // Hide Loading Overlay
                     layoutLoading.setVisibility(View.GONE);
                     btnResetPassword.setEnabled(true);
-                    NotificationHelper.showError(this, "Error: " + e.getMessage());
+                    NotificationHelper.showError(this,
+                            "Password reset is temporarily unavailable. Check your connection and try again.");
                 });
     }
 

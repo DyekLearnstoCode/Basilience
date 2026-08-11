@@ -133,7 +133,8 @@ public class Auth_Register_Activity extends AppCompatActivity {
                     if (e instanceof com.google.firebase.auth.FirebaseAuthUserCollisionException) {
                         showAccountAlreadyExistsDialog();
                     } else {
-                        NotificationHelper.showError(this, "Registration failed: " + e.getMessage());
+                        NotificationHelper.showError(this,
+                                "Registration could not be completed. Check your connection and details, then try again.");
                     }
                 });
     }

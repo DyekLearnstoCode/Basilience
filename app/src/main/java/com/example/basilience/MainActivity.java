@@ -43,6 +43,8 @@ import java.lang.ref.WeakReference;
 
 public class MainActivity extends AppCompatActivity {
 
+    public static final String EXTRA_OPEN_WIFI_CONFIGURATION = "open_wifi_configuration";
+
     private static WeakReference<MainActivity> foregroundActivity = new WeakReference<>(null);
     private static final Map<String, String> activeParameterAlerts = new LinkedHashMap<>();
     private static final Set<String> presentedParameterEventIds = new HashSet<>();
@@ -123,7 +125,7 @@ public class MainActivity extends AppCompatActivity {
         }
         startCurrentParameterAlertListener(initialDeviceId);
         
-        DeviceConnectionManager.getInstance().getOnlineStatus().observe(this, isOnline -> {
+        DeviceConnectionManager.getInstance().getConnectivityState().observe(this, state -> {
             // Presence UI observes backend-owned status. Cloud Functions alone create
             // persistent alert history and send FCM events.
         });
@@ -250,6 +252,8 @@ public class MainActivity extends AppCompatActivity {
             });
 
             // Initial RBAC check for Bottom Nav Menu items is handled in listener now
+
+            openWifiConfigurationIfRequested(navController, getIntent());
 
             // Selection Listener...
             bottomNav.setOnItemSelectedListener(item -> {
@@ -428,6 +432,24 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onNewIntent(android.content.Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        NavHostFragment host = (NavHostFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.nav_host_fragment);
+        if (host != null) openWifiConfigurationIfRequested(host.getNavController(), intent);
+    }
+
+    private void openWifiConfigurationIfRequested(NavController controller, android.content.Intent intent) {
+        if (intent == null || !intent.getBooleanExtra(EXTRA_OPEN_WIFI_CONFIGURATION, false)) return;
+        intent.removeExtra(EXTRA_OPEN_WIFI_CONFIGURATION);
+        if (controller.getCurrentDestination() == null
+                || controller.getCurrentDestination().getId() != R.id.wifiConfigFragment) {
+            controller.navigate(R.id.wifiConfigFragment);
+        }
+    }
+
+    @Override
     protected void onStart() {
         super.onStart();
         foregroundActivity = new WeakReference<>(this);
@@ -454,6 +476,25 @@ public class MainActivity extends AppCompatActivity {
         prefs.edit().putStringSet("shown_critical_alert_ids", shownIds).apply();
 
         activity.runOnUiThread(() -> activity.enqueueCriticalAlert(title, message));
+        return true;
+    }
+
+    public static boolean showForegroundRecovery(String title, String message, String eventId) {
+        MainActivity activity = foregroundActivity.get();
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return false;
+
+        String stableId = eventId == null || eventId.trim().isEmpty()
+                ? title + "|" + message
+                : eventId;
+        SharedPreferences prefs = activity.getSharedPreferences("basilience_prefs", MODE_PRIVATE);
+        Set<String> shownIds = new HashSet<>(prefs.getStringSet(
+                "shown_recovery_alert_ids", new HashSet<>()));
+        if (shownIds.contains(stableId)) return true;
+        shownIds.add(stableId);
+        prefs.edit().putStringSet("shown_recovery_alert_ids", shownIds).apply();
+
+        activity.runOnUiThread(() -> NotificationHelper.showSuccessAcknowledgement(
+                activity, title, message, null));
         return true;
     }
 
@@ -562,8 +603,10 @@ public class MainActivity extends AppCompatActivity {
                         Boolean.TRUE.equals(snapshot.child("lowWater").getValue(Boolean.class)));
                 currentParameterAlertStates.put("ecLow",
                         Boolean.TRUE.equals(snapshot.child("ecLow").getValue(Boolean.class)));
-                currentParameterAlertStates.put("phOutOfRange",
-                        Boolean.TRUE.equals(snapshot.child("phOutOfRange").getValue(Boolean.class)));
+                currentParameterAlertStates.put("phLow",
+                        Boolean.TRUE.equals(snapshot.child("phLow").getValue(Boolean.class)));
+                currentParameterAlertStates.put("phHigh",
+                        Boolean.TRUE.equals(snapshot.child("phHigh").getValue(Boolean.class)));
                 currentParameterAlertStates.put("highTemperature",
                         Boolean.TRUE.equals(snapshot.child("highTemperature").getValue(Boolean.class)));
                 currentParameterAlertStates.put("waterTempOutOfRange",
@@ -621,7 +664,8 @@ public class MainActivity extends AppCompatActivity {
             String only = activeParameterAlerts.values().iterator().next();
             if ("Water Level — Low".equals(only)) return "Water Level is below the configured threshold.";
             if ("EC — Low".equals(only)) return "EC is below the configured range.";
-            if ("pH — Out of Range".equals(only)) return "pH is outside the configured range.";
+            if ("pH — Low".equals(only)) return "pH is below the configured range.";
+            if ("pH — High".equals(only)) return "pH is above the configured range.";
             if ("Air Temperature — High".equals(only)) return "Air Temperature is above the configured range.";
             return "Water Temperature is outside the configured range.";
         }
@@ -684,7 +728,8 @@ public class MainActivity extends AppCompatActivity {
     private static String parameterLabel(String type) {
         if ("lowWater".equalsIgnoreCase(type)) return "Water Level — Low";
         if ("ecLow".equalsIgnoreCase(type)) return "EC — Low";
-        if ("phOutOfRange".equalsIgnoreCase(type)) return "pH — Out of Range";
+        if ("phLow".equalsIgnoreCase(type)) return "pH — Low";
+        if ("phHigh".equalsIgnoreCase(type)) return "pH — High";
         if ("highTemperature".equalsIgnoreCase(type)) return "Air Temperature — High";
         if ("waterTempOutOfRange".equalsIgnoreCase(type)) return "Water Temperature — Out of Range";
         return null;

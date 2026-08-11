@@ -44,9 +44,9 @@ public class WifiConfigFragment extends Fragment {
     private DatabaseReference deviceRef;
     private String selectedDeviceId;
     private ValueEventListener wifiStatusListener;
-    private ValueEventListener onlineStatusListener;
     private ValueEventListener lastServerSeenListener;
     private boolean isCurrentlyOnline = false;
+    private DeviceConnectivityState connectivityState = DeviceConnectivityState.RECONNECTING;
     private Boolean lastReportedWifiConnected = null;
     private boolean setupApReachable = false;
     private boolean awaitingReconnect = false;
@@ -107,6 +107,20 @@ public class WifiConfigFragment extends Fragment {
             return;
         }
         selectedDeviceId = deviceId;
+
+        DeviceConnectionManager.getInstance().getConnectivityState().observe(
+                getViewLifecycleOwner(), state -> {
+                    connectivityState = state == null
+                            ? DeviceConnectivityState.RECONNECTING : state;
+                    isCurrentlyOnline = connectivityState == DeviceConnectivityState.ONLINE;
+                    if (isCurrentlyOnline && selectedDeviceId != null) {
+                        setupApReachable = false;
+                        NotificationHelper.clearWifiConfigurationRequiredNotification(
+                                requireContext(), selectedDeviceId);
+                    }
+                    updateStatusUI();
+                    maybeConfirmProvisioningReconnect();
+                });
 
         deviceRef = FirebaseDatabase.getInstance("https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app")
                 .getReference("devices").child(deviceId);
@@ -182,24 +196,6 @@ public class WifiConfigFragment extends Fragment {
 
     private void attachWifiStatusListener() {
         if (deviceRef == null) return;
-
-        onlineStatusListener = deviceRef.child("status").child("online").addValueEventListener(new ValueEventListener() {
-            @Override
-            public void onDataChange(@NonNull com.google.firebase.database.DataSnapshot snapshot) {
-                boolean online = Boolean.TRUE.equals(snapshot.getValue(Boolean.class));
-                if (isCurrentlyOnline != online) {
-                    Log.d(TAG, "online=" + online);
-                }
-                isCurrentlyOnline = online;
-                updateStatusUI();
-                maybeConfirmProvisioningReconnect();
-            }
-
-            @Override
-            public void onCancelled(@NonNull com.google.firebase.database.DatabaseError error) {
-                Log.w(TAG, "online listener cancelled", error.toException());
-            }
-        });
 
         wifiStatusListener = deviceRef.child("status").child("wifiConnected").addValueEventListener(new ValueEventListener() {
             @Override
@@ -356,6 +352,10 @@ public class WifiConfigFragment extends Fragment {
             mainHandler.post(() -> {
                 if (!isAdded()) return;
                 setupApReachable = reachable;
+                if (reachable && !isCurrentlyOnline && selectedDeviceId != null) {
+                    NotificationHelper.showWifiConfigurationRequiredNotification(
+                            requireContext(), selectedDeviceId);
+                }
                 if (showDetectionLoading) {
                     hideLoading();
                     if (!reachable && !isCurrentlyOnline) {
@@ -390,20 +390,13 @@ public class WifiConfigFragment extends Fragment {
         if (tvWifiStatus == null || !isAdded()) return;
 
         if (setupApReachable) {
-            tvWifiStatus.setText("Provisioning Mode\nConnected to Basilience-Setup");
-            tvWifiStatus.setTextColor(android.graphics.Color.parseColor("#FF9800"));
-        } else if (isCurrentlyOnline) {
-            if (Boolean.TRUE.equals(lastReportedWifiConnected)) {
-                tvWifiStatus.setText("Device Online - Wi-Fi Connected");
-            } else if (Boolean.FALSE.equals(lastReportedWifiConnected)) {
-                tvWifiStatus.setText("Device Online - Wi-Fi Disconnected");
-            } else {
-                tvWifiStatus.setText("Device Online - Wi-Fi state unknown");
-            }
-            tvWifiStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50"));
+            tvWifiStatus.setText("● Provisioning");
+            tvWifiStatus.setTextColor(androidx.core.content.ContextCompat.getColor(
+                    requireContext(), R.color.device_status_reconnecting));
         } else {
-            tvWifiStatus.setText("Device Offline");
-            tvWifiStatus.setTextColor(android.graphics.Color.parseColor("#F44336"));
+            tvWifiStatus.setText("● " + connectivityState.getLabel());
+            tvWifiStatus.setTextColor(androidx.core.content.ContextCompat.getColor(
+                    requireContext(), connectivityState.getColorRes()));
         }
     }
 
@@ -424,9 +417,6 @@ public class WifiConfigFragment extends Fragment {
         }
         if (deviceRef != null && wifiStatusListener != null) {
             deviceRef.child("status").child("wifiConnected").removeEventListener(wifiStatusListener);
-        }
-        if (deviceRef != null && onlineStatusListener != null) {
-            deviceRef.child("status").child("online").removeEventListener(onlineStatusListener);
         }
         if (deviceRef != null && lastServerSeenListener != null) {
             deviceRef.child("status").child("lastServerSeen").removeEventListener(lastServerSeenListener);
