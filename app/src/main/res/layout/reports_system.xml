@@ -33,22 +33,38 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingTop="@dimen/container_top_padding"
+            android:paddingTop="@dimen/report_content_top_padding"
             android:paddingStart="@dimen/container_side_padding"
             android:paddingEnd="@dimen/container_side_padding"
             android:paddingBottom="@dimen/container_side_padding">
 
             <!-- Title -->
-            <TextView
-                android:id="@+id/tvTitle"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center"
-                android:text="Parameter Reports"
-                android:textColor="#212121"
-                android:textSize="28sp"
-                android:fontFamily="sans-serif-black"
-                android:letterSpacing="-0.02" />
+                android:orientation="horizontal"
+                android:gravity="center">
+                
+                <TextView
+                    android:id="@+id/tvTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Parameter Reports"
+                    android:textColor="#212121"
+                    android:textSize="28sp"
+                    android:fontFamily="sans-serif-black"
+                    android:letterSpacing="-0.02" />
+                    
+                <ImageButton
+                    android:id="@+id/btnInfo"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:layout_marginStart="8dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_info_outline"
+                    android:tint="#757575"
+                    android:contentDescription="Help" />
+            </LinearLayout>
 
             <TextView
                 android:layout_width="match_parent"
@@ -101,8 +117,9 @@
 
                         <Spinner
                             android:id="@+id/spinnerParameter"
-                            android:layout_width="match_parent"
+                            android:layout_width="0dp"
                             android:layout_height="wrap_content"
+                            android:layout_weight="1"
                             android:layout_marginStart="8dp"
                             android:paddingStart="12dp"
                             android:paddingEnd="12dp"
@@ -126,10 +143,10 @@
                             style="@style/FilterChipSelected"
                             android:layout_width="0dp"
                             android:layout_weight="1"
-                            android:layout_height="35dp"
+                            android:layout_height="40dp"
                             android:text="Today"
                             android:layout_marginEnd="4dp"
-                            android:textSize="10sp"
+                            android:textSize="12sp"
                             android:padding="0dp"
                             app:backgroundTint="@null" />
 
@@ -138,10 +155,10 @@
                             style="@style/FilterChip"
                             android:layout_width="0dp"
                             android:layout_weight="1"
-                            android:layout_height="35dp"
-                            android:text="Week"
+                            android:layout_height="40dp"
+                            android:text="7 Days"
                             android:layout_marginEnd="4dp"
-                            android:textSize="10sp"
+                            android:textSize="12sp"
                             android:padding="0dp"
                             app:backgroundTint="@null" />
 
@@ -150,21 +167,21 @@
                             style="@style/FilterChip"
                             android:layout_width="0dp"
                             android:layout_weight="1"
-                            android:layout_height="35dp"
-                            android:text="Month"
+                            android:layout_height="40dp"
+                            android:text="30 Days"
                             android:layout_marginEnd="4dp"
-                            android:textSize="10sp"
+                            android:textSize="12sp"
                             android:padding="0dp"
                             app:backgroundTint="@null" />
 
                         <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnYear"
+                            android:id="@+id/btnCycle"
                             style="@style/FilterChip"
                             android:layout_width="0dp"
                             android:layout_weight="1"
-                            android:layout_height="35dp"
-                            android:text="Year"
-                            android:textSize="10sp"
+                            android:layout_height="40dp"
+                            android:text="Cycle"
+                            android:textSize="12sp"
                             android:padding="0dp"
                             app:backgroundTint="@null" />
 
@@ -214,7 +231,9 @@
                     <com.github.mikephil.charting.charts.LineChart
                         android:id="@+id/lineChart"
                         android:layout_width="match_parent"
-                        android:layout_height="250dp" />
+                        android:layout_height="260dp"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginBottom="4dp" />
 
                     <View
                         android:layout_width="match_parent"
@@ -227,6 +246,7 @@
                         android:id="@+id/statsLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:minHeight="64dp"
                         android:orientation="horizontal">
 
                         <LinearLayout
@@ -240,7 +260,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="AVERAGE"
                                 android:textSize="11sp"
-                                android:textColor="#757575"
+                                android:textColor="@color/nav_inactive"
                                 android:fontFamily="sans-serif-medium"
                                 android:letterSpacing="0.05"
                                 android:layout_marginBottom="2dp"/>
@@ -251,7 +271,7 @@
                                 android:text="--"
                                 android:textSize="22sp"
                                 android:fontFamily="sans-serif-black"
-                                android:textColor="#212121"/>
+                                android:textColor="@color/text_dark"/>
                         </LinearLayout>
 
                         <LinearLayout
@@ -265,7 +285,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="PEAK"
                                 android:textSize="11sp"
-                                android:textColor="#757575"
+                                android:textColor="@color/nav_inactive"
                                 android:fontFamily="sans-serif-medium"
                                 android:letterSpacing="0.05"
                                 android:layout_marginBottom="2dp"/>
@@ -276,7 +296,7 @@
                                 android:text="--"
                                 android:textSize="22sp"
                                 android:fontFamily="sans-serif-black"
-                                android:textColor="#212121"/>
+                                android:textColor="@color/text_dark"/>
                         </LinearLayout>
 
                         <LinearLayout
@@ -290,7 +310,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="LOWEST"
                                 android:textSize="11sp"
-                                android:textColor="#757575"
+                                android:textColor="@color/nav_inactive"
                                 android:fontFamily="sans-serif-medium"
                                 android:letterSpacing="0.05"
                                 android:layout_marginBottom="2dp"/>
@@ -301,7 +321,7 @@
                                 android:text="--"
                                 android:textSize="22sp"
                                 android:fontFamily="sans-serif-black"
-                                android:textColor="#212121"/>
+                                android:textColor="@color/text_dark"/>
                         </LinearLayout>
                     </LinearLayout>
                 </LinearLayout>
@@ -315,7 +335,7 @@
                 android:layout_marginBottom="16dp"
                 app:cardCornerRadius="12dp"
                 app:cardElevation="2dp"
-                app:cardBackgroundColor="@color/celadon">
+                app:cardBackgroundColor="@color/background_light">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -328,9 +348,19 @@
                         android:layout_height="wrap_content"
                         android:text="System Insights"
                         android:fontFamily="sans-serif-bold"
-                        android:textColor="#2E7D32"
-                        android:textSize="16sp"
-                        android:layout_marginBottom="8dp"/>
+                        android:textColor="@color/text_dark"
+                        android:textSize="18sp"
+                        android:layout_marginBottom="10dp"/>
+
+                    <TextView
+                        android:id="@+id/tvInsightStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="SELECT A PARAMETER"
+                        android:textColor="@color/nav_inactive"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
 
                     <TextView
                         android:id="@+id/tvInterpretation"
@@ -338,12 +368,57 @@
                         android:layout_height="wrap_content"
                         android:text="Select a parameter to view insights."
                         android:textSize="14sp"
-                        android:textColor="#333333"
+                        android:layout_marginTop="4dp"
+                        android:textColor="@color/text_dark"
                         android:lineSpacingExtra="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
+
+    <!-- LOADING OVERLAY -->
+    <RelativeLayout
+        android:id="@+id/layoutLoading"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#33000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="10dp"
+        android:visibility="gone">
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="12dp"
+            app:cardBackgroundColor="@color/white">
+
+            <LinearLayout
+                android:layout_width="220dp"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="32dp">
+
+                <ProgressBar
+                    android:layout_width="45dp"
+                    android:layout_height="45dp"
+                    android:indeterminateTint="@color/primary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:text="Loading report..."
+                    android:textColor="@color/primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:gravity="center"/>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </RelativeLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

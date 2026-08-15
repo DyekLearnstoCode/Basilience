@@ -218,8 +218,11 @@ public class HarvestLogFragment extends Fragment {
         long diffMillis = nextHarvest.toDate().getTime() - now.toDate().getTime();
         long diffDays = (long) Math.ceil(diffMillis / (1000.0 * 60 * 60 * 24));
         String dateStr = DateUtils.formatDate(nextHarvest);
-        String countdown = "(" + diffDays + " days remaining)\n\nRecording an early harvest will reset the schedule frequency from today.";
-
+        if (!RoleConstants.ROLE_ADMIN.equalsIgnoreCase(userRole)) {
+            NotificationHelper.showError(requireContext(), "Next harvest is scheduled for " + dateStr + ".");
+            return;
+        }
+        String countdown = "(" + diffDays + " days remaining)\n\nAn administrator override will reset the schedule frequency from today.";
         NotificationHelper.showHarvestNotReadyDialog(requireContext(), dateStr, countdown, () -> showHarvestDialog(null));
     }
 
@@ -236,6 +239,10 @@ public class HarvestLogFragment extends Fragment {
         Button btnCancel = dialogView.findViewById(R.id.btnCancel);
         Button btnReadSensor = dialogView.findViewById(R.id.btnReadSensor);
 
+        // No load-cell/weight publisher exists in the ESP32 firmware. Do not
+        // present a control that can only read a fabricated/stale RTDB field.
+        btnReadSensor.setVisibility(View.GONE);
+
         editingHarvest = harvest;
         currentHarvestSource = "MANUAL";
         String dialogTitle = "Log New Harvest";
@@ -250,24 +257,6 @@ public class HarvestLogFragment extends Fragment {
 
         AlertDialog dialog = NotificationHelper.showCustomViewDialog(requireContext(), dialogTitle, dialogView);
 
-        btnReadSensor.setOnClickListener(v -> {
-            com.google.firebase.database.DatabaseReference sensorRef = dbHelper.getSensorsReference();
-            if (sensorRef != null) {
-                sensorRef.child("weight").get().addOnSuccessListener(snapshot -> {
-                    if (snapshot.exists()) {
-                        Double weight = snapshot.getValue(Double.class);
-                        if (weight != null) {
-                            etWeight.setText(String.valueOf(weight));
-                            currentHarvestSource = "SENSOR";
-                            NotificationHelper.showSuccess(getContext(), "Weight read from sensor");
-                        }
-                    }
-                }).addOnFailureListener(e -> NotificationHelper.showError(getContext(), "Failed to read sensor: " + e.getMessage()));
-            } else {
-                NotificationHelper.showError(getContext(), "No active device context for sensors.");
-            }
-        });
-
         btnCancel.setOnClickListener(v -> {
             if (dialog != null) dialog.dismiss();
         });
@@ -279,21 +268,32 @@ public class HarvestLogFragment extends Fragment {
                 return;
             }
 
-            double weight = Double.parseDouble(weightStr);
+            final double weight;
+            try {
+                weight = Double.parseDouble(weightStr);
+            } catch (NumberFormatException error) {
+                etWeight.setError("Enter a valid numeric weight");
+                return;
+            }
+            if (!Double.isFinite(weight) || weight <= 0.0) {
+                etWeight.setError("Weight must be greater than zero");
+                return;
+            }
             String notes = etNotes.getText().toString().trim();
+            btnSave.setEnabled(false);
 
             if (editingHarvest != null) {
-                updateHarvest(weight, notes, dialog);
+                updateHarvest(weight, notes, dialog, btnSave);
             } else {
-                createHarvest(weight, notes, dialog);
+                createHarvest(weight, notes, dialog, btnSave);
             }
         });
     }
 
     private void confirmDelete(Harvest harvest) {
-        NotificationHelper.showConfirmation(requireContext(), "Delete Harvest",
+        NotificationHelper.showDestructiveConfirmation(requireContext(), "Delete Harvest",
                 "Are you sure you want to delete this harvest entry? This will update the cycle totals.",
-                "Delete", "Cancel", () -> {
+                "Delete", () -> {
                     dbHelper.deleteHarvestTransaction(cycleId, harvest.getId(), harvest.getWeight())
                             .addOnSuccessListener(aVoid -> {
                                 NotificationHelper.showSuccess(getContext(), "Harvest deleted");
@@ -510,9 +510,9 @@ public class HarvestLogFragment extends Fragment {
     }
 
     private void showCompleteCycleConfirmation() {
-        NotificationHelper.showConfirmation(requireContext(), "Complete Cycle?",
+        NotificationHelper.showDestructiveConfirmation(requireContext(), "Complete Cycle?",
                 "This will:\n- Mark the cycle as COMPLETED\n- Record the completion date\n- Stop further harvest entries",
-                "Complete", "Cancel", () -> {
+                "Complete", () -> {
                     dbHelper.completeCycle(cycleId).addOnSuccessListener(aVoid -> {
                         NotificationHelper.showSuccess(requireContext(), "Cycle completed");
                     }).addOnFailureListener(e -> {
@@ -521,7 +521,7 @@ public class HarvestLogFragment extends Fragment {
                 });
     }
 
-    private void createHarvest(double weight, String notes, androidx.appcompat.app.AlertDialog dialog) {
+    private void createHarvest(double weight, String notes, androidx.appcompat.app.AlertDialog dialog, Button saveButton) {
         Harvest newHarvest = new Harvest(
                 Timestamp.now(),
                 weight,
@@ -537,10 +537,13 @@ public class HarvestLogFragment extends Fragment {
                     dialog.dismiss();
                     loadChartData(); // Refresh chart manually
                 })
-                .addOnFailureListener(e -> NotificationHelper.showError(getContext(), "Error: " + e.getMessage()));
+                .addOnFailureListener(e -> {
+                    saveButton.setEnabled(true);
+                    NotificationHelper.showError(getContext(), "Error: " + e.getMessage());
+                });
     }
 
-    private void updateHarvest(double newWeight, String notes, androidx.appcompat.app.AlertDialog dialog) {
+    private void updateHarvest(double newWeight, String notes, androidx.appcompat.app.AlertDialog dialog, Button saveButton) {
         double oldWeight = editingHarvest.getWeight();
         Map<String, Object> updates = new HashMap<>();
         updates.put("weight", newWeight);
@@ -553,7 +556,10 @@ public class HarvestLogFragment extends Fragment {
                     dialog.dismiss();
                     loadChartData(); // Refresh chart manually
                 })
-                .addOnFailureListener(e -> NotificationHelper.showError(getContext(), "Error: " + e.getMessage()));
+                .addOnFailureListener(e -> {
+                    saveButton.setEnabled(true);
+                    NotificationHelper.showError(getContext(), "Error: " + e.getMessage());
+                });
     }
 
     private void loadHarvestData() {

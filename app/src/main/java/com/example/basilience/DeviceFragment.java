@@ -40,6 +40,7 @@ public class DeviceFragment extends Fragment {
     private DeviceAdapter deviceAdapter;
     private List<Device> deviceList;
     private TextView tvLoadingDevices;
+    private boolean deviceMutationInProgress;
 
     @Nullable
     @Override
@@ -84,10 +85,11 @@ public class DeviceFragment extends Fragment {
                     SharedPreferences currentPrefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
                     String currentRole = currentPrefs.getString("user_role", RoleConstants.ROLE_FARMER);
                     if (RoleConstants.ROLE_ADMIN.equalsIgnoreCase(currentRole)) {
-                        NotificationHelper.showConfirmation(
+                        NotificationHelper.showDestructiveConfirmation(
                                 requireContext(),
                                 "Unclaim Device",
                                 "Are you sure you want to unclaim " + device.getDeviceName() + "?",
+                                "Unclaim",
                                 () -> unclaimDevice(device)
                         );
                     }
@@ -97,17 +99,31 @@ public class DeviceFragment extends Fragment {
 
         // Claim Device Action
         btnClaimDevice.setOnClickListener(v -> {
+            if (deviceMutationInProgress) return;
             String token = etClaimToken.getText().toString().trim();
             if (!token.isEmpty()) {
+                deviceMutationInProgress = true;
+                btnClaimDevice.setEnabled(false);
+                if (layoutLoading != null && tvLoadingTitle != null) {
+                    tvLoadingTitle.setText("Claiming device...");
+                    layoutLoading.setVisibility(View.VISIBLE);
+                    layoutLoading.bringToFront();
+                }
                 dbHelper.claimDevice(token)
                         .addOnSuccessListener(aVoid -> {
                             if (!isAdded()) return;
+                            deviceMutationInProgress = false;
+                            btnClaimDevice.setEnabled(true);
+                            if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
                             NotificationHelper.showSuccess(requireContext(), "Device successfully claimed!");
                             etClaimToken.setText("");
                             loadDevices();
                         })
                         .addOnFailureListener(e -> {
                             if (!isAdded()) return;
+                            deviceMutationInProgress = false;
+                            btnClaimDevice.setEnabled(true);
+                            if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
                             NotificationHelper.showError(requireContext(), e.getMessage());
                         });
             } else {
@@ -155,22 +171,38 @@ public class DeviceFragment extends Fragment {
                 });
     }
     private void unclaimDevice(Device device) {
+        if (deviceMutationInProgress) return;
+        deviceMutationInProgress = true;
         if (layoutLoading != null && tvLoadingTitle != null) {
             tvLoadingTitle.setText(R.string.loading_saving);
             layoutLoading.setVisibility(View.VISIBLE);
+            layoutLoading.bringToFront();
         }
 
         dbHelper.unclaimDevice(device.getDeviceId())
                 .addOnSuccessListener(aVoid -> {
                     if (!isAdded()) return;
+                    deviceMutationInProgress = false;
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                    clearSelectedDeviceIfUnclaimed(device.getDeviceId());
                     NotificationHelper.showSuccess(requireContext(), "Device unclaimed successfully!");
                     loadDevices(); // Refresh listahan
                 })
                 .addOnFailureListener(e -> {
                     if (!isAdded()) return;
+                    deviceMutationInProgress = false;
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
-                    NotificationHelper.showError(requireContext(), "Failed to unclaim: " + e.getMessage());
+                            NotificationHelper.showError(requireContext(), "Failed to unclaim: " + e.getMessage());
                 });
+    }
+
+    private void clearSelectedDeviceIfUnclaimed(String deviceId) {
+        SharedPreferences prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        if (!deviceId.equals(prefs.getString("selected_device_id", null))) return;
+
+        // Removing the preference immediately causes MainActivity's preference listener to
+        // stop the active device-presence listener before another device can be selected.
+        DeviceConnectionManager.getInstance().stopMonitoring();
+        prefs.edit().remove("selected_device_id").apply();
     }
 }

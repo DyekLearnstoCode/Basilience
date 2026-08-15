@@ -4,10 +4,13 @@ import static android.content.ContentValues.TAG;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
+import com.google.android.gms.tasks.TaskCompletionSource;
 import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.Timestamp;
@@ -24,14 +27,19 @@ import com.google.firebase.firestore.ListenerRegistration;
 import com.google.firebase.firestore.Query;
 import com.google.firebase.firestore.QuerySnapshot;
 import com.google.firebase.firestore.SetOptions;
+import com.google.firebase.firestore.FieldValue;
+import com.google.firebase.functions.FirebaseFunctions;
+import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.ServerValue;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Database_Helper {
 
@@ -119,9 +127,51 @@ public class Database_Helper {
         return auth.sendPasswordResetEmail(email);
     }
 
-    public void logout() {
-        auth.signOut();
-        cachedRole = null;
+    public Task<Void> logout() {
+        String uid = getCurrentUid();
+        if (uid == null) {
+            auth.signOut();
+            cachedRole = null;
+            return Tasks.forResult(null);
+        }
+
+        FirebaseMessaging messaging = FirebaseMessaging.getInstance();
+        Task<Void> cleanup = messaging.getToken().continueWithTask(tokenTask -> {
+            Task<Void> firestoreCleanup;
+            if (tokenTask.isSuccessful() && tokenTask.getResult() != null) {
+                String installationToken = tokenTask.getResult();
+                DocumentReference userRef = db.collection("users").document(uid);
+                firestoreCleanup = db.runTransaction(transaction -> {
+                    DocumentSnapshot user = transaction.get(userRef);
+                    if (installationToken.equals(user.getString("fcmToken"))) {
+                        transaction.update(userRef, "fcmToken", FieldValue.delete());
+                    }
+                    return null;
+                });
+            } else {
+                Log.w(TAG, "Unable to read installation token during logout", tokenTask.getException());
+                firestoreCleanup = Tasks.forResult(null);
+            }
+
+            return firestoreCleanup
+                    .addOnFailureListener(error -> Log.w(TAG,
+                            "Unable to clear FCM token during logout", error))
+                    .continueWithTask(ignored -> messaging.deleteToken());
+        }).addOnFailureListener(error -> Log.w(TAG,
+                "Unable to invalidate FCM token during logout", error));
+
+        TaskCompletionSource<Void> completion = new TaskCompletionSource<>();
+        AtomicBoolean finished = new AtomicBoolean(false);
+        Runnable finishSignOut = () -> {
+            if (!finished.compareAndSet(false, true)) return;
+            auth.signOut();
+            cachedRole = null;
+            completion.setResult(null);
+        };
+
+        cleanup.addOnCompleteListener(ignored -> finishSignOut.run());
+        new Handler(Looper.getMainLooper()).postDelayed(finishSignOut, 5000L);
+        return completion.getTask();
     }
 
     public String getCurrentUid() {
@@ -205,6 +255,8 @@ public class Database_Helper {
         return db.collection("users").addSnapshotListener(listener);
     }
 
+
+
     public Task<QuerySnapshot> getUsersByRole(String role) {
         return db.collection("users").whereEqualTo("role", role).get();
     }
@@ -269,15 +321,61 @@ public class Database_Helper {
 
     public Task<Void> deletePersonnelForCurrentAdmin(String personnelId) {
         return checkAdminTask().onSuccessTask(aVoid -> {
-            // Just unlinking for now by removing the ownerAdminUid
-            Map<String, Object> updates = new HashMap<>();
-            updates.put("ownerAdminUid", null);
-            return db.collection("users").document(personnelId).update(updates);
+            String adminUid = getCurrentUid();
+            if (adminUid == null) return Tasks.forException(new Exception("Not logged in"));
+            DocumentReference personnelRef = db.collection("users").document(personnelId);
+            return personnelRef.get().continueWithTask(profileTask -> {
+                if (!profileTask.isSuccessful()) throw profileTask.getException();
+                DocumentSnapshot profile = profileTask.getResult();
+                if (!profile.exists() || !adminUid.equals(profile.getString("ownerAdminUid"))) {
+                    throw new FirebaseFirestoreException("This personnel is not linked to your account.", FirebaseFirestoreException.Code.PERMISSION_DENIED);
+                }
+                return db.collection("deviceAssignments").whereEqualTo("userUid", personnelId).get();
+            }).continueWithTask(assignmentsTask -> {
+                if (!assignmentsTask.isSuccessful()) throw assignmentsTask.getException();
+                com.google.firebase.firestore.WriteBatch batch = db.batch();
+                batch.update(personnelRef, "ownerAdminUid", null);
+                for (DocumentSnapshot assignment : assignmentsTask.getResult()) batch.delete(assignment.getReference());
+                return batch.commit();
+            });
+        });
+    }
+
+    public Task<Void> linkExistingPersonnelByEmail(String email) {
+        return checkAdminTask().onSuccessTask(aVoid -> {
+            String adminUid = getCurrentUid();
+            if (adminUid == null) return Tasks.forException(new Exception("Not logged in"));
+            return db.collection("users").whereEqualTo("email", email.trim()).limit(1).get().continueWithTask(queryTask -> {
+                if (!queryTask.isSuccessful()) throw queryTask.getException();
+                if (queryTask.getResult().isEmpty()) throw new FirebaseFirestoreException("No eligible personnel account was found.", FirebaseFirestoreException.Code.NOT_FOUND);
+                DocumentReference personnelRef = queryTask.getResult().getDocuments().get(0).getReference();
+                return db.runTransaction(transaction -> {
+                    DocumentSnapshot profile = transaction.get(personnelRef);
+                    if (!RoleConstants.ROLE_FARMER.equalsIgnoreCase(profile.getString("role"))) {
+                        throw new FirebaseFirestoreException("No eligible personnel account was found.", FirebaseFirestoreException.Code.PERMISSION_DENIED);
+                    }
+                    String linkedAdminUid = profile.getString("ownerAdminUid");
+                    if (adminUid.equals(linkedAdminUid)) throw new FirebaseFirestoreException("This personnel is already linked to your account.", FirebaseFirestoreException.Code.ALREADY_EXISTS);
+                    if (linkedAdminUid != null && !linkedAdminUid.isEmpty()) throw new FirebaseFirestoreException("This personnel account cannot be linked to this Admin.", FirebaseFirestoreException.Code.PERMISSION_DENIED);
+                    transaction.update(personnelRef, "ownerAdminUid", adminUid);
+                    return null;
+                });
+            });
         });
     }
 
     public Task<DocumentSnapshot> getPersonnelForCurrentAdmin(String personnelId) {
         return db.collection("users").document(personnelId).get();
+    }
+
+    public Task<Void> changePersonnelPassword(String personnelId, String newPassword) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("personnelUid", personnelId);
+        data.put("newPassword", newPassword);
+        return FirebaseFunctions.getInstance("asia-southeast1")
+                .getHttpsCallable("changePersonnelPassword")
+                .call(data)
+                .onSuccessTask(result -> Tasks.forResult(null));
     }
 
     // --------------------
@@ -307,7 +405,7 @@ public class Database_Helper {
                 Map<String, Object> commandData = new HashMap<>();
                 commandData.put("state", isOn);
                 commandData.put("source", "manual");
-                commandData.put("timestamp", System.currentTimeMillis());
+                commandData.put("timestamp", ServerValue.TIMESTAMP);
                 
                 String path = "devices/" + selectedDeviceId + "/commands/" + actuatorName;
                 return rtdb.getReference(path).setValue(commandData);
@@ -327,7 +425,7 @@ public class Database_Helper {
                 Map<String, Object> turnOffCmd = new HashMap<>();
                 turnOffCmd.put("state", false);
                 turnOffCmd.put("source", "android");
-                turnOffCmd.put("timestamp", System.currentTimeMillis());
+                turnOffCmd.put("timestamp", ServerValue.TIMESTAMP);
 
                 Map<String, Object> turnOffStatus = new HashMap<>();
                 turnOffStatus.put("state", 0);
@@ -354,11 +452,16 @@ public class Database_Helper {
         });
     }
 
+    public DatabaseReference getOperationsCurrentReference() {
+        if (selectedDeviceId == null) return null;
+        return rtdb.getReference("devices").child(selectedDeviceId).child("operations").child("current");
+    }
+
     /**
      * Sends an OperationRequest to the firmware via RTDB devices/{deviceId}/commands/current.
      * Uses SharedPreferences to persist an incrementing requestId.
      */
-    public Task<Void> sendOperationRequest(String operation, String action) {
+    public Task<Integer> sendOperationRequest(String operation, String action) {
         if (selectedDeviceId == null || selectedDeviceId.isEmpty())
             return Tasks.forException(new Exception("No device selected"));
 
@@ -367,14 +470,21 @@ public class Database_Helper {
         SharedPreferences prefs = context.getSharedPreferences("Basilience_Prefs", Context.MODE_PRIVATE);
         int lastId = prefs.getInt("last_request_id", 0);
         int nextId = lastId + 1;
+        if (nextId > 32767) {
+            nextId = 1;
+        }
 
         // Persist the new ID
         prefs.edit().putInt("last_request_id", nextId).apply();
 
+        // Freeze into an effectively-final value for lambda capture.
+        // All mutation of nextId is complete at this point.
+        final int requestId = nextId;
+
         long timestamp = System.currentTimeMillis() / 1000L; // Unix timestamp in seconds
 
         OperationRequest request = new OperationRequest(
-                nextId,
+                requestId,
                 operation,
                 action,
                 timestamp,
@@ -383,7 +493,10 @@ public class Database_Helper {
 
         return checkAdminTask().onSuccessTask(aVoid ->
                 rtdb.getReference("devices").child(selectedDeviceId).child("commands").child("current").setValue(request)
-        );
+        ).continueWith(task -> {
+            if (!task.isSuccessful()) throw task.getException();
+            return requestId;
+        });
     }
 
     // --------------------
@@ -518,6 +631,11 @@ public class Database_Helper {
 
     public Task<Void> addHarvestTransaction(String cycleId, Harvest harvest) {
         if (selectedDeviceId == null) return Tasks.forException(new Exception("No device selected"));
+        if (harvest == null || !Double.isFinite(harvest.getWeight()) || harvest.getWeight() <= 0.0
+                || harvest.getHarvestDate() == null) {
+            return Tasks.forException(new IllegalArgumentException(
+                    "Harvest requires a positive weight and valid timestamp."));
+        }
 
         DocumentReference cycleRef = db.collection("devices").document(selectedDeviceId)
                 .collection("cycles").document(cycleId);
@@ -778,34 +896,36 @@ public class Database_Helper {
             if (adminUid == null) return Tasks.forException(new Exception("Not logged in"));
 
             DocumentReference deviceRef = db.collection("devices").document(deviceCode);
+            DocumentReference assignmentRef = db.collection("deviceAssignments")
+                    .document(adminUid + "_" + deviceCode);
 
-            return deviceRef.get().continueWithTask(task -> {
-                if (!task.isSuccessful()) throw task.getException();
+            // The ownership update and the owner's deterministic assignment must either both
+            // commit or both be rolled back.  The transaction also prevents two admins from
+            // successfully claiming the same previously-unclaimed device at once.
+            return db.runTransaction(transaction -> {
+                DocumentSnapshot document = transaction.get(deviceRef);
+                if (!document.exists()) {
+                    throw new FirebaseFirestoreException("Invalid Device Token.",
+                            FirebaseFirestoreException.Code.NOT_FOUND);
+                }
 
-                DocumentSnapshot document = task.getResult();
-                if (!document.exists()) throw new Exception("Invalid Device Token.");
-
+                String currentOwnerUid = document.getString("ownerUid");
                 String status = document.getString("status");
-                if ("CLAIMED".equals(status)) throw new Exception("Device already claimed.");
+                if (currentOwnerUid != null || "CLAIMED".equals(status)) {
+                    throw new FirebaseFirestoreException("Device is already claimed.",
+                            FirebaseFirestoreException.Code.ALREADY_EXISTS);
+                }
 
-                Map<String, Object> updates = new HashMap<>();
-                updates.put("ownerUid", adminUid);
-                updates.put("status", "CLAIMED");
+                Map<String, Object> assignment = new HashMap<>();
+                assignment.put("deviceId", deviceCode);
+                assignment.put("userUid", adminUid);
+                assignment.put("role", RoleConstants.ROLE_ADMIN);
+                assignment.put("assignedBy", adminUid);
+                assignment.put("assignedAt", System.currentTimeMillis());
 
-                return deviceRef.update(updates).continueWithTask(t2 -> {
-                    if (!t2.isSuccessful()) throw t2.getException();
-
-                    // Create Assignment for Admin (Deterministic ID for Security Rules)
-                    Map<String, Object> assignment = new HashMap<>();
-                    assignment.put("deviceId", deviceCode);
-                    assignment.put("userUid", adminUid);
-                    assignment.put("role", RoleConstants.ROLE_ADMIN);
-                    assignment.put("assignedBy", adminUid);
-                    assignment.put("assignedAt", System.currentTimeMillis());
-
-                    String assignmentId = adminUid + "_" + deviceCode;
-                    return db.collection("deviceAssignments").document(assignmentId).set(assignment);
-                });
+                transaction.update(deviceRef, "ownerUid", adminUid, "status", "CLAIMED");
+                transaction.set(assignmentRef, assignment);
+                return null;
             });
         });
     }
@@ -815,25 +935,36 @@ public class Database_Helper {
             String adminUid = getCurrentUid();
             if (adminUid == null) return Tasks.forException(new Exception("Not logged in"));
 
-            DocumentReference dRef = db.collection("devices").document(deviceId);
+            DocumentReference deviceRef = db.collection("devices").document(deviceId);
 
-            Map<String, Object> updates = new HashMap<>();
-            updates.put("ownerUid", null);
-            updates.put("status", "UNCLAIMED");
+            // Read the exact assignments to remove, then commit the ownership transition and
+            // every assignment deletion in one batch.  A rules-side owner check makes a stale
+            // read fail safely if ownership changes before this batch reaches Firestore.
+            return deviceRef.get().continueWithTask(deviceTask -> {
+                if (!deviceTask.isSuccessful()) throw deviceTask.getException();
 
-            return dRef.update(updates).continueWithTask(task -> {
-                // Delete assignments for this device
+                DocumentSnapshot device = deviceTask.getResult();
+                if (!device.exists()) {
+                    throw new FirebaseFirestoreException("Device not found.",
+                            FirebaseFirestoreException.Code.NOT_FOUND);
+                }
+                if (!adminUid.equals(device.getString("ownerUid"))) {
+                    throw new FirebaseFirestoreException("Only the device owner can unclaim this device.",
+                            FirebaseFirestoreException.Code.PERMISSION_DENIED);
+                }
+
                 return db.collection("deviceAssignments")
                         .whereEqualTo("deviceId", deviceId)
-                        .get()
-                        .continueWithTask(qTask -> {
-                            if (!qTask.isSuccessful()) return Tasks.forResult(null);
-                            List<Task<Void>> deleteTasks = new ArrayList<>();
-                            for (DocumentSnapshot doc : qTask.getResult()) {
-                                deleteTasks.add(doc.getReference().delete());
-                            }
-                            return Tasks.whenAll(deleteTasks);
-                        });
+                        .get();
+            }).continueWithTask(assignmentsTask -> {
+                if (!assignmentsTask.isSuccessful()) throw assignmentsTask.getException();
+
+                com.google.firebase.firestore.WriteBatch batch = db.batch();
+                batch.update(deviceRef, "ownerUid", null, "status", "UNCLAIMED");
+                for (DocumentSnapshot assignment : assignmentsTask.getResult()) {
+                    batch.delete(assignment.getReference());
+                }
+                return batch.commit();
             });
         });
     }
@@ -875,8 +1006,22 @@ public class Database_Helper {
             assignment.put("assignedAt", System.currentTimeMillis());
 
             String assignmentId = userUid + "_" + deviceId;
-            return db.collection("deviceAssignments").document(assignmentId).set(assignment);
+            DocumentReference assignmentRef = db.collection("deviceAssignments").document(assignmentId);
+            // A deterministic ID avoids duplicate documents; the transaction also avoids
+            // treating an existing assignment as a successful new assignment.
+            return db.runTransaction(transaction -> {
+                if (transaction.get(assignmentRef).exists()) {
+                    throw new FirebaseFirestoreException("Device is already assigned to this personnel.",
+                            FirebaseFirestoreException.Code.ALREADY_EXISTS);
+                }
+                transaction.set(assignmentRef, assignment);
+                return null;
+            });
         });
+    }
+
+    public Task<DocumentSnapshot> getDeviceDocument(String deviceId) {
+        return db.collection("devices").document(deviceId).get();
     }
 
     public Task<QuerySnapshot> getAssignmentsForUser(String userUid) {
@@ -951,22 +1096,6 @@ public class Database_Helper {
      * Writes a new notification document to Firestore under devices/{deviceId}/notifications.
      * Called by AlertManager when an alert transitions from false → true.
      */
-    public void addNotification(String message, String type) {
-        if (selectedDeviceId == null || selectedDeviceId.isEmpty()) return;
-
-        Map<String, Object> data = new HashMap<>();
-        data.put("message", message);
-        data.put("type", type);
-        data.put("timestamp", System.currentTimeMillis());
-
-        db.collection("devices")
-                .document(selectedDeviceId)
-                .collection("notifications")
-                .add(data)
-                .addOnFailureListener(e ->
-                        Log.e("Database_Helper", "Failed to write notification: " + e.getMessage()));
-    }
-
     /**
      * Attaches a real-time Firestore listener to devices/{deviceId}/notifications,
      * ordered by timestamp descending, limited to the most recent 50 entries.
@@ -980,6 +1109,17 @@ public class Database_Helper {
                 .orderBy("timestamp", Query.Direction.DESCENDING)
                 .limit(50)
                 .addSnapshotListener(listener);
+    }
+
+    public Task<Void> markNotificationsRead(String deviceId, List<String> notificationIds) {
+        if (deviceId == null || deviceId.isEmpty() || notificationIds == null || notificationIds.isEmpty()) return Tasks.forResult(null);
+        com.google.firebase.firestore.WriteBatch batch = db.batch();
+        for (String notificationId : notificationIds) {
+            if (notificationId != null && !notificationId.isEmpty()) {
+                batch.update(db.collection("devices").document(deviceId).collection("notifications").document(notificationId), "isRead", true);
+            }
+        }
+        return batch.commit();
     }
 
 }

@@ -57,10 +57,20 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
                 android:gravity="center"
-                android:text="Online"
-                android:textColor="#4CAF50"
+                android:text="Checking Status..."
+                android:textColor="@color/device_status_reconnecting"
                 android:textSize="14sp"
                 android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRetryWifiConfiguration"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="12dp"
+                android:text="Retry Wi-Fi Configuration"
+                android:visibility="gone" />
 
             <!-- ===== GRID ROW 1 ===== -->
             <LinearLayout
@@ -206,6 +216,10 @@
 
             <include
                 android:id="@+id/actPeltier"
+                layout="@layout/item_actuator" />
+
+            <include
+                android:id="@+id/actCirculationPump"
                 layout="@layout/item_actuator" />
 
         </LinearLayout>

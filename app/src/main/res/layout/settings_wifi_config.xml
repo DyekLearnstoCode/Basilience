@@ -87,7 +87,7 @@
                             android:layout_height="wrap_content"
                             android:text="Checking..."
                             
-                            android:textColor="#FF9800"/>
+                            android:textColor="@color/device_status_reconnecting"/>
                     </LinearLayout>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
@@ -138,6 +138,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSaveWifi"
+                style="@style/BasilienceButton.Primary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Save &amp; Reconnect"
@@ -149,12 +150,12 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCancelWifi"
+                style="@style/BasilienceButton.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Cancel"
-                android:textColor="#757575"
                 app:cornerRadius="12dp"
-                style="@style/Widget.MaterialComponents.Button.TextButton"/>
+                />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

@@ -1,6 +1,12 @@
 package com.example.basilience;
 
+import android.app.Activity;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
+import android.content.ContextWrapper;
+import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.PorterDuff;
 import android.util.TypedValue;
@@ -13,12 +19,84 @@ import android.widget.TextView;
 import androidx.annotation.DrawableRes;
 import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
+import androidx.core.app.NotificationCompat;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.snackbar.Snackbar;
 
 public class NotificationHelper {
+
+    private static final String CONNECTIVITY_PREFS = "connectivity_notifications";
+    private static final String WIFI_NOTIFICATION_CHANNEL = "wifi_configuration";
+
+    public static void showWifiConfigurationRequiredNotification(Context context, String deviceId) {
+        Context appContext = context.getApplicationContext();
+        String key = "wifi_configuration_required_" + deviceId;
+        android.content.SharedPreferences prefs = appContext.getSharedPreferences(
+                CONNECTIVITY_PREFS, Context.MODE_PRIVATE);
+        if (prefs.getBoolean(key, false)) return;
+
+        NotificationManager manager = (NotificationManager) appContext.getSystemService(
+                Context.NOTIFICATION_SERVICE);
+        if (manager == null) return;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(new NotificationChannel(
+                    WIFI_NOTIFICATION_CHANNEL,
+                    "Wi-Fi Configuration",
+                    NotificationManager.IMPORTANCE_DEFAULT));
+        }
+
+        Intent intent = new Intent(appContext, MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.putExtra(MainActivity.EXTRA_OPEN_WIFI_CONFIGURATION, true);
+        PendingIntent pendingIntent = PendingIntent.getActivity(appContext,
+                key.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(
+                appContext, WIFI_NOTIFICATION_CHANNEL)
+                .setSmallIcon(R.drawable.basilience_logo)
+                .setContentTitle("Wi-Fi Configuration Required")
+                .setContentText("The Basilience device is powered and running locally, but normal Wi-Fi connectivity is unavailable.")
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(
+                        "The Basilience device is powered and running locally, but normal Wi-Fi connectivity is unavailable. Open Wi-Fi Configuration to reconnect the device."))
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT);
+        manager.notify(key.hashCode(), builder.build());
+        prefs.edit().putBoolean(key, true).apply();
+    }
+
+    public static void clearWifiConfigurationRequiredNotification(Context context, String deviceId) {
+        Context appContext = context.getApplicationContext();
+        String key = "wifi_configuration_required_" + deviceId;
+        NotificationManager manager = (NotificationManager) appContext.getSystemService(
+                Context.NOTIFICATION_SERVICE);
+        if (manager != null) manager.cancel(key.hashCode());
+        appContext.getSharedPreferences(CONNECTIVITY_PREFS, Context.MODE_PRIVATE)
+                .edit().remove(key).apply();
+    }
+
+    public static final class UpdatableParameterDialog {
+        private final AlertDialog dialog;
+        private final TextView messageView;
+
+        private UpdatableParameterDialog(AlertDialog dialog, TextView messageView) {
+            this.dialog = dialog;
+            this.messageView = messageView;
+        }
+
+        public void updateMessage(String message) {
+            messageView.setText(message);
+        }
+
+        public boolean isShowing() {
+            return dialog.isShowing();
+        }
+
+        public void dismiss() {
+            dialog.dismiss();
+        }
+    }
 
     public interface DialogCallback {
         void onConfirmed();
@@ -29,11 +107,23 @@ public class NotificationHelper {
         void onAction2(); // e.g., Open
     }
 
+    public interface CustomViewDialogCallback {
+        void onConfirmed(AlertDialog dialog, View customView);
+    }
+
     /**
      * Standard success notification
      */
     public static void showSuccess(Context context, String message) {
         showBaseDialog(context, "Success", message, R.drawable.ic_harvest_green, R.color.primary, null);
+    }
+
+    /** Basilience-styled one-action success dialog for flows that need an OK callback. */
+    public static void showSuccessAcknowledgement(Context context, String title, String message,
+                                                  DialogCallback callback) {
+        AlertDialog dialog = showBaseDialog(context, title, message,
+                R.drawable.ic_harvest_green, R.color.primary, "OK", null, callback);
+        if (dialog != null) dialog.setCancelable(false);
     }
 
     /**
@@ -45,6 +135,14 @@ public class NotificationHelper {
 
     public static void showError(Context context, String title, String message) {
         showBaseDialog(context, title, message, R.drawable.ic_warning_24, R.color.alert_red, null);
+    }
+
+    public static AlertDialog showCriticalAlert(Context context, String title, String message,
+                                                DialogCallback acknowledged) {
+        AlertDialog dialog = showBaseDialog(context, title, message, R.drawable.ic_warning_24,
+                R.color.alert_red, "OK", null, acknowledged);
+        if (dialog != null) dialog.setCancelable(false);
+        return dialog;
     }
 
     /**
@@ -65,6 +163,49 @@ public class NotificationHelper {
         showBaseDialog(context, title, message, R.drawable.ic_science_24, R.color.primary, null);
     }
 
+    public static void showInfo(Context context, String title, String message,
+                                String acknowledgementLabel) {
+        showBaseDialog(context, title, message, R.drawable.ic_science_24, R.color.primary,
+                acknowledgementLabel, null, null);
+    }
+
+    public static UpdatableParameterDialog showParameterAlert(Context context, String message,
+                                                               Runnable onViewParameters,
+                                                               Runnable onDismiss) {
+        if (!isContextUsable(context)) return null;
+
+        View view = LayoutInflater.from(context).inflate(R.layout.dialog_custom_notification, null);
+        applyDialogTheme(context, view, R.color.alert_orange);
+        ImageView icon = view.findViewById(R.id.dialog_icon);
+        TextView titleView = view.findViewById(R.id.dialog_title);
+        TextView messageView = view.findViewById(R.id.dialog_message);
+        MaterialButton primary = view.findViewById(R.id.dialog_button);
+        MaterialButton secondary = view.findViewById(R.id.dialog_button_secondary);
+
+        icon.setImageResource(R.drawable.ic_warning_24);
+        titleView.setText("Parameter Alert");
+        messageView.setText(message);
+        primary.setText("VIEW PARAMETERS");
+        secondary.setVisibility(View.VISIBLE);
+        secondary.setText("DISMISS");
+
+        AlertDialog dialog = new AlertDialog.Builder(context).setView(view).create();
+        dialog.setCancelable(false);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        }
+        primary.setOnClickListener(v -> {
+            dialog.dismiss();
+            if (onViewParameters != null) onViewParameters.run();
+        });
+        secondary.setOnClickListener(v -> {
+            dialog.dismiss();
+            if (onDismiss != null) onDismiss.run();
+        });
+        dialog.show();
+        return new UpdatableParameterDialog(dialog, messageView);
+    }
+
     /**
      * Standard confirmation dialog
      */
@@ -81,6 +222,13 @@ public class NotificationHelper {
                       positiveLabel, negativeLabel, callback);
     }
 
+    public static void showDestructiveConfirmation(Context context, String title, String message,
+                                                   String positiveLabel,
+                                                   DialogCallback callback) {
+        showBaseDialog(context, title, message, R.drawable.ic_warning_24, R.color.alert_red,
+                positiveLabel, "Cancel", callback);
+    }
+
     /**
      * Shows a Snackbar
      */
@@ -90,7 +238,7 @@ public class NotificationHelper {
     }
 
     public static void showHarvestNotReadyDialog(Context context, String nextDate, String countdown, DialogCallback callback) {
-        if (context == null) return;
+        if (!isContextUsable(context)) return;
 
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         View view = LayoutInflater.from(context).inflate(R.layout.dialog_custom_notification, null);
@@ -104,7 +252,11 @@ public class NotificationHelper {
 
         int blackColor = ContextCompat.getColor(context, R.color.black);
 
-        if (icon != null) icon.setImageResource(R.drawable.ic_harvest); 
+        if (icon != null) {
+            icon.setImageResource(R.drawable.ic_harvest_not_ready);
+            icon.setColorFilter(ContextCompat.getColor(context, R.color.alert_orange),
+                    PorterDuff.Mode.SRC_IN);
+        }
         if (tvTitle != null) tvTitle.setText("Harvest Not Ready");
 
         // Build improved date hierarchy message
@@ -141,7 +293,7 @@ public class NotificationHelper {
     public static void showTripleActionDialog(Context context, String title, String message,
                                             String btn1Text, String btn2Text, String btn3Text,
                                             TripleActionCallback callback) {
-        if (context == null) return;
+        if (!isContextUsable(context)) return;
 
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         View view = LayoutInflater.from(context).inflate(R.layout.dialog_custom_notification, null);
@@ -151,6 +303,7 @@ public class NotificationHelper {
         TextView tvMessage = view.findViewById(R.id.dialog_message);
         MaterialButton btnPrimary = view.findViewById(R.id.dialog_button);
         MaterialButton btnSecondary = view.findViewById(R.id.dialog_button_secondary);
+        MaterialButton btnTertiary = view.findViewById(R.id.dialog_button_tertiary);
         
         tvTitle.setText(title);
         tvMessage.setText(message);
@@ -158,6 +311,8 @@ public class NotificationHelper {
         btnPrimary.setText(btn1Text);
         btnSecondary.setVisibility(View.VISIBLE);
         btnSecondary.setText(btn2Text);
+        btnTertiary.setVisibility(View.VISIBLE);
+        btnTertiary.setText(btn3Text);
 
         AlertDialog dialog = builder.setView(view).create();
         if (dialog.getWindow() != null) {
@@ -173,6 +328,7 @@ public class NotificationHelper {
             dialog.dismiss();
             if (callback != null) callback.onAction2();
         });
+        btnTertiary.setOnClickListener(v -> dialog.dismiss());
         
         dialog.show();
     }
@@ -180,15 +336,15 @@ public class NotificationHelper {
     /**
      * Base dialog builder used by all standardization methods
      */
-    private static void showBaseDialog(Context context, String title, String message, 
+    private static AlertDialog showBaseDialog(Context context, String title, String message,
                                      @DrawableRes int iconRes, int colorRes, DialogCallback callback) {
-        showBaseDialog(context, title, message, iconRes, colorRes, "OK", "Cancel", callback);
+        return showBaseDialog(context, title, message, iconRes, colorRes, "OK", "Cancel", callback);
     }
 
-    private static void showBaseDialog(Context context, String title, String message, 
+    private static AlertDialog showBaseDialog(Context context, String title, String message,
                                      @DrawableRes int iconRes, int colorRes,
                                      String positiveLabel, String negativeLabel, DialogCallback callback) {
-        if (context == null) return;
+        if (!isContextUsable(context)) return null;
 
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         View view = LayoutInflater.from(context).inflate(R.layout.dialog_custom_notification, null);
@@ -214,9 +370,13 @@ public class NotificationHelper {
 
         if (callback != null) {
             btnPrimary.setText(positiveLabel);
-            btnSecondary.setVisibility(View.VISIBLE);
-            btnSecondary.setText(negativeLabel);
-            btnSecondary.setOnClickListener(v -> dialog.dismiss());
+            if (negativeLabel != null && !negativeLabel.isEmpty()) {
+                btnSecondary.setVisibility(View.VISIBLE);
+                btnSecondary.setText(negativeLabel);
+                btnSecondary.setOnClickListener(v -> dialog.dismiss());
+            } else {
+                btnSecondary.setVisibility(View.GONE);
+            }
             btnPrimary.setOnClickListener(v -> {
                 dialog.dismiss();
                 callback.onConfirmed();
@@ -228,6 +388,7 @@ public class NotificationHelper {
         }
 
         dialog.show();
+        return dialog;
     }
 
     public interface MultiActionCallback {
@@ -238,7 +399,7 @@ public class NotificationHelper {
      * Shows a list selection dialog using the custom Basilience UI
      */
     public static void showSelectionDialog(Context context, String title, String[] items, MultiActionCallback callback) {
-        if (context == null) return;
+        if (!isContextUsable(context)) return;
 
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         View view = LayoutInflater.from(context).inflate(R.layout.dialog_custom_notification, null);
@@ -290,11 +451,11 @@ public class NotificationHelper {
      * Shows a dialog with a custom view (for forms) while maintaining the Basilience UI style
      */
     public static AlertDialog showCustomViewDialog(Context context, String title, View customView) {
-        if (context == null) return null;
+        if (!isContextUsable(context)) return null;
 
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         View root = LayoutInflater.from(context).inflate(R.layout.dialog_custom_notification, null);
-        applyDialogTheme(context, root, R.color.primary);
+        applyDialogTheme(context, root, R.color.celadon);
 
         TextView tvTitle = root.findViewById(R.id.dialog_title);
         TextView tvMessage = root.findViewById(R.id.dialog_message);
@@ -314,6 +475,40 @@ public class NotificationHelper {
             dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
         }
         
+        dialog.show();
+        return dialog;
+    }
+
+    public static AlertDialog showCustomViewDialog(Context context, String title, String message,
+                                                   View customView, String positiveLabel,
+                                                   String negativeLabel,
+                                                   CustomViewDialogCallback callback) {
+        if (!isContextUsable(context)) return null;
+
+        View root = LayoutInflater.from(context).inflate(R.layout.dialog_custom_notification, null);
+        applyDialogTheme(context, root, R.color.celadon);
+
+        TextView titleView = root.findViewById(R.id.dialog_title);
+        TextView messageView = root.findViewById(R.id.dialog_message);
+        MaterialButton primary = root.findViewById(R.id.dialog_button);
+        MaterialButton secondary = root.findViewById(R.id.dialog_button_secondary);
+        LinearLayout container = (LinearLayout) messageView.getParent();
+
+        titleView.setText(title);
+        messageView.setText(message);
+        container.addView(customView, container.indexOfChild(messageView) + 1);
+        primary.setText(positiveLabel);
+        secondary.setVisibility(View.VISIBLE);
+        secondary.setText(negativeLabel);
+
+        AlertDialog dialog = new AlertDialog.Builder(context).setView(root).create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        }
+        secondary.setOnClickListener(v -> dialog.dismiss());
+        primary.setOnClickListener(v -> {
+            if (callback != null) callback.onConfirmed(dialog, customView);
+        });
         dialog.show();
         return dialog;
     }
@@ -344,6 +539,7 @@ public class NotificationHelper {
         TextView tvTitle = view.findViewById(R.id.dialog_title);
         MaterialButton btnPrimary = view.findViewById(R.id.dialog_button);
         MaterialButton btnSecondary = view.findViewById(R.id.dialog_button_secondary);
+        MaterialButton btnTertiary = view.findViewById(R.id.dialog_button_tertiary);
 
         if (tvTitle != null) tvTitle.setTextColor(color);
         if (icon != null) icon.setColorFilter(color, PorterDuff.Mode.SRC_IN);
@@ -356,5 +552,23 @@ public class NotificationHelper {
             btnSecondary.setTextColor(color);
             btnSecondary.setStrokeColor(ColorStateList.valueOf(color));
         }
+
+        if (btnTertiary != null) {
+            btnTertiary.setTextColor(color);
+        }
+    }
+
+    private static boolean isContextUsable(Context context) {
+        Context current = context;
+        while (current instanceof ContextWrapper) {
+            if (current instanceof Activity) {
+                Activity activity = (Activity) current;
+                return !activity.isFinishing() && !activity.isDestroyed();
+            }
+            Context base = ((ContextWrapper) current).getBaseContext();
+            if (base == current) break;
+            current = base;
+        }
+        return false;
     }
 }

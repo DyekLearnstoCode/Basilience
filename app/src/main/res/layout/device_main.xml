@@ -93,6 +93,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnClaimDevice"
+                        style="@style/BasilienceButton.Primary"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="Claim Device"
@@ -173,5 +174,7 @@
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
+
+    <include layout="@layout/layout_loading" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

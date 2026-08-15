@@ -1,13 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <dimen name="header_logo_size">120dp</dimen>
+    <dimen name="header_logo_size">135dp</dimen>
     <dimen name="header_logo_margin_top">24dp</dimen>
     <dimen name="header_logo_margin_bottom">24dp</dimen>
     <dimen name="back_button_size">40dp</dimen>
     <dimen name="back_button_margin">12dp</dimen>
     <dimen name="container_top_padding">24dp</dimen>
+    <dimen name="report_content_top_padding">32dp</dimen>
     <dimen name="container_side_padding">20dp</dimen>
     <dimen name="container_overlap_margin">-24dp</dimen>
     <dimen name="card_elevation_completed">1dp</dimen>
     <dimen name="card_elevation_active">2dp</dimen>
+    <dimen name="button_height">48dp</dimen>
+    <dimen name="button_corner_radius">12dp</dimen>
+    <dimen name="button_horizontal_padding">20dp</dimen>
 </resources>

@@ -12,36 +12,37 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:padding="12dp"
-        android:gravity="center_vertical">
+        android:padding="12dp">
 
         <ImageView
             android:layout_width="24dp"
             android:layout_height="24dp"
+            android:layout_marginEnd="12dp"
             android:src="@drawable/ic_device"
-            app:tint="@color/primary"
-            android:layout_marginEnd="12dp"/>
+            app:tint="@color/primary" />
 
-        <TextView
-            android:id="@+id/tvDeviceId"
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="DEVICE_ID"
-            android:textColor="@color/black"
-            android:textStyle="bold"
-            android:textSize="14sp"/>
+            android:orientation="vertical">
+
+            <TextView android:id="@+id/tvDeviceName" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Device" android:textColor="@color/black" android:textSize="15sp" android:textStyle="bold" />
+            <TextView android:id="@+id/tvDeviceId" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Device ID: —" android:textColor="#666666" android:textSize="13sp" />
+            <TextView android:id="@+id/tvDeviceStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Status: —" android:textColor="#666666" android:textSize="13sp" />
+            <TextView android:id="@+id/tvDateAssigned" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Date Assigned: —" android:textColor="#666666" android:textSize="13sp" />
+        </LinearLayout>
 
         <ImageView
             android:id="@+id/btnRemoveDevice"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:src="@drawable/ic_delete"
-            android:padding="6dp"
-            app:tint="#E53935"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Remove assignment" />
-
+            android:contentDescription="Remove assignment"
+            android:padding="7dp"
+            android:src="@drawable/ic_delete"
+            app:tint="@color/alert_red" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

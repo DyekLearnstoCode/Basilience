@@ -15,6 +15,7 @@ import androidx.fragment.app.Fragment;
 import androidx.navigation.Navigation;
 
 import com.google.android.material.switchmaterial.SwitchMaterial;
+import com.google.android.material.button.MaterialButton;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.example.basilience.repository.SensorRepository;
@@ -25,9 +26,12 @@ import androidx.lifecycle.Observer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
@@ -47,6 +51,13 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private boolean isManualMode = false;
     private boolean isActuatorBusy = false; // Prevents double-tap while popup is showing
     private boolean isReservoirLocked = false; // Tracks if an automatic operation is in progress
+    private boolean isSafetyLock = false;
+    private static final long ACTUATOR_INACTIVITY_TIMEOUT_MS = 12000L;
+    private static final long ACTUATOR_POLL_INTERVAL_MS = 500L;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private int actuatorCommandGeneration = 0;
+    private boolean actuatorCommandFinished = true;
+    private Runnable actuatorCommandRunnable;
 
     // Loading overlay views
     private View actuatorLoadingOverlay;
@@ -63,14 +74,18 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         String name;
         String dbKey;
         int state;
-        boolean isOn;
+        boolean physicalRunning;
+        String physicalSource;
+        boolean manualIntent;
         String reason;
 
         Actuator(String name, String dbKey) {
             this.name = name;
             this.dbKey = dbKey;
             this.state = 0;
-            this.isOn = false;
+            this.physicalRunning = false;
+            this.physicalSource = "";
+            this.manualIntent = false;
         }
     }
 
@@ -78,12 +93,17 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private ValueEventListener sensorsListener;
 
     private TextView tvConnectionStatus;
+    private MaterialButton btnRetryWifiConfiguration;
     private SensorRepository sensorRepository;
     private final MutableLiveData<SensorData> sensorLiveData = new MutableLiveData<>();
     private Long previousLastSeenValue = null;
-    private long lastUpdateTime = 0;
     private boolean isCurrentlyOnline = false;
-    private final Handler heartbeatHandler = new Handler(Looper.getMainLooper());
+    private DeviceConnectivityState connectivityState = DeviceConnectivityState.RECONNECTING;
+    private boolean setupApReachable = false;
+    private boolean setupApCheckInProgress = false;
+    private boolean setupApCheckCompleted = false;
+    private String selectedDeviceId;
+    private ExecutorService connectivityExecutor;
 
     private final Actuator waterPumpValve = new Actuator("Water Pump (Valve)", "solenoid");
     private final Actuator canopyFan = new Actuator("Canopy Fan", "canopyFan");
@@ -96,8 +116,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private final Actuator fogger = new Actuator("Fogger", "fogger");
     private final Actuator reservoirFan = new Actuator("Reservoir Fan (Blower)", "blower");
     private final Actuator peltier = new Actuator("Peltier (Temp)", "peltier");
+    private final Actuator circulationPump = new Actuator("Circulation Pump", "circulationPump");
 
-    private View actWaterPumpValve, actCanopyFan, actGrowLights, actPhUp, actPhDown, actNutrients, actFogger, actReservoirFan, actPeltier;
+    private View actWaterPumpValve, actCanopyFan, actGrowLights, actPhUp, actPhDown, actNutrients, actFogger, actReservoirFan, actPeltier, actCirculationPump;
 
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
@@ -119,6 +140,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
         // Initialize Views
         setupParameterCards(view);
+        updateSensorUI();
 
         // ===== MODE SWITCH =====
         SwitchMaterial modeSwitch = view.findViewById(R.id.switchMode);
@@ -138,6 +160,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         actFogger = view.findViewById(R.id.actFogger);
         actReservoirFan = view.findViewById(R.id.actReservoirFan);
         actPeltier = view.findViewById(R.id.actPeltier);
+        actCirculationPump = view.findViewById(R.id.actCirculationPump);
 
         if (actWaterPumpValve != null) setupActuatorUI(actWaterPumpValve, waterPumpValve);
         if (actCanopyFan != null) setupActuatorUI(actCanopyFan, canopyFan);
@@ -148,6 +171,11 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (actFogger != null) setupActuatorUI(actFogger, fogger);
         if (actReservoirFan != null) setupActuatorUI(actReservoirFan, reservoirFan);
         if (actPeltier != null) setupActuatorUI(actPeltier, peltier);
+        if (actCirculationPump != null) {
+            setupActuatorUI(actCirculationPump, circulationPump);
+            SwitchMaterial circulationSwitch = actCirculationPump.findViewById(R.id.switchActuator);
+            if (circulationSwitch != null) circulationSwitch.setVisibility(View.GONE);
+        }
 
         updateActuatorControls();
 
@@ -157,19 +185,36 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         tvActuatorLoadingStatus = view.findViewById(R.id.tvActuatorLoadingStatus);
 
         tvConnectionStatus = view.findViewById(R.id.tvConnectionStatus);
+        btnRetryWifiConfiguration = view.findViewById(R.id.btnRetryWifiConfiguration);
+        connectivityExecutor = Executors.newSingleThreadExecutor();
+        if (btnRetryWifiConfiguration != null) {
+            btnRetryWifiConfiguration.setOnClickListener(v ->
+                    Navigation.findNavController(v).navigate(R.id.wifiConfigFragment));
+        }
         sensorRepository = new SensorRepository();
+
+        DeviceConnectionManager.getInstance().getConnectivityState().observe(
+                getViewLifecycleOwner(), state -> {
+                    connectivityState = state == null
+                            ? DeviceConnectivityState.RECONNECTING : state;
+                    isCurrentlyOnline = connectivityState == DeviceConnectivityState.ONLINE;
+                    if (isCurrentlyOnline) {
+                        setupApReachable = false;
+                        setupApCheckCompleted = false;
+                        if (selectedDeviceId != null) {
+                            NotificationHelper.clearWifiConfigurationRequiredNotification(
+                                    requireContext(), selectedDeviceId);
+                        }
+                    } else if (selectedDeviceId != null) {
+                        confirmSetupApReachability(selectedDeviceId);
+                    }
+                    updateConnectionUI();
+                });
 
         sensorLiveData.observe(getViewLifecycleOwner(), new Observer<SensorData>() {
             @Override
             public void onChanged(SensorData sensorData) {
-                if (sensorData != null && isAdded()) {
-                    if (tvTemp != null) tvTemp.setText(String.format("%.1f °C", sensorData.airTemperature));
-                    if (tvHumidity != null) tvHumidity.setText(String.format("%.1f %%", sensorData.humidity));
-                    if (tvWaterTemp != null) tvWaterTemp.setText(String.format("%.1f °C", sensorData.waterTemperature));
-                    if (tvPH != null) tvPH.setText(String.format("%.2f", sensorData.ph));
-                    if (tvEC != null) tvEC.setText(String.format("%.2f", sensorData.ec));
-                    if (tvWaterLevel != null) tvWaterLevel.setText(String.format("%.0f %%", sensorData.waterLevel));
-                }
+                updateSensorUI();
             }
         });
 
@@ -185,17 +230,29 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             btnTriggerRefill.setEnabled(isAdmin);
             btnTriggerRefill.setAlpha(isAdmin ? 1.0f : 0.6f);
             btnTriggerRefill.setOnClickListener(v -> {
+                if (isActuatorBusy) return;
                 if (isCurrentlyOnline) {
                     NotificationHelper.showConfirmation(requireContext(),
                             "Trigger Refill Operation",
                             "Are you sure you want to trigger an automated reservoir refill operation?",
                             "Yes", "No", () -> {
+                                isActuatorBusy = true;
+                                updateActuatorControls();
+                                showActuatorLoading("Sending request...", "");
                                 dbHelper.sendOperationRequest("REFILL", "START")
-                                        .addOnSuccessListener(aVoid -> Toast.makeText(getContext(), "Refill operation requested", Toast.LENGTH_SHORT).show())
-                                        .addOnFailureListener(e -> Toast.makeText(getContext(), "Request failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                                        .addOnSuccessListener(requestId -> {
+                                            pollOperationUntilDone(requestId, "Refill", 0);
+                                        })
+                                        .addOnFailureListener(e -> {
+                                            hideActuatorLoading();
+                                            isActuatorBusy = false;
+                                            updateActuatorControls();
+                                            Toast.makeText(getContext(), "Request failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                                        });
                             });
                 } else {
-                    Toast.makeText(getContext(), "Device is offline", Toast.LENGTH_SHORT).show();
+                    NotificationHelper.showError(requireContext(), "Device Offline",
+                            "The Basilience device is not currently connected.");
                 }
             });
         }
@@ -208,17 +265,29 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             btnResetSafety.setEnabled(isAdmin);
             btnResetSafety.setAlpha(isAdmin ? 1.0f : 0.6f);
             btnResetSafety.setOnClickListener(v -> {
+                if (isActuatorBusy) return;
                 if (isCurrentlyOnline) {
                     NotificationHelper.showConfirmation(requireContext(),
                             "Reset Safety Lock",
                             "Are you sure you want to reset the FSM safety lock? This will return the system to normal operations.",
                             "Yes", "No", () -> {
+                                isActuatorBusy = true;
+                                updateActuatorControls();
+                                showActuatorLoading("Sending request...", "");
                                 dbHelper.sendOperationRequest("RESET_SAFETY", "START")
-                                        .addOnSuccessListener(aVoid -> Toast.makeText(getContext(), "Safety reset requested", Toast.LENGTH_SHORT).show())
-                                        .addOnFailureListener(e -> Toast.makeText(getContext(), "Request failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                                        .addOnSuccessListener(requestId -> {
+                                            pollOperationUntilDone(requestId, "Reset Safety", 0);
+                                        })
+                                        .addOnFailureListener(e -> {
+                                            hideActuatorLoading();
+                                            isActuatorBusy = false;
+                                            updateActuatorControls();
+                                            Toast.makeText(getContext(), "Request failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                                        });
                             });
                 } else {
-                    Toast.makeText(getContext(), "Device is offline", Toast.LENGTH_SHORT).show();
+                    NotificationHelper.showError(requireContext(), "Device Offline",
+                            "The Basilience device is not currently connected.");
                 }
             });
         }
@@ -270,6 +339,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (getContext() == null) return;
         SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
         String deviceId = prefs.getString("selected_device_id", null);
+        selectedDeviceId = deviceId;
 
         if (deviceId == null) {
             Log.e("Monitoring", "No device selected");
@@ -278,7 +348,6 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
         dbHelper.setSelectedDeviceId(deviceId);
         sensorRepository.startListening(deviceId, sensorLiveData);
-        heartbeatHandler.post(heartbeatRunnable);
 
         View v = getView();
         if (v != null) {
@@ -299,25 +368,15 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (!isAdded()) return;
 
-                // Sync connection heartbeat
-                if (snapshot.hasChild("deviceInfo/lastSeen")) {
-                    Long lastSeen = snapshot.child("deviceInfo/lastSeen").getValue(Long.class);
-                    if (lastSeen != null) {
-                        if (!lastSeen.equals(previousLastSeenValue)) {
-                            lastUpdateTime = System.currentTimeMillis();
-                            previousLastSeenValue = lastSeen;
-                        }
-                        isCurrentlyOnline = (System.currentTimeMillis() - lastUpdateTime <= 30000);
-                        updateConnectionUI();
-                    }
-                } else {
-                    isCurrentlyOnline = false;
-                    updateConnectionUI();
-                }
-
-                // Sync status: reservoirLocked
+                // Sync status: reservoirLocked & safetyLock
                 Boolean reservoirLocked = snapshot.child("status").child("reservoirLocked").getValue(Boolean.class);
                 if (reservoirLocked != null) isReservoirLocked = reservoirLocked;
+
+                Boolean safetyLock = snapshot.child("status").child("safetyLock").getValue(Boolean.class);
+                if (safetyLock != null) {
+                    isSafetyLock = safetyLock;
+                    updateConnectionUI();
+                }
 
                 // Sync Manual Mode from RTDB
                 Boolean manualMode = snapshot.child("commands").child("manualMode").getValue(Boolean.class);
@@ -376,6 +435,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                     syncActuatorState(fogger, actFogger, actuatorStatus.child(fogger.dbKey));
                     syncActuatorState(reservoirFan, actReservoirFan, actuatorStatus.child(reservoirFan.dbKey));
                     syncActuatorState(peltier, actPeltier, actuatorStatus.child(peltier.dbKey));
+                    syncActuatorState(circulationPump, actCirculationPump, actuatorStatus.child(circulationPump.dbKey));
                 }
             }
 
@@ -389,22 +449,27 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
     private void syncActuatorState(Actuator actuator, View card, DataSnapshot stateSnap) {
         if (card == null || !stateSnap.exists()) return;
-        
+
         Integer state = null;
+        Boolean running = null;
+        String source = "";
         if (stateSnap.getValue() instanceof Boolean) {
-            state = stateSnap.getValue(Boolean.class) ? 5 : 0; // Fallback: true -> RUNNING (5), false -> OFF (0)
+            running = stateSnap.getValue(Boolean.class);
+            state = Boolean.TRUE.equals(running) ? 5 : 0;
         } else if (stateSnap.hasChild("state")) {
             state = stateSnap.child("state").getValue(Integer.class);
+            running = stateSnap.child("running").getValue(Boolean.class);
+            String reportedSource = stateSnap.child("source").getValue(String.class);
+            if (reportedSource != null) source = reportedSource;
         }
 
         if (state != null) {
             actuator.state = state;
-            actuator.isOn = (state == 1 || state == 2 || state == 4 || state == 5 || state == 6); 
-            if (state == 3 && stateSnap.hasChild("reason")) {
-                actuator.reason = stateSnap.child("reason").getValue(String.class);
-            } else {
-                actuator.reason = null;
-            }
+            actuator.physicalRunning = running != null ? running : state == 5;
+            actuator.physicalSource = source;
+            actuator.reason = stateSnap.hasChild("reason")
+                    ? stateSnap.child("reason").getValue(String.class)
+                    : null;
             updateActuatorUI(card, actuator);
         }
     }
@@ -443,7 +508,17 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
 
         nutrients.state  = combinedState;
-        nutrients.isOn   = (combinedState == 1 || combinedState == 2 || combinedState == 4 || combinedState == 5 || combinedState == 6);
+        Boolean growRunning = growSnap.child("running").getValue(Boolean.class);
+        Boolean bloomRunning = bloomSnap.child("running").getValue(Boolean.class);
+        nutrients.physicalRunning = growRunning != null || bloomRunning != null
+                ? Boolean.TRUE.equals(growRunning) || Boolean.TRUE.equals(bloomRunning)
+                : combinedState == 5;
+        String growSource = growSnap.child("source").getValue(String.class);
+        String bloomSource = bloomSnap.child("source").getValue(String.class);
+        nutrients.physicalSource = "manual".equalsIgnoreCase(growSource) || "manual".equalsIgnoreCase(bloomSource)
+                ? "manual"
+                : ("automatic".equalsIgnoreCase(growSource) || "automatic".equalsIgnoreCase(bloomSource)
+                    ? "automatic" : "");
         nutrients.reason = combinedReason;
         updateActuatorUI(actNutrients, nutrients);
     }
@@ -473,28 +548,31 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
         // Clear any previous listener first
         toggle.setOnCheckedChangeListener(null);
-        toggle.setChecked(actuator.isOn);
-        toggle.setEnabled(isManualMode);
+        toggle.setChecked(actuator.manualIntent
+                && actuator.physicalRunning
+                && "manual".equalsIgnoreCase(actuator.physicalSource));
+        toggle.setEnabled(isManualMode && isCurrentlyOnline && !isSafetyLock && !isActuatorBusy);
 
         toggle.setOnCheckedChangeListener((buttonView, checked) -> {
             if (!isManualMode) {
                 // Snap back immediately — no popup
                 toggle.setOnCheckedChangeListener(null);
-                toggle.setChecked(actuator.isOn);
+                toggle.setChecked(actuator.manualIntent
+                        && actuator.physicalRunning
+                        && "manual".equalsIgnoreCase(actuator.physicalSource));
                 setupActuatorUI(card, actuator);
-                Toast.makeText(getContext(), "Switch to Manual Mode to control actuators.", Toast.LENGTH_SHORT).show();
                 return;
             }
 
             // Pre-validation: pH Up / pH Down mutual exclusivity
             if (checked) {
-                if (actuator == phUp && phDown.isOn) {
+                if (actuator == phUp && phDown.physicalRunning) {
                     toggle.setOnCheckedChangeListener(null);
                     toggle.setChecked(false);
                     setupActuatorUI(card, actuator);
                     Toast.makeText(getContext(), "Cannot activate pH Up while pH Down is running.", Toast.LENGTH_LONG).show();
                     return;
-                } else if (actuator == phDown && phUp.isOn) {
+                } else if (actuator == phDown && phUp.physicalRunning) {
                     toggle.setOnCheckedChangeListener(null);
                     toggle.setChecked(false);
                     setupActuatorUI(card, actuator);
@@ -503,13 +581,22 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 }
             }
 
+            final boolean previousManualIntent = actuator.manualIntent;
+            final int commandBaselineState = actuator.state;
+            final boolean commandBaselineRunning = actuator.physicalRunning;
+            final String commandBaselineSource = actuator.physicalSource;
+            final int generation = ++actuatorCommandGeneration;
+            actuatorCommandFinished = false;
+
             // Lock all switches while processing
             isActuatorBusy = true;
             updateActuatorControls();
 
             // Revert toggle to original position — popup will be the feedback
             toggle.setOnCheckedChangeListener(null);
-            toggle.setChecked(actuator.isOn);
+            toggle.setChecked(previousManualIntent
+                    && actuator.physicalRunning
+                    && "manual".equalsIgnoreCase(actuator.physicalSource));
 
             // Show loading popup
             showActuatorLoading("Sending command...", "");
@@ -526,16 +613,17 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
             final boolean targetState = checked;
             updateTask.addOnCompleteListener(task -> {
-                if (!isAdded()) return;
+                if (!isAdded() || generation != actuatorCommandGeneration || actuatorCommandFinished) return;
                 if (!task.isSuccessful()) {
-                    hideActuatorLoading();
-                    isActuatorBusy = false;
-                    updateActuatorControls();
-                    Toast.makeText(getContext(), "Failed to send command: " + (task.getException() != null ? task.getException().getMessage() : "unknown error"), Toast.LENGTH_SHORT).show();
+                    String reason = task.getException() != null ? task.getException().getMessage() : "Unknown error";
+                    finishActuatorCommand(generation, actuator, previousManualIntent,
+                            "Command Failed", "The actuator command could not be sent. " + reason,
+                            false);
                 } else {
                     // Command written — show Validating immediately and start polling
                     showActuatorLoading("Validating...", "");
-                    pollActuatorUntilDone(actuator, card, targetState, 0);
+                    monitorActuatorCommand(generation, actuator, previousManualIntent, targetState,
+                            commandBaselineState, commandBaselineRunning, commandBaselineSource);
                 }
             });
         });
@@ -545,6 +633,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private void showActuatorLoading(String title, String subtitle) {
         if (actuatorLoadingOverlay == null || !isAdded()) return;
         actuatorLoadingOverlay.setVisibility(View.VISIBLE);
+        actuatorLoadingOverlay.bringToFront();
         if (tvActuatorLoadingTitle != null) tvActuatorLoadingTitle.setText(title);
         if (tvActuatorLoadingStatus != null) {
             tvActuatorLoadingStatus.setText(subtitle);
@@ -566,7 +655,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         final int MAX_ATTEMPTS = 10; // 10 * 500ms = 5 seconds — allows for 1500ms ESP32 read + write roundtrip
         if (!isAdded()) return;
 
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+        mainHandler.postDelayed(() -> {
             if (!isAdded()) return;
 
             int state = actuator.state;
@@ -577,7 +666,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             if (doneSuccess) {
                 showActuatorLoading("Done", "");
                 // Small pause so user can see the final state label, then close
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+        mainHandler.postDelayed(() -> {
                     if (!isAdded()) return;
                     hideActuatorLoading();
                     isActuatorBusy = false;
@@ -590,7 +679,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             if (state == 3) { // REJECTED — terminal
                 String reason = (actuator.reason != null && !actuator.reason.isEmpty()) ? actuator.reason : "Command rejected by ESP32";
                 showActuatorLoading("Error", reason);
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+        mainHandler.postDelayed(() -> {
                     if (!isAdded()) return;
                     hideActuatorLoading();
                     isActuatorBusy = false;
@@ -611,8 +700,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
             // Timeout
             if (attempt >= MAX_ATTEMPTS) {
-                showActuatorLoading("ESP32 Offline", "Device did not respond in time");
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                showActuatorLoading("Command Timeout", "The device is online, but the actuator did not confirm the command in time.");
+        mainHandler.postDelayed(() -> {
                     if (!isAdded()) return;
                     hideActuatorLoading();
                     isActuatorBusy = false;
@@ -627,6 +716,208 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }, 500);
     }
 
+    /**
+     * Polls the operations/current node to track a requested operation.
+     */
+    private void monitorActuatorCommand(int generation, Actuator actuator,
+                                        boolean previousManualIntent, boolean targetState,
+                                        int baselineState, boolean baselineRunning,
+                                        String baselineSource) {
+        final int[] lastState = {baselineState};
+        final boolean[] lastRunning = {baselineRunning};
+        final String[] lastSource = {baselineSource};
+        final long[] lastProgressAt = {SystemClock.elapsedRealtime()};
+        final boolean[] sawRelevantProgress = {false};
+
+        actuatorCommandRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (!isAdded() || actuatorCommandFinished || generation != actuatorCommandGeneration) return;
+
+                if (!isCurrentlyOnline) {
+                    finishActuatorCommand(generation, actuator, previousManualIntent,
+                            "Device Offline", "The Basilience device is not currently connected.",
+                            false);
+                    return;
+                }
+
+                int state = actuator.state;
+                boolean running = actuator.physicalRunning;
+                String source = actuator.physicalSource == null ? "" : actuator.physicalSource;
+
+                if (state != lastState[0] || running != lastRunning[0] || !source.equals(lastSource[0])) {
+                    lastState[0] = state;
+                    lastRunning[0] = running;
+                    lastSource[0] = source;
+                    lastProgressAt[0] = SystemClock.elapsedRealtime();
+                    sawRelevantProgress[0] = true;
+                }
+
+                if (state == 3) {
+                    String reason = actuator.reason != null && !actuator.reason.isEmpty()
+                            ? actuator.reason : "The firmware rejected the command.";
+                    finishActuatorCommand(generation, actuator, previousManualIntent,
+                            "Command Rejected", reason, false);
+                    return;
+                }
+
+                boolean sourceAcknowledged = "manual".equalsIgnoreCase(source)
+                        && !source.equalsIgnoreCase(baselineSource);
+                boolean success = targetState
+                        ? state == 5 && running
+                        : state == 0 && !running;
+                if (success && (sawRelevantProgress[0] || sourceAcknowledged)) {
+                    finishActuatorCommand(generation, actuator, targetState, null, null, true);
+                    return;
+                }
+
+                updateActuatorProgress(state, targetState);
+
+                if (SystemClock.elapsedRealtime() - lastProgressAt[0] >= ACTUATOR_INACTIVITY_TIMEOUT_MS) {
+                    finishActuatorCommand(generation, actuator, previousManualIntent,
+                            "Command Timeout",
+                            "The device is online, but the actuator did not confirm the command in time.",
+                            false);
+                    return;
+                }
+
+                mainHandler.postDelayed(this, ACTUATOR_POLL_INTERVAL_MS);
+            }
+        };
+        mainHandler.post(actuatorCommandRunnable);
+    }
+
+    private void updateActuatorProgress(int state, boolean targetState) {
+        switch (state) {
+            case 1:
+                showActuatorLoading("Command received...", "");
+                break;
+            case 2:
+                showActuatorLoading("Validating...", "");
+                break;
+            case 4:
+                showActuatorLoading("Activating...", "");
+                break;
+            case 6:
+                showActuatorLoading("Stopping...", "");
+                break;
+            default:
+                showActuatorLoading(targetState ? "Waiting for RUNNING..." : "Waiting for OFF...", "");
+                break;
+        }
+    }
+
+    private void finishActuatorCommand(int generation, Actuator actuator,
+                                       boolean resultingManualIntent, String title,
+                                       String message, boolean success) {
+        if (actuatorCommandFinished || generation != actuatorCommandGeneration) return;
+        actuatorCommandFinished = true;
+        if (actuatorCommandRunnable != null) {
+            mainHandler.removeCallbacks(actuatorCommandRunnable);
+            actuatorCommandRunnable = null;
+        }
+
+        actuator.manualIntent = resultingManualIntent;
+        hideActuatorLoading();
+        isActuatorBusy = false;
+        updateActuatorControls();
+        refreshAllActuatorUI();
+
+        if (!success && isAdded() && title != null) {
+            NotificationHelper.showError(requireContext(), title, message);
+        }
+    }
+
+    private void pollOperationUntilDone(int requestId, String opName, int attempt) {
+        final int MAX_ATTEMPTS = 60; // 60 * 1000ms = 60 seconds timeout
+        if (!isAdded()) return;
+
+        mainHandler.postDelayed(() -> {
+            if (!isAdded()) return;
+
+            dbHelper.getOperationsCurrentReference().get().addOnCompleteListener(task -> {
+                if (!isAdded()) return;
+
+                if (!task.isSuccessful() || !task.getResult().exists()) {
+                    if (attempt >= MAX_ATTEMPTS) {
+                        showActuatorLoading("Timeout", "Operation timed out or no response");
+        mainHandler.postDelayed(() -> {
+                            hideActuatorLoading();
+                            isActuatorBusy = false;
+                            updateActuatorControls();
+                        }, 2500);
+                    } else {
+                        pollOperationUntilDone(requestId, opName, attempt + 1);
+                    }
+                    return;
+                }
+
+                DataSnapshot snap = task.getResult();
+                Integer currentReqId = snap.child("requestId").getValue(Integer.class);
+                String state = snap.child("state").getValue(String.class);
+                
+                // If the operation ID doesn't match yet, keep waiting
+                if (currentReqId == null || currentReqId != requestId) {
+                    if (attempt >= MAX_ATTEMPTS) {
+                        showActuatorLoading("Timeout", "Operation timed out or no response");
+        mainHandler.postDelayed(() -> {
+                            hideActuatorLoading();
+                            isActuatorBusy = false;
+                            updateActuatorControls();
+                        }, 2500);
+                    } else {
+                        pollOperationUntilDone(requestId, opName, attempt + 1);
+                    }
+                    return;
+                }
+
+                if ("COMPLETED".equals(state)) {
+                    showActuatorLoading("Done", opName + " completed successfully.");
+        mainHandler.postDelayed(() -> {
+                        hideActuatorLoading();
+                        isActuatorBusy = false;
+                        updateActuatorControls();
+                    }, 1500);
+                    return;
+                } else if ("FAILED".equals(state) || "REJECTED".equals(state)) {
+                    String reason = snap.child("reason").getValue(String.class);
+                    showActuatorLoading("Error", reason != null && !reason.isEmpty() ? reason : "Operation failed.");
+        mainHandler.postDelayed(() -> {
+                        hideActuatorLoading();
+                        isActuatorBusy = false;
+                        updateActuatorControls();
+                    }, 2500);
+                    return;
+                }
+
+                // In progress
+                if ("RUNNING".equals(state)) {
+                    showActuatorLoading("Running...", opName + " is in progress");
+                    // Do not increment attempt if it's actively running to prevent timeout
+                    pollOperationUntilDone(requestId, opName, 0); 
+                    return;
+                } else if ("ACCEPTED".equals(state)) {
+                    showActuatorLoading("Accepted", "Starting " + opName + "...");
+                    pollOperationUntilDone(requestId, opName, 0); 
+                    return;
+                } else {
+                    showActuatorLoading("Validating...", "Waiting for ESP32 to validate");
+                }
+
+                if (attempt >= MAX_ATTEMPTS) {
+                    showActuatorLoading("Timeout", "Operation timed out");
+        mainHandler.postDelayed(() -> {
+                        hideActuatorLoading();
+                        isActuatorBusy = false;
+                        updateActuatorControls();
+                    }, 2500);
+                } else {
+                    pollOperationUntilDone(requestId, opName, attempt + 1);
+                }
+            });
+        }, 1000); // 1 second intervals for operations
+    }
+
     /** Re-draws all actuator switches to match current confirmed Firebase state */
     private void refreshAllActuatorUI() {
         if (!isAdded() || getView() == null) return;
@@ -639,15 +930,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (actFogger != null) setupActuatorUI(actFogger, fogger);
         if (actReservoirFan != null) setupActuatorUI(actReservoirFan, reservoirFan);
         if (actPeltier != null) setupActuatorUI(actPeltier, peltier);
-    }
-
-    private void updateActuatorUI(View card, boolean isOn) {
-        Actuator actuator = getActuatorFromCard(card);
-        if (actuator != null) {
-            actuator.isOn = isOn;
-            actuator.state = isOn ? 5 : 0;
-            updateActuatorUI(card, actuator);
-        }
+        if (actCirculationPump != null) setupActuatorUI(actCirculationPump, circulationPump);
     }
 
     private void updateActuatorUI(View card, Actuator actuator) {
@@ -658,8 +941,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (toggle != null) {
             // Update switch position without triggering listener
             toggle.setOnCheckedChangeListener(null);
-            toggle.setOnCheckedChangeListener(null);
-            toggle.setChecked(actuator.isOn);
+            toggle.setChecked(actuator.manualIntent
+                    && actuator.physicalRunning
+                    && "manual".equalsIgnoreCase(actuator.physicalSource));
             toggle.setEnabled(isManualMode);
             // Re-register listener cleanly
             toggle.setOnCheckedChangeListener(null);
@@ -673,28 +957,38 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                     status.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
                     break;
                 case 1:
+                    status.setText("COMMAND RECEIVED" + actuatorSourceSuffix(actuator));
+                    status.setTextColor(getResources().getColor(android.R.color.darker_gray));
+                    break;
                 case 2:
-                case 4:
-                case 6:
-                    status.setText(actuator.state == 1 ? "Cmd Received" : 
-                                   actuator.state == 2 ? "Validating..." : 
-                                   actuator.state == 4 ? "Activating..." : "Stopping...");
+                    status.setText("VALIDATING" + actuatorSourceSuffix(actuator));
                     status.setTextColor(getResources().getColor(android.R.color.darker_gray));
                     break;
                 case 3:
-                    status.setText("REJECTED");
+                    status.setText("REJECTED" + actuatorSourceSuffix(actuator));
                     status.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
-                    if (actuator.reason != null && !actuator.reason.isEmpty()) {
-                        Toast.makeText(getContext(), actuator.name + " rejected: " + actuator.reason, Toast.LENGTH_LONG).show();
-                        actuator.reason = null;
-                    }
+                    break;
+                case 4:
+                    status.setText("ACTIVATING" + actuatorSourceSuffix(actuator));
+                    status.setTextColor(getResources().getColor(android.R.color.darker_gray));
                     break;
                 case 5:
-                    status.setText("ON");
+                    status.setText("RUNNING" + actuatorSourceSuffix(actuator));
                     status.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
+                    break;
+                case 6:
+                    status.setText("STOPPING" + actuatorSourceSuffix(actuator));
+                    status.setTextColor(getResources().getColor(android.R.color.darker_gray));
                     break;
             }
         }
+    }
+
+    private String actuatorSourceSuffix(Actuator actuator) {
+        if ("automatic".equalsIgnoreCase(actuator.physicalSource)) return " · AUTO";
+        if ("manual".equalsIgnoreCase(actuator.physicalSource)) return " · MANUAL";
+        if ("android".equalsIgnoreCase(actuator.physicalSource)) return " · ANDROID";
+        return "";
     }
 
     private Actuator getActuatorFromCard(View card) {
@@ -706,11 +1000,12 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (card == actNutrients) return nutrients;
         if (card == actFogger) return fogger;
         if (card == actReservoirFan) return reservoirFan;
+        if (card == actCirculationPump) return circulationPump;
         return peltier;
     }
 
     private void updateActuatorControls() {
-        boolean enabled = isManualMode && isCurrentlyOnline;
+        boolean enabled = isManualMode && isCurrentlyOnline && !isSafetyLock;
         setActuatorEnabled(actWaterPumpValve, enabled);
         setActuatorEnabled(actCanopyFan, enabled);
         setActuatorEnabled(actGrowLights, enabled);
@@ -727,20 +1022,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         isManualMode = checked;
         modeSwitch.setText("Manual Mode");
 
-        // Optimistically reset all actuator UIs off when disabling manual mode
         if (!checked) {
-            showActuatorLoading("Restoring Safety Protocols", "Deactivating all manual overrides...");
-            new Handler(Looper.getMainLooper()).postDelayed(this::hideActuatorLoading, 3000);
-
-            updateActuatorUI(actWaterPumpValve, false);
-            updateActuatorUI(actCanopyFan, false);
-            updateActuatorUI(actGrowLights, false);
-            updateActuatorUI(actPhUp, false);
-            updateActuatorUI(actPhDown, false);
-            updateActuatorUI(actNutrients, false);
-            updateActuatorUI(actFogger, false);
-            updateActuatorUI(actReservoirFan, false);
-            updateActuatorUI(actPeltier, false);
+            showActuatorLoading("Restoring Safety Protocols", "Resuming automatic operations...");
+            mainHandler.postDelayed(this::hideActuatorLoading, 1500);
         }
 
         updateActuatorControls();
@@ -764,26 +1048,44 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         NotificationHelper.showWarning(requireContext(), "System Alert", msg.toString());
     }
 
-    private final Runnable heartbeatRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if (System.currentTimeMillis() - lastUpdateTime > 30000) {
-                isCurrentlyOnline = false;
-            }
-            updateConnectionUI();
-            heartbeatHandler.postDelayed(this, 5000);
-        }
-    };
+    /** Updates all sensor TextViews from the current sensorLiveData value. */
+    private void updateSensorUI() {
+        if (!isAdded() || getView() == null) return;
+        SensorData data = sensorLiveData.getValue();
+        if (tvPH != null) tvPH.setText(formatSensor(
+                data != null ? data.ph : null, 0.0, 14.0, 2, "", null));
+        if (tvEC != null) tvEC.setText(formatSensor(
+                data != null ? data.ec : null, 0.0, Double.MAX_VALUE, 2, "", null));
+        if (tvTemp != null) tvTemp.setText(formatSensor(
+                data != null ? data.airTemperature : null, -40.0, 80.0, 1, "°C", null));
+        if (tvHumidity != null) tvHumidity.setText(formatSensor(
+                data != null ? data.humidity : null, 0.0, 100.0, 1, "%", null));
+        if (tvWaterTemp != null) tvWaterTemp.setText(formatSensor(
+                data != null ? data.waterTemperature : null, -55.0, 125.0, 1, "°C", -127.0));
+        if (tvWaterLevel != null) tvWaterLevel.setText(formatSensor(
+                data != null ? data.waterLevel : null, 0.0, 100.0, 1, "%", null));
+    }
+
+    private String formatSensor(Double value, double minimum, double maximum,
+                                int decimalPlaces, String suffix, Double invalidSentinel) {
+        if (value == null || value.isNaN() || value.isInfinite()) return "--";
+        if (invalidSentinel != null && Math.abs(value - invalidSentinel) < 0.0001) return "--";
+        if (value < minimum || value > maximum) return "--";
+        return String.format(java.util.Locale.US, "%." + decimalPlaces + "f%s", value, suffix);
+    }
 
     private void updateConnectionUI() {
         if (tvConnectionStatus == null || !isAdded()) return;
 
-        if (isCurrentlyOnline) {
-            tvConnectionStatus.setText("Online");
-            tvConnectionStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50")); // Green
-        } else {
-            tvConnectionStatus.setText("Offline");
-            tvConnectionStatus.setTextColor(android.graphics.Color.parseColor("#F44336")); // Red
+        DeviceConnectivityState displayState = setupApReachable
+                ? DeviceConnectivityState.RECONNECTING : connectivityState;
+        String label = setupApReachable ? "Provisioning" : displayState.getLabel();
+        tvConnectionStatus.setText("● " + label);
+        tvConnectionStatus.setTextColor(androidx.core.content.ContextCompat.getColor(
+                requireContext(), displayState.getColorRes()));
+
+        if (btnRetryWifiConfiguration != null) {
+            btnRetryWifiConfiguration.setVisibility(isCurrentlyOnline ? View.GONE : View.VISIBLE);
         }
 
         View v = getView();
@@ -798,15 +1100,47 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         updateActuatorControls();
     }
 
+    private void confirmSetupApReachability(String deviceId) {
+        if (setupApCheckCompleted || setupApCheckInProgress
+                || connectivityExecutor == null || connectivityExecutor.isShutdown()) return;
+        setupApCheckInProgress = true;
+        android.content.Context appContext = requireContext().getApplicationContext();
+        connectivityExecutor.execute(() -> {
+            boolean reachable = LocalProvisioningClient.isSetupApReachable(appContext);
+            mainHandler.post(() -> {
+                setupApCheckInProgress = false;
+                if (!isAdded() || isCurrentlyOnline) return;
+                setupApCheckCompleted = true;
+                setupApReachable = reachable;
+                if (reachable) {
+                    NotificationHelper.showWifiConfigurationRequiredNotification(
+                            requireContext(), deviceId);
+                }
+                updateConnectionUI();
+            });
+        });
+    }
+
     @Override
     public void onDestroyView() {
-        super.onDestroyView();
-        heartbeatHandler.removeCallbacks(heartbeatRunnable);
+        actuatorCommandFinished = true;
+        actuatorCommandGeneration++;
+        if (actuatorCommandRunnable != null) {
+            mainHandler.removeCallbacks(actuatorCommandRunnable);
+            actuatorCommandRunnable = null;
+        }
+        mainHandler.removeCallbacksAndMessages(null);
+        if (connectivityExecutor != null) {
+            connectivityExecutor.shutdownNow();
+            connectivityExecutor = null;
+        }
+        isActuatorBusy = false;
         if (sensorRepository != null) {
             sensorRepository.stopListening();
         }
         if (sensorsRef != null && sensorsListener != null) {
             sensorsRef.removeEventListener(sensorsListener);
         }
+        super.onDestroyView();
     }
 }

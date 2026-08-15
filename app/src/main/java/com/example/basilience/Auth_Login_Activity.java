@@ -3,6 +3,8 @@ package com.example.basilience;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -10,12 +12,19 @@ import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.splashscreen.SplashScreen;
 
+import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
+import com.google.firebase.FirebaseNetworkException;
 import com.google.android.material.button.MaterialButton;
 
 public class Auth_Login_Activity extends AppCompatActivity {
 
     private static final String PREFS_NAME = "basilience_prefs";
     private static final String KEY_IS_LOGGED_IN = "is_logged_in";
+    private static final long BACKEND_TIMEOUT_MS = 15000L;
+    private static final String BACKEND_UNAVAILABLE_MESSAGE =
+            "Unable to connect to Basilience services. Check your internet connection.";
 
     private EditText txtemail, txtpassword;
     private CheckBox cbRemember;
@@ -25,6 +34,7 @@ public class Auth_Login_Activity extends AppCompatActivity {
     private TextView tvLoadingTitle;
 
     private Database_Helper helper;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,15 +49,6 @@ public class Auth_Login_Activity extends AppCompatActivity {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         boolean isLoggedIn = prefs.getBoolean(KEY_IS_LOGGED_IN, false);
         String currentUid = helper.getCurrentUid();
-
-        if (isLoggedIn && currentUid != null) {
-            // User chose "Remember Me" and is still authenticated in Firebase
-            Intent intent = new Intent(this, MainActivity.class);
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-            startActivity(intent);
-            finish();
-            return;
-        }
 
         setContentView(R.layout.auth_login);
         keepSplash[0] = false;
@@ -67,13 +68,19 @@ public class Auth_Login_Activity extends AppCompatActivity {
         tvSignup.setVisibility(android.view.View.VISIBLE);
         tvSignup.setOnClickListener(v -> startActivity(new Intent(this, Auth_Register_Activity.class)));
         tvForgotPassword.setOnClickListener(v -> startActivity(new Intent(this, Auth_ForgotPass_Activity.class)));
+
+        if (isLoggedIn && currentUid != null) {
+            revalidateRememberedSession(currentUid);
+        }
     }
 
     private void showLoading(boolean show, String message) {
+        if (isFinishing() || isDestroyed()) return;
         if (tvLoadingTitle != null && message != null) {
             tvLoadingTitle.setText(message);
         }
         layoutLoading.setVisibility(show ? android.view.View.VISIBLE : android.view.View.GONE);
+        if (show) layoutLoading.bringToFront();
         btnlogin.setEnabled(!show);
     }
 
@@ -85,11 +92,16 @@ public class Auth_Login_Activity extends AppCompatActivity {
             NotificationHelper.showError(this, "Please fill all fields");
             return;
         }
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            NotificationHelper.showError(this, "Please enter a valid email address");
+            return;
+        }
 
         showLoading(true, "Logging in...");
 
-        helper.loginAuth(email, password)
-                .addOnSuccessListener(res -> {
+        awaitBackendTask(
+                helper.loginAuth(email, password),
+                res -> {
                     com.google.firebase.auth.FirebaseUser user = com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser();
                     String uid = user != null ? user.getUid() : null;
 
@@ -109,13 +121,21 @@ public class Auth_Login_Activity extends AppCompatActivity {
 
                     showLoading(true, "Loading profile...");
 
-                    helper.getUserProfile(uid)
-                            .addOnSuccessListener(document -> {
+                    awaitBackendTask(
+                            helper.getUserProfile(uid),
+                            document -> {
                                 if (!document.exists()) {
                                     showLoading(false, null);
                                     helper.logout();
-                                    NotificationHelper.showError(this,
-                                            "Login failed: Your profile data is missing.\nPlease contact support or try re-registering.");
+                                    SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+                                    prefs.edit()
+                                            .remove(KEY_IS_LOGGED_IN)
+                                            .remove("user_role")
+                                            .remove("owner_uid")
+                                            .remove("selected_device_id")
+                                            .apply();
+                                    NotificationHelper.showInfo(this, "Account Profile Missing",
+                                            "Your sign-in account exists, but your Basilience profile could not be found. Please contact your administrator or recover the account profile.");
                                     return;
                                 }
 
@@ -128,30 +148,110 @@ public class Auth_Login_Activity extends AppCompatActivity {
                                 editor.putString("owner_uid", ownerUid);
                                 editor.apply();
 
-                                // Efficient migration: Only run once per user, scoped to their data
-                                boolean isMigrated = prefs.getBoolean("migrated_" + uid, false);
-                                if (!isMigrated) {
-                                    showLoading(true, "Synchronizing assignments...");
-                                    helper.migrateDeviceAssignments(uid).addOnCompleteListener(t -> {
-                                        if (t.isSuccessful()) {
-                                            prefs.edit().putBoolean("migrated_" + uid, true).apply();
-                                        }
-                                        navigateToMain();
-                                    });
+                                // Device assignments are established only by Admin assignment
+                                // operations. Login must consume them and never create/repair access.
+                                navigateToMain();
+                            },
+                            e -> {
+                                if (isBackendReachabilityFailure(e)) {
+                                    showBackendUnavailable();
                                 } else {
-                                    navigateToMain();
+                                    showLoading(false, null);
+                                    NotificationHelper.showError(this, "Unable to load your Basilience account profile.");
                                 }
-                            })
-                            .addOnFailureListener(e -> {
-                                showLoading(false, null);
-                                NotificationHelper.showError(this,
-                                        "Failed to load profile: " + e.getMessage());
                             });
+                },
+                e -> {
+                    showLoading(false, null);
+                    if (isBackendReachabilityFailure(e)) {
+                        NotificationHelper.showError(this, BACKEND_UNAVAILABLE_MESSAGE);
+                    } else {
+                        NotificationHelper.showError(this, "Email or password is incorrect.");
+                    }
+                });
+    }
+
+    private void revalidateRememberedSession(String uid) {
+        showLoading(true, "Restoring session...");
+        awaitBackendTask(helper.getUserProfile(uid), document -> {
+            String role = document.exists() ? document.getString("role") : null;
+            if (!RoleConstants.ROLE_ADMIN.equalsIgnoreCase(role)
+                    && !RoleConstants.ROLE_FARMER.equalsIgnoreCase(role)) {
+                clearInvalidSession();
+                NotificationHelper.showInfo(this, "Account Profile Missing",
+                        "Your saved sign-in is no longer linked to a valid Basilience profile.");
+                return;
+            }
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                    .putString("user_role", role)
+                    .putString("owner_uid", document.getString("ownerAdminUid"))
+                    .apply();
+            navigateToMain();
+        }, error -> {
+            if (isBackendReachabilityFailure(error)) {
+                showBackendUnavailable();
+            } else {
+                clearInvalidSession();
+                NotificationHelper.showError(this, "Unable to restore your Basilience session.");
+            }
+        });
+    }
+
+    private void clearInvalidSession() {
+        helper.logout();
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .remove(KEY_IS_LOGGED_IN)
+                .remove("user_role")
+                .remove("owner_uid")
+                .remove("selected_device_id")
+                .apply();
+        showLoading(false, null);
+    }
+
+    private <T> void awaitBackendTask(Task<T> task, OnSuccessListener<T> onSuccess, OnFailureListener onFailure) {
+        final boolean[] settled = {false};
+        Runnable timeout = () -> {
+            if (settled[0]) return;
+            settled[0] = true;
+            onFailure.onFailure(new FirebaseNetworkException(BACKEND_UNAVAILABLE_MESSAGE));
+        };
+
+        mainHandler.postDelayed(timeout, BACKEND_TIMEOUT_MS);
+
+        task.addOnSuccessListener(result -> {
+                    if (settled[0]) return;
+                    settled[0] = true;
+                    mainHandler.removeCallbacks(timeout);
+                    onSuccess.onSuccess(result);
                 })
                 .addOnFailureListener(e -> {
-                    showLoading(false, null);
-                    NotificationHelper.showError(this, "LOGIN FAILED: " + e.getMessage());
+                    if (settled[0]) return;
+                    settled[0] = true;
+                    mainHandler.removeCallbacks(timeout);
+                    onFailure.onFailure(e);
                 });
+    }
+
+    private boolean isBackendReachabilityFailure(Exception e) {
+        if (e instanceof FirebaseNetworkException) return true;
+
+        Throwable current = e;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase(java.util.Locale.US);
+                if (lower.contains("network") || lower.contains("timeout") || lower.contains("unreachable")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private void showBackendUnavailable() {
+        showLoading(false, null);
+        NotificationHelper.showError(this, BACKEND_UNAVAILABLE_MESSAGE);
     }
 
     private void navigateToMain() {

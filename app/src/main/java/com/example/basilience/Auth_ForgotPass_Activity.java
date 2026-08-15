@@ -48,24 +48,36 @@ public class Auth_ForgotPass_Activity extends AppCompatActivity {
             NotificationHelper.showError(this, "Please enter a valid email");
             return;
         }
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            NotificationHelper.showError(this, "Please enter a valid email address");
+            return;
+        }
 
         // Show Loading Overlay
         layoutLoading.setVisibility(View.VISIBLE);
+        layoutLoading.bringToFront();
+        btnResetPassword.setEnabled(false);
 
         // Execute original logic
         helper.sendPasswordResetEmail(email)
                 .addOnSuccessListener(aVoid -> {
+                    if (isFinishing() || isDestroyed()) return;
                     // Hide Loading Overlay
                     layoutLoading.setVisibility(View.GONE);
-                    NotificationHelper.showSuccess(this, "Reset link sent to " + email);
-
-                    // Automatically return to login after success
-                    finish();
+                    btnResetPassword.setEnabled(true);
+                    NotificationHelper.showSuccessAcknowledgement(this,
+                            "Password Reset Email Sent",
+                            "If a Basilience account uses this email, a reset link has been sent. Please check your inbox.",
+                            this::finish);
                 })
                 .addOnFailureListener(e -> {
+                    if (isFinishing() || isDestroyed()) return;
                     // Hide Loading Overlay
                     layoutLoading.setVisibility(View.GONE);
-                    NotificationHelper.showError(this, "Error: " + e.getMessage());
+                    btnResetPassword.setEnabled(true);
+                    NotificationHelper.showError(this,
+                            "Password reset is temporarily unavailable. Check your connection and try again.");
                 });
     }
+
 }

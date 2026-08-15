@@ -33,17 +33,56 @@ service cloud.firestore {
     // USERS collection
     match /users/{uid} {
       allow read: if isSignedIn();
-      // Allow self-registration: permit create if UID matches and role is FARMER (or ADMIN for first user, usually handled by console or a special logic)
-      // In this app, farmers are created by admins, but let's allow read for all authenticated users to check profiles.
-      allow create: if isSignedIn() && request.auth.uid == uid;
-      allow update, delete: if isAdmin() || request.auth.uid == uid;
+      // Public self-registration may establish only an unlinked ADMIN profile.
+      // FARMER/PERSONNEL profiles are created by an authenticated Admin.
+      allow create: if (isSignedIn() && request.auth.uid == uid &&
+                        request.resource.data.role == 'ADMIN' &&
+                        request.resource.data.ownerAdminUid == null) ||
+        (isAdmin() && request.resource.data.role == 'FARMER' && request.resource.data.ownerAdminUid == request.auth.uid);
+      // Personnel may maintain their contact profile only.  An admin can only link,
+      // unlink, or edit a FARMER profile that is unlinked or already belongs to them.
+      allow update: if (request.auth.uid == uid &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName', 'phone'])) ||
+        (isAdmin() && resource.data.role == 'FARMER' && request.resource.data.role == 'FARMER' &&
+         (resource.data.ownerAdminUid == null || resource.data.ownerAdminUid == request.auth.uid) &&
+         (request.resource.data.ownerAdminUid == null || request.resource.data.ownerAdminUid == request.auth.uid));
+      allow delete: if isAdmin() && resource.data.ownerAdminUid == request.auth.uid;
     }
 
     // DEVICES collection
     match /devices/{deviceId} {
       allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
-      allow update: if isAdmin() && (resource.data.ownerUid == request.auth.uid || !exists(resource.data.ownerUid));
+      // Ownership is a state transition, not a general admin-editable field.  In
+      // particular, an unclaimed document (including one legitimately unclaimed
+      // moments earlier) can only be claimed by the authenticated admin, while a
+      // claimed document can only be unclaimed by that same owner.
+      allow update: if isAdmin() && (
+        isValidClaimTransition() ||
+        isValidUnclaimTransition() ||
+        (resource.data.ownerUid == request.auth.uid &&
+         request.resource.data.ownerUid == request.auth.uid)
+      );
       allow create, delete: if isAdmin();
+
+      function changesOnlyClaimState() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['ownerUid', 'status']);
+      }
+
+      function isValidClaimTransition() {
+        return (!('ownerUid' in resource.data) || resource.data.ownerUid == null) &&
+          (!('status' in resource.data) || resource.data.status != 'CLAIMED') &&
+          request.resource.data.ownerUid == request.auth.uid &&
+          request.resource.data.status == 'CLAIMED' &&
+          changesOnlyClaimState();
+      }
+
+      function isValidUnclaimTransition() {
+        return resource.data.ownerUid == request.auth.uid &&
+          request.resource.data.ownerUid == null &&
+          request.resource.data.status == 'UNCLAIMED' &&
+          changesOnlyClaimState();
+      }
 
       // CYCLES sub-collection
       match /cycles/{cycleId} {
@@ -53,6 +92,7 @@ service cloud.firestore {
         // Farmers can update cycle totals when logging a harvest
         allow update: if (isAdmin() && isAssignedToDevice(deviceId)) ||
                         (isFarmer() && isAssignedToDevice(deviceId) &&
+                         (resource.data.nextHarvestDate == null || resource.data.nextHarvestDate <= request.time) &&
                          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                            'harvestFrequency', 'lastHarvestDate', 'status',
                            'totalHarvestWeight', 'totalHarvestCount', 'nextHarvestDate'
@@ -60,7 +100,16 @@ service cloud.firestore {
 
         // HARVEST LOGS sub-collection
         match /harvestLogs/{harvestId} {
-          allow read, write: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+          allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+          // Only an admin may edit/delete history.  A FARMER can add a new entry only
+          // once the parent cycle's scheduled harvest time has arrived.
+          allow create: if (isAdmin() && isAssignedToDevice(deviceId)) ||
+            (isFarmer() && isAssignedToDevice(deviceId) &&
+             (get(/databases/$(database)/documents/devices/$(deviceId)/cycles/$(cycleId)).data.nextHarvestDate == null ||
+              get(/databases/$(database)/documents/devices/$(deviceId)/cycles/$(cycleId)).data.nextHarvestDate <= request.time) &&
+             request.resource.data.recordedBy == request.auth.uid &&
+             request.resource.data.harvestDate <= request.time);
+          allow update, delete: if isAdmin() && isAssignedToDevice(deviceId);
         }
       }
 
@@ -73,14 +122,35 @@ service cloud.firestore {
       match /foggingLogs/{logId} {
         allow read, write: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
       }
+
+      // NOTIFICATIONS sub-collection
+      match /notifications/{notifId} {
+        allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+        allow update: if isSignedIn()
+          && (isAdmin() || isAssignedToDevice(deviceId))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
+          && request.resource.data.isRead is bool;
+        allow create, delete: if false;
+      }
     }
 
     // DEVICE ASSIGNMENTS collection
     match /deviceAssignments/{assignmentId} {
       // Allow user to see their own assignments
       allow read: if isSignedIn() && (resource.data.userUid == request.auth.uid || isAdmin());
-      // Only Admins can manage assignments
-      allow create, update, delete: if isAdmin();
+      // Only the owning admin can manage assignments for that device. getAfter
+      // permits the claim transaction to create its owner assignment atomically.
+      allow create: if isAdmin() &&
+        getAfter(/databases/$(database)/documents/devices/$(request.resource.data.deviceId)).data.ownerUid == request.auth.uid &&
+        (request.resource.data.userUid == request.auth.uid ||
+         get(/databases/$(database)/documents/users/$(request.resource.data.userUid)).data.ownerAdminUid == request.auth.uid);
+      // Assignment identity and role are immutable. Reassigning requires the
+      // owner to remove the old relationship then explicitly create a new one.
+      allow update: if false;
+      allow delete: if isAdmin() &&
+        get(/databases/$(database)/documents/devices/$(resource.data.deviceId)).data.ownerUid == request.auth.uid &&
+        (resource.data.userUid == request.auth.uid ||
+         get(/databases/$(database)/documents/users/$(resource.data.userUid)).data.ownerAdminUid == request.auth.uid);
     }
 
     // LOGS and NOTIFICATIONS (Top-level or nested)
