@@ -131,10 +131,22 @@ public class AccountFragment extends Fragment {
         if (uid == null) return;
 
         String name = value(etName);
-        String phone = value(etPhone);
+        String rawPhone = value(etPhone);
         if (name.isEmpty()) {
             etName.setError("Full name is required");
             return;
+        }
+
+        final String phone;
+        if (!rawPhone.isEmpty()) {
+            String normalizedPhone = PhoneNumberUtils.normalizePhilippineMobile(rawPhone);
+            if (normalizedPhone == null) {
+                etPhone.setError(PhoneNumberUtils.INVALID_MESSAGE);
+                return;
+            }
+            phone = normalizedPhone;
+        } else {
+            phone = rawPhone;
         }
 
         Map<String, Object> updates = new HashMap<>();

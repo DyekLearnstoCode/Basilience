@@ -1,25 +1,52 @@
 package com.example.basilience;
 
+import android.util.Log;
+
 import com.example.basilience.models.FoggingEvent;
 import com.example.basilience.models.FoggingReportSummary;
 import com.example.basilience.models.FoggingSession;
 
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
 public class FoggingReportProcessor {
 
+    private static final String TAG = "FoggingReportProcessor";
+
+    // Ceiling on how long a single reconstructed ON->OFF (or still-running)
+    // fogging session may plausibly last before it is treated as a
+    // reboot/offline-corrupted pair rather than real continuous fogging.
+    // The dev-tools mock data generator (DevOptionsFragment.injectFreshMockData)
+    // simulates realistic session lengths of 2-7 minutes, matching how the
+    // fogger actually duty-cycles in normal operation (short bursts, long
+    // gaps between them). Two hours is over 15x the longest simulated normal
+    // session, so it cannot misclassify genuine Basilience fog cycles -
+    // including long manual/startup overrides - as stale, while still
+    // reliably catching an ON event whose matching OFF only arrives after a
+    // multi-hour/multi-day connectivity gap.
+    private static final long MAX_PLAUSIBLE_SESSION_DURATION_MS = 2L * 60 * 60 * 1000;
+
     /**
      * Processes raw fogging events to reconstruct sessions and aggregate data into buckets.
      *
-     * @param rawEvents The raw fogging logs from Firestore.
+     * @param rawEvents The raw fogging logs from Firestore. May include one event with a
+     *                  timestamp before reportStartTimeMs (an ON that started before the
+     *                  window) so that a session straddling the window's start boundary can
+     *                  be reconstructed and clipped, instead of appearing as an orphan OFF.
      * @param reportStartTimeMs The start time of the selected report window.
      * @param reportEndTimeMs The end time of the selected report window.
      * @param bucketSizeMs The size of each aggregation bucket (e.g., 1 day or 1 hour).
-     * @param isRunning True if the actuator status currently reports fogger as running.
+     * @param isRunning True only when the fogger is confirmed to be running
+     *                  RIGHT NOW - i.e. the actuator flag says running AND the
+     *                  device's live presence is trustworthy. Callers must not
+     *                  pass the raw actuator flag on its own: that value
+     *                  persists in RTDB after a device drops offline, and
+     *                  treating a stale "true" as live made an unmatched ON
+     *                  session grow forever ("Running now - 1d 5h"). When this
+     *                  is false, a trailing unmatched ON is recorded as an
+     *                  incomplete session contributing zero duration.
      * @return A summarized report containing completed sessions, aggregations, and statistics.
      */
     public static FoggingReportSummary process(
@@ -28,7 +55,7 @@ public class FoggingReportProcessor {
             long reportEndTimeMs,
             long bucketSizeMs,
             boolean isRunning) {
-        
+
         FoggingReportSummary summary = new FoggingReportSummary();
         if (rawEvents == null || rawEvents.isEmpty()) {
             return summary;
@@ -63,7 +90,21 @@ public class FoggingReportProcessor {
             } else if ("OFF".equalsIgnoreCase(event.event)) {
                 if (currentSession != null) {
                     currentSession.setEndEvent(event);
-                    summary.addCompletedSession(currentSession);
+
+                    long rawDurationMs = currentSession.getDurationMs();
+                    long effectiveDurationMs;
+                    if (rawDurationMs > MAX_PLAUSIBLE_SESSION_DURATION_MS) {
+                        currentSession.setAnomalous(true);
+                        effectiveDurationMs = 0L;
+                        Log.w(TAG, "Excluding anomalous fogging session from report aggregates: start="
+                                + currentSession.getStartEvent().timestamp + " end=" + event.timestamp
+                                + " rawDurationMs=" + rawDurationMs + " exceeds MAX_PLAUSIBLE_SESSION_DURATION_MS="
+                                + MAX_PLAUSIBLE_SESSION_DURATION_MS + " (likely a reboot/offline gap between ON and OFF)");
+                    } else {
+                        effectiveDurationMs = clippedDurationMs(currentSession, reportStartTimeMs, reportEndTimeMs);
+                    }
+
+                    summary.addCompletedSession(currentSession, effectiveDurationMs);
                     currentSession = null;
                 }
                 // If OFF without ON, it is discarded.
@@ -71,11 +112,41 @@ public class FoggingReportProcessor {
         }
 
         // 3. Handle Running Session
+        long nowMs = System.currentTimeMillis();
         if (currentSession != null) {
             if (isRunning) {
                 summary.setCurrentlyRunningSession(currentSession);
+
+                long rawRunningDurationMs = Math.max(0, nowMs - currentSession.getStartEvent().timestamp);
+                if (rawRunningDurationMs > MAX_PLAUSIBLE_SESSION_DURATION_MS) {
+                    Log.w(TAG, "Currently-running fogging session exceeds MAX_PLAUSIBLE_SESSION_DURATION_MS="
+                            + MAX_PLAUSIBLE_SESSION_DURATION_MS + "; excluding from aggregates but still showing as running. start="
+                            + currentSession.getStartEvent().timestamp);
+                } else {
+                    long effectiveEnd = Math.min(nowMs, reportEndTimeMs);
+                    long effectiveStart = Math.max(currentSession.getStartEvent().timestamp, reportStartTimeMs);
+                    long runningDurationMs = Math.max(0, effectiveEnd - effectiveStart);
+                    summary.addRunningSessionDuration(currentSession, runningDurationMs);
+                }
+            } else {
+                // No trustworthy confirmation that the fogger is running right
+                // now, so this trailing ON has no known OFF: the device may
+                // have gone offline mid-session, or stopped without the OFF
+                // event reaching Firestore. Its real end time is unknown, so
+                // it is surfaced as an incomplete record - the same treatment
+                // an anomalous ON->OFF pair already gets - contributing zero
+                // to every aggregate rather than being counted as
+                // now-minus-start of fabricated runtime.
+                //
+                // Note this deliberately no longer discards the session
+                // silently: a recorded fogging start really did happen, and
+                // hiding it made an offline stall look like nothing at all.
+                currentSession.setAnomalous(true);
+                summary.addCompletedSession(currentSession, 0L);
+                Log.w(TAG, "Unmatched fogging ON with no confirmed live-running state; recording as an"
+                        + " incomplete session excluded from aggregates. start="
+                        + currentSession.getStartEvent().timestamp);
             }
-            // If it's not actually running, the session was interrupted/lost, we discard it.
         }
 
         // 4. Calculate observed days based on the earliest valid event within the report window
@@ -99,23 +170,57 @@ public class FoggingReportProcessor {
         }
 
         for (FoggingSession session : summary.getCompletedSessions()) {
+            if (session.isAnomalous()) continue;
+
             long sessionStart = session.getStartEvent().timestamp;
             long sessionEnd = session.getEndEvent().timestamp;
 
             bucketStart = reportStartTimeMs;
             while (bucketStart < reportEndTimeMs) {
                 long bucketEnd = bucketStart + bucketSizeMs;
-                
+
                 // Calculate exact overlap
                 long overlap = Math.max(0, Math.min(sessionEnd, bucketEnd) - Math.max(sessionStart, bucketStart));
                 if (overlap > 0) {
                     summary.addBucketDuration(bucketStart, overlap);
                 }
-                
+
+                bucketStart += bucketSizeMs;
+            }
+        }
+
+        // Currently-running session also contributes to whichever buckets its
+        // elapsed-so-far runtime overlaps, clipped to now/report end the same
+        // way its total-duration contribution was above.
+        FoggingSession runningSession = summary.getCurrentlyRunningSession();
+        if (runningSession != null
+                && Math.max(0, nowMs - runningSession.getStartEvent().timestamp) <= MAX_PLAUSIBLE_SESSION_DURATION_MS) {
+            long sessionStart = runningSession.getStartEvent().timestamp;
+            long sessionEnd = Math.min(nowMs, reportEndTimeMs);
+
+            bucketStart = reportStartTimeMs;
+            while (bucketStart < reportEndTimeMs) {
+                long bucketEnd = bucketStart + bucketSizeMs;
+                long overlap = Math.max(0, Math.min(sessionEnd, bucketEnd) - Math.max(sessionStart, bucketStart));
+                if (overlap > 0) {
+                    summary.addBucketDuration(bucketStart, overlap);
+                }
                 bucketStart += bucketSizeMs;
             }
         }
 
         return summary;
+    }
+
+    // Clips a completed session's duration to the report window so that only
+    // the portion of a session that actually falls within [windowStart, windowEnd]
+    // is counted toward aggregates - e.g. a session that started before the
+    // window and ended inside it only contributes windowStart..end, not its
+    // full real-world duration.
+    private static long clippedDurationMs(FoggingSession session, long windowStart, long windowEnd) {
+        if (!session.isCompleted()) return 0L;
+        long start = Math.max(session.getStartEvent().timestamp, windowStart);
+        long end = Math.min(session.getEndEvent().timestamp, windowEnd);
+        return Math.max(0, end - start);
     }
 }

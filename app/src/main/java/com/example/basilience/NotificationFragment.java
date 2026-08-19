@@ -45,6 +45,7 @@ public class NotificationFragment extends Fragment {
 
     private MaterialButton btnFilterAll, btnFilterUnread, btnFilterRead;
     private boolean markingAllRead;
+    private NotificationHelper.LoadingHandle loadingHandle;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -186,11 +187,25 @@ public class NotificationFragment extends Fragment {
                     String type      = doc.getString("type");
                     Long   timestamp = readTimestampMillis(doc);
                     Boolean isRead   = doc.getBoolean("isRead");
+                    // Only present on a notification tied to an actual stored
+                    // harvest record (see functions/onHarvestCreated) - absent
+                    // for the pre-harvest reminder, which must never show one.
+                    String recorderName = doc.getString("recorderName");
+                    String recorderUid  = doc.getString("recorderUid");
+                    // Only present on an event replayed from the firmware's
+                    // offline queue (see functions/onNotificationQueued) -
+                    // absent for every normal real-time notification.
+                    Boolean offlineRecorded = doc.getBoolean("offlineRecorded");
+                    Boolean smsFallbackUsed = doc.getBoolean("smsFallbackUsed");
 
                     if (message != null && type != null && timestamp != null) {
-                        allRawNotifications.add(new NotificationAdapter.NotificationItem(
-                                docId, message, timestamp, type, isRead != null && isRead
-                        ));
+                        NotificationAdapter.NotificationItem item = new NotificationAdapter.NotificationItem(
+                                docId, message, timestamp, type, isRead != null && isRead,
+                                recorderName, recorderUid
+                        );
+                        item.offlineRecorded = offlineRecorded != null && offlineRecorded;
+                        item.smsFallbackUsed = smsFallbackUsed != null && smsFallbackUsed;
+                        allRawNotifications.add(item);
                     } else {
                         Log.w(TAG, "Skipping malformed notification document: " + doc.getReference().getPath());
                     }
@@ -222,8 +237,15 @@ public class NotificationFragment extends Fragment {
         }
         markingAllRead = true;
         updateMarkAllReadState();
+        loadingHandle = NotificationHelper.showLoading(requireContext(), "Marking notifications as read...", () -> {
+            if (!isAdded()) return;
+            markingAllRead = false;
+            updateMarkAllReadState();
+            NotificationHelper.showError(requireContext(), "Request timed out. Please refresh before trying again.");
+        });
         dbHelper.markNotificationsRead(deviceId, unreadIds).addOnSuccessListener(unused -> {
             if (!isAdded()) return;
+            dismissLoading();
             for (NotificationAdapter.NotificationItem item : allRawNotifications) item.isRead = true;
             markingAllRead = false;
             applyFilterAndRender();
@@ -231,6 +253,7 @@ public class NotificationFragment extends Fragment {
             NotificationHelper.showSuccess(requireContext(), "All notifications marked as read.");
         }).addOnFailureListener(e -> {
             if (!isAdded()) return;
+            dismissLoading();
             markingAllRead = false;
             updateMarkAllReadState();
             NotificationHelper.showError(requireContext(), "Unable to mark notifications as read: " + e.getMessage());
@@ -308,7 +331,13 @@ public class NotificationFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
+        dismissLoading();
         super.onDestroyView();
         if (notificationListener != null) notificationListener.remove();
+    }
+
+    private void dismissLoading() {
+        if (loadingHandle != null) loadingHandle.dismiss();
+        loadingHandle = null;
     }
 }

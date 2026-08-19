@@ -1,0 +1,63 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "devices": {
+      "$deviceId": {
+        ".read": "auth != null && auth.uid === $deviceId",
+        ".write": "auth != null && auth.uid === $deviceId",
+
+        "sensors": {
+          ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()"
+        },
+        "actuators": {
+          ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()"
+        },
+        "actuatorStatus": {
+          ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()"
+        },
+        "status": {
+          ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()"
+        },
+        "operations": {
+          ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()"
+        },
+        "alerts": {
+          ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()"
+        },
+        "debug": {
+          "physicalSensors": {
+            ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()"
+          },
+          "testNotifications": {
+            "$category": {
+              "$pushId": {
+                ".write": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN'"
+              }
+            }
+          }
+        },
+
+        "commands": {
+          ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()",
+          ".write": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN'"
+        },
+        "settings": {
+          ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()",
+          ".write": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN'"
+        }
+      }
+    },
+
+    "deviceAccess": {
+      ".read": false,
+      ".write": false
+    },
+
+    "provisioning": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}

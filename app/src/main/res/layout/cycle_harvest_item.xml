@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Harvest History row.
+     Restored to the pre-design-system-port card presentation: harvest
+     records are manually entered production data (weight, recorder, source,
+     notes, edit/delete), so each entry reads better as a distinct card than
+     as a flat feed row - unlike the machine-generated Fogging event list.
+     Only the weight formatting and the optional notes line carry over from
+     the ported version. -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -22,14 +29,16 @@
         <!-- TOP: HARVEST WEIGHT -->
         <TextView
             android:id="@+id/tvHarvestWeight"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="0.0g"
+            android:text="0 g"
             android:textColor="@color/primary"
             android:textSize="24sp"
             android:textStyle="bold"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintEnd_toStartOf="@id/ivMoreActions"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintHorizontal_bias="0" />
 
         <!-- RIGHT: OVERFLOW MENU -->
         <ImageView
@@ -39,6 +48,7 @@
             android:padding="8dp"
             android:src="@android:drawable/ic_menu_more"
             android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Harvest entry actions"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent"
             app:tint="@color/nav_inactive" />
@@ -69,6 +79,21 @@
             app:layout_constraintEnd_toEndOf="@id/tvHarvestDate"
             app:layout_constraintTop_toBottomOf="@id/tvHarvestDate" />
 
+        <!-- OPTIONAL: NOTES (hidden unless the entry has one) -->
+        <TextView
+            android:id="@+id/tvNotes"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text=""
+            android:textColor="@color/nav_inactive"
+            android:textSize="13sp"
+            android:lineSpacingExtra="2dp"
+            android:visibility="gone"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/tvRecordedBy" />
+
         <!-- BOTTOM: SOURCE BADGE -->
         <TextView
             android:id="@+id/tvSource"
@@ -84,7 +109,7 @@
             android:textSize="10sp"
             android:textStyle="bold"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/tvRecordedBy"
+            app:layout_constraintTop_toBottomOf="@id/tvNotes"
             app:layout_constraintBottom_toBottomOf="parent" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>

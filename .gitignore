@@ -15,3 +15,7 @@
 local.properties
 .idea/misc.xml
 .idea/misc.xml
+firebase-debug.log
+firebase-debug.*.log
+database-debug.log
+.firebase/

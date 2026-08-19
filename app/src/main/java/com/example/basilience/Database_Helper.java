@@ -763,80 +763,101 @@ public class Database_Helper {
     public Task<Void> deleteHarvestTransaction(String cycleId, String harvestId, double weight) {
         if (selectedDeviceId == null) return Tasks.forException(new Exception("No device selected"));
 
-        return checkAdminTask().onSuccessTask(aVoid -> {
-            DocumentReference cycleRef = db.collection("devices").document(selectedDeviceId)
-                    .collection("cycles").document(cycleId);
-            DocumentReference harvestRef = cycleRef.collection("harvestLogs").document(harvestId);
+        DocumentReference cycleRef = db.collection("devices").document(selectedDeviceId)
+                .collection("cycles").document(cycleId);
+        DocumentReference harvestRef = cycleRef.collection("harvestLogs").document(harvestId);
 
-            return db.runTransaction(transaction -> {
-                DocumentSnapshot cycleSnap = transaction.get(cycleRef);
+        return checkAdminTask().onSuccessTask(aVoid ->
+                // The delete + totalHarvestWeight/totalHarvestCount decrement must be
+                // atomic, so it stays inside the transaction. Recomputing
+                // lastHarvestDate/nextHarvestDate needs a query the Firestore
+                // transaction API can't track (a plain get() awaited inline), so it
+                // used to run here too - meaning any transient failure of that
+                // secondary, non-essential query aborted the whole deletion,
+                // including the otherwise-valid weight/count decrement. It now runs
+                // as a best-effort follow-up after this transaction commits.
+                db.runTransaction(transaction -> {
+                    DocumentSnapshot cycleSnap = transaction.get(cycleRef);
 
-                // Validation: Freeze check
-                String status = cycleSnap.getString("status");
-                if (status == null) status = "ACTIVE"; // Legacy support
-                if (!"ACTIVE".equalsIgnoreCase(status)) {
-                    throw new FirebaseFirestoreException("Cycle is completed and can no longer be modified.",
-                            FirebaseFirestoreException.Code.ABORTED);
-                }
-
-                double currentWeight = 0;
-                if (cycleSnap.contains("totalHarvestWeight") && cycleSnap.get("totalHarvestWeight") != null) {
-                    currentWeight = cycleSnap.getDouble("totalHarvestWeight");
-                }
-
-                long currentCount = 0;
-                if (cycleSnap.contains("totalHarvestCount") && cycleSnap.get("totalHarvestCount") != null) {
-                    currentCount = cycleSnap.getLong("totalHarvestCount");
-                }
-
-                transaction.delete(harvestRef);
-
-                // We need to re-evaluate lastHarvestDate and nextHarvestDate after deletion
-                try {
-                    QuerySnapshot qSnap = Tasks.await(cycleRef.collection("harvestLogs")
-                            .orderBy("harvestDate", Query.Direction.DESCENDING)
-                            .limit(2)
-                            .get());
-
-                    List<Timestamp> candidates = new ArrayList<>();
-                    if (qSnap != null) {
-                        for (DocumentSnapshot doc : qSnap.getDocuments()) {
-                            if (!doc.getId().equals(harvestId)) {
-                                candidates.add(doc.getTimestamp("harvestDate"));
-                            }
-                        }
+                    // Validation: Freeze check
+                    String status = cycleSnap.getString("status");
+                    if (status == null) status = "ACTIVE"; // Legacy support
+                    if (!"ACTIVE".equalsIgnoreCase(status)) {
+                        throw new FirebaseFirestoreException("Cycle is completed and can no longer be modified.",
+                                FirebaseFirestoreException.Code.ABORTED);
                     }
 
-                    Timestamp latestDate = null;
-                    Timestamp nextHarvestDate = null;
-
-                    if (!candidates.isEmpty()) {
-                        latestDate = Collections.max(candidates);
-
-                        if (latestDate != null) {
-                            int frequency = 5;
-                            if (cycleSnap.contains("harvestFrequencyDays") && cycleSnap.get("harvestFrequencyDays") != null) {
-                                frequency = cycleSnap.getLong("harvestFrequencyDays").intValue();
-                            }
-                            java.util.Calendar cal = java.util.Calendar.getInstance();
-                            cal.setTime(latestDate.toDate());
-                            cal.add(java.util.Calendar.DAY_OF_YEAR, frequency);
-                            nextHarvestDate = new Timestamp(cal.getTime());
-                        }
+                    double currentWeight = 0;
+                    if (cycleSnap.contains("totalHarvestWeight") && cycleSnap.get("totalHarvestWeight") != null) {
+                        currentWeight = cycleSnap.getDouble("totalHarvestWeight");
                     }
 
+                    long currentCount = 0;
+                    if (cycleSnap.contains("totalHarvestCount") && cycleSnap.get("totalHarvestCount") != null) {
+                        currentCount = cycleSnap.getLong("totalHarvestCount");
+                    }
+
+                    transaction.delete(harvestRef);
                     transaction.update(cycleRef,
                             "totalHarvestWeight", Math.max(0, currentWeight - weight),
-                            "totalHarvestCount", Math.max(0, currentCount - 1),
-                            "lastHarvestDate", latestDate,
-                            "nextHarvestDate", nextHarvestDate
+                            "totalHarvestCount", Math.max(0, currentCount - 1)
                     );
-                } catch (Exception e) {
-                    throw new RuntimeException("Failed to update cycle summary after deletion", e);
-                }
-                return null;
-            });
-        });
+                    return null;
+                }).continueWithTask(task -> {
+                    if (!task.isSuccessful()) {
+                        return Tasks.forException(task.getException());
+                    }
+                    // Best-effort: the harvest deletion and weight/count decrement
+                    // above already succeeded and must not be rolled back by a
+                    // failure here.
+                    recomputeHarvestSchedulingMetadata(cycleRef, harvestId);
+                    return Tasks.forResult(null);
+                })
+        );
+    }
+
+    // Recomputes lastHarvestDate/nextHarvestDate from the harvestLogs that
+    // remain after a deletion. Runs outside any transaction: it is a fresh
+    // recompute from an authoritative query snapshot (not an accumulated
+    // delta), so a plain read-then-update is sufficient and avoids blocking
+    // a Firestore transaction on a non-transactional network call.
+    private void recomputeHarvestSchedulingMetadata(DocumentReference cycleRef, String deletedHarvestId) {
+        cycleRef.get().addOnSuccessListener(cycleSnap -> {
+            int frequency = 5;
+            if (cycleSnap.contains("harvestFrequencyDays") && cycleSnap.get("harvestFrequencyDays") != null) {
+                frequency = cycleSnap.getLong("harvestFrequencyDays").intValue();
+            }
+            final int finalFrequency = frequency;
+
+            cycleRef.collection("harvestLogs")
+                    .orderBy("harvestDate", Query.Direction.DESCENDING)
+                    .limit(1)
+                    .get()
+                    .addOnSuccessListener(qSnap -> {
+                        Timestamp latestDate = null;
+                        Timestamp nextHarvestDate = null;
+                        if (!qSnap.isEmpty()) {
+                            latestDate = qSnap.getDocuments().get(0).getTimestamp("harvestDate");
+                            if (latestDate != null) {
+                                java.util.Calendar cal = java.util.Calendar.getInstance();
+                                cal.setTime(latestDate.toDate());
+                                cal.add(java.util.Calendar.DAY_OF_YEAR, finalFrequency);
+                                nextHarvestDate = new Timestamp(cal.getTime());
+                            }
+                        }
+
+                        Map<String, Object> metadataUpdate = new HashMap<>();
+                        metadataUpdate.put("lastHarvestDate", latestDate);
+                        metadataUpdate.put("nextHarvestDate", nextHarvestDate);
+                        cycleRef.update(metadataUpdate).addOnFailureListener(e ->
+                                Log.w(TAG, "Harvest " + deletedHarvestId + " deleted and totals updated, but failed to write "
+                                        + "recomputed lastHarvestDate/nextHarvestDate for cycle " + cycleRef.getId(), e));
+                    })
+                    .addOnFailureListener(e -> Log.w(TAG, "Harvest " + deletedHarvestId + " deleted and totals updated, but "
+                            + "failed to query remaining harvestLogs to recompute scheduling metadata for cycle "
+                            + cycleRef.getId(), e));
+        }).addOnFailureListener(e -> Log.w(TAG, "Harvest " + deletedHarvestId + " deleted and totals updated, but failed to "
+                + "read cycle " + cycleRef.getId() + " to recompute scheduling metadata", e));
     }
 
     public Task<Void> addHarvestEntry(String cycleId, Map<String, Object> harvestEntry) {
@@ -855,12 +876,17 @@ public class Database_Helper {
     public Task<QuerySnapshot> getHarvestHistoryForChart(String cycleId) {
         if (selectedDeviceId == null) return Tasks.forException(new Exception("No device selected"));
 
+        // harvestDate is the canonical, always-written field for every live
+        // add/edit path (Harvest.harvestDate); the redundant "timestamp"
+        // property only exists via Harvest's legacy getTimestamp() alias and
+        // is not guaranteed present on every document, so ordering by it
+        // risked silently excluding a valid harvest from the chart.
         return db.collection("devices")
                 .document(selectedDeviceId)
                 .collection("cycles")
                 .document(cycleId)
                 .collection("harvestLogs")
-                .orderBy("timestamp", Query.Direction.ASCENDING)
+                .orderBy("harvestDate", Query.Direction.ASCENDING)
                 .get();
     }
 

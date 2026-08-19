@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Basilience Design System pilot: compact status pill (INSUFFICIENT DATA). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/state_neutral_bg" />
+    <corners android:radius="999dp" />
+</shape>

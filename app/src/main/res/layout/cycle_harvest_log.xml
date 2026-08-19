@@ -33,234 +33,323 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingTop="@dimen/container_top_padding"
+            android:paddingTop="20dp"
             android:paddingStart="@dimen/container_side_padding"
             android:paddingEnd="@dimen/container_side_padding"
-            android:paddingBottom="@dimen/container_side_padding">
+            android:paddingBottom="88dp">
 
-            <!-- SUMMARY CARD -->
-            <com.google.android.material.card.MaterialCardView
+            <!-- PAGE HEADER: title/subtitle centred on their own lines, with
+                 the export action on a separate row below so it can never
+                 crowd or off-centre the title. Harvest has no info/help
+                 entry point today, so none is invented here. -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="2dp"
-                app:strokeColor="#E0E0E0"
-                app:strokeWidth="1dp">
+                android:orientation="vertical"
+                android:layout_marginBottom="@dimen/ds_space_lg">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    style="@style/Basilience.PageTitle"
+                    android:gravity="center"
+                    android:text="Harvest Report" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    style="@style/Basilience.PageSubtitle"
+                    android:layout_marginTop="@dimen/ds_space_xs"
+                    android:gravity="center"
+                    android:text="Production for this cultivation cycle" />
+
+            </LinearLayout>
+
+            <!-- CYCLE CONTEXT ROW: cycle identity and status on the left,
+                 export aligned with it on the right, date range beneath.
+                 Typography and alignment only - no extra surface. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/tvCycleLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    style="@style/Basilience.SectionTitle"
+                    android:text="Cycle #1" />
+
+                <TextView
+                    android:id="@+id/tvStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:background="@drawable/status_chip_bg"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="4dp"
+                    android:text="ACTIVE"
+                    android:textColor="@android:color/white"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnExportPdf"
+                    style="@style/Basilience.HeaderIconButton"
+                    android:text=""
+                    android:visibility="gone"
+                    android:contentDescription="Export report"
+                    app:icon="@drawable/ic_share"
+                    app:iconSize="22dp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvCycleRange"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                style="@style/Basilience.Caption"
+                android:text="" />
+
+            <!-- Cycle-level action, kept with the cycle context it acts on
+                 rather than trailing the report's conclusion. The
+                 confirmation dialog is what guards the action. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCompleteCycle"
+                style="@style/BasilienceButton.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/ds_space_md"
+                android:text="Complete Cycle"
+                android:visibility="gone" />
+
+            <!-- PRODUCTION HERO: the two headline production figures share
+                 the surface so neither side sits empty. The entry count
+                 lives here only - it is not repeated under the weight. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/ds_space_md"
+                android:orientation="horizontal"
+                android:background="@drawable/ds_surface_hero_bg"
+                android:padding="@dimen/ds_surface_padding">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_weight="6"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        style="@style/Basilience.SectionLabel"
+                        android:text="Total Harvested" />
+
+                    <TextView
+                        android:id="@+id/tvTotalWeight"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="0 g"
+                        android:textColor="@color/primary"
+                        android:textSize="30sp"
+                        android:fontFamily="sans-serif-black" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginHorizontal="@dimen/ds_space_sm"
+                    android:background="@color/ds_divider" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_weight="4"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        style="@style/Basilience.SectionLabel"
+                        android:text="Harvest Entries" />
+
+                    <TextView
+                        android:id="@+id/tvHarvestCount"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="0"
+                        android:textColor="@color/text_dark"
+                        android:textSize="30sp"
+                        android:fontFamily="sans-serif-black" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- SCHEDULE COMPONENT: the lightest surface on the page, so it
+                 bridges the hero and the chart without competing with
+                 either. Date carries the value role; frequency and its edit
+                 pencil are grouped together on the trailing side so the
+                 pencil never reads as detached from what it edits. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/ds_space_md"
+                android:orientation="vertical"
+                android:background="@drawable/ds_surface_interpretation_bg"
+                android:paddingHorizontal="@dimen/ds_surface_padding"
+                android:paddingVertical="14dp">
+
+                <TextView
+                    android:id="@+id/tvNextHarvestLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    style="@style/Basilience.SectionLabel"
+                    android:text="Next Harvest" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginTop="4dp">
 
-                    <RelativeLayout
-                        android:layout_width="match_parent"
+                    <TextView
+                        android:id="@+id/tvExpectedDate"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="12dp">
-
-                        <TextView
-                            android:id="@+id/tvCycleLabel"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Cycle #1"
-                            android:textColor="@color/primary"
-                            android:textSize="18sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:id="@+id/tvStatus"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_alignParentEnd="true"
-                            android:background="@drawable/status_chip_bg"
-                            android:paddingHorizontal="8dp"
-                            android:paddingVertical="4dp"
-                            android:text="ACTIVE"
-                            android:textColor="@android:color/white"
-                            android:textSize="12sp"
-                            android:textStyle="bold" />
-                    </RelativeLayout>
-
-                    <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnCompleteCycle"
-                style="@style/BasilienceButton.Danger"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="12dp"
-                        android:text="Complete Cycle"
-                        android:visibility="gone" />
+                        android:textSize="19sp"
+                        android:fontFamily="sans-serif-medium"
+                        android:textColor="@color/text_dark"
+                        android:text="--" />
 
                     <View
-                        android:layout_width="match_parent"
+                        android:layout_width="0dp"
                         android:layout_height="1dp"
-                        android:layout_marginBottom="12dp"
-                        android:background="#F0F0F0" />
+                        android:layout_weight="1"
+                        android:minWidth="12dp" />
 
-                    <GridLayout
-                        android:layout_width="match_parent"
+                    <TextView
+                        android:id="@+id/tvFrequency"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:columnCount="3"
-                        android:useDefaultMargins="false">
+                        style="@style/Basilience.Caption"
+                        android:text="" />
 
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_columnWeight="1"
-                            android:gravity="center"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Weight"
-                                android:textColor="@color/nav_inactive"
-                                android:textSize="11sp" />
-
-                            <TextView
-                                android:id="@+id/tvTotalWeight"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="0.0g"
-                                android:textColor="@color/primary"
-                                android:textSize="14sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_columnWeight="1"
-                            android:gravity="center"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Harvests"
-                                android:textColor="@color/nav_inactive"
-                                android:textSize="11sp" />
-
-                            <TextView
-                                android:id="@+id/tvHarvestCount"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="0"
-                                android:textColor="@color/black"
-                                android:textSize="14sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_columnWeight="1"
-                            android:gravity="center"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:id="@+id/tvNextHarvestLabel"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Next Harvest"
-                                android:textColor="@color/nav_inactive"
-                                android:textSize="11sp" />
-
-                            <TextView
-                                android:id="@+id/tvExpectedDate"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="--"
-                                android:textColor="@color/black"
-                                android:textSize="14sp"
-                                android:textStyle="bold" />
-
-                            <LinearLayout
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:gravity="center_vertical"
-                                android:orientation="horizontal">
-
-                                <TextView
-                                    android:id="@+id/tvFrequency"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="--"
-                                    android:textColor="@color/nav_inactive"
-                                    android:textSize="10sp" />
-
-                                <ImageView
-                                    android:id="@+id/btnEditFrequency"
-                                    android:layout_width="16dp"
-                                    android:layout_height="16dp"
-                                    android:layout_marginStart="4dp"
-                                    android:src="@android:drawable/ic_menu_edit"
-                                    android:visibility="gone"
-                                    app:tint="@color/primary" />
-                            </LinearLayout>
-                        </LinearLayout>
-                    </GridLayout>
+                    <ImageView
+                        android:id="@+id/btnEditFrequency"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:padding="7dp"
+                        android:layout_marginStart="2dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@android:drawable/ic_menu_edit"
+                        android:contentDescription="Edit harvest frequency"
+                        android:visibility="gone"
+                        app:tint="@color/primary" />
                 </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
 
-            <!-- CHART SECTION TITLE -->
-            <RelativeLayout
+            <!-- ACCUMULATED HARVEST CHART SURFACE -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp">
+                android:layout_marginTop="@dimen/ds_space_lg"
+                android:orientation="vertical"
+                android:background="@drawable/ds_surface_chart_bg"
+                android:padding="@dimen/ds_surface_padding">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_centerVertical="true"
-                    android:text="Weight Trends"
-                    android:textColor="@color/black"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
+                    style="@style/Basilience.SectionTitle"
+                    android:text="Accumulated Harvest" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnExportPdf"
-                    style="@style/Widget.MaterialComponents.Button.TextButton.Icon"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:layout_alignParentEnd="true"
-                    android:layout_centerVertical="true"
-                    android:padding="0dp"
-                    android:visibility="gone"
-                    app:icon="@drawable/saveas_icon"
-                    app:iconGravity="textStart"
-                    app:iconPadding="0dp"
-                    app:iconSize="20dp"
-                    app:iconTint="@color/nav_inactive" />
-            </RelativeLayout>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    style="@style/Basilience.Caption"
+                    android:layout_marginTop="2dp"
+                    android:layout_marginBottom="@dimen/ds_space_md"
+                    android:text="Total harvested weight over this cycle" />
 
-            <!-- 🔹 BIGGER CHART -->
-            <com.github.mikephil.charting.charts.LineChart
-                android:id="@+id/harvestChart"
-                android:layout_width="match_parent"
-                android:layout_height="260dp"
-                android:layout_marginBottom="16dp"
-                android:layout_marginTop="5dp"
-               />
+                <com.github.mikephil.charting.charts.LineChart
+                    android:id="@+id/harvestChart"
+                    android:layout_width="match_parent"
+                    android:layout_height="@dimen/ds_chart_height" />
 
-            <!-- HISTORY SECTION TITLE -->
+                <TextView
+                    android:id="@+id/tvEmptyChart"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    style="@style/Basilience.BodyMuted"
+                    android:gravity="center"
+                    android:paddingVertical="48dp"
+                    android:text="No harvest has been recorded for this cycle yet."
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <!-- HARVEST HISTORY -->
+            <View
+                style="@style/Basilience.Divider"
+                android:layout_marginTop="@dimen/ds_space_xl"
+                android:layout_marginBottom="@dimen/ds_space_md" />
+
             <TextView
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:layout_marginBottom="8dp"
+                style="@style/Basilience.SectionTitle"
                 android:text="Harvest History"
-                android:textColor="@color/black"
-                android:textSize="16sp"
-                android:textStyle="bold" />
+                android:layout_marginBottom="@dimen/ds_space_xs" />
 
-            <!-- LIST -->
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/recyclerHarvest"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
+                android:clipToPadding="false"
+                android:overScrollMode="never"
                 android:nestedScrollingEnabled="false" />
+
+            <TextView
+                android:id="@+id/tvEmptyHistory"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                style="@style/Basilience.BodyMuted"
+                android:gravity="center"
+                android:padding="24dp"
+                android:text="No harvest has been recorded for this cycle yet."
+                android:visibility="gone" />
+
+            <!-- WHAT THIS MEANS -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/ds_space_xl"
+                android:orientation="vertical"
+                android:background="@drawable/ds_surface_interpretation_bg"
+                android:padding="@dimen/ds_surface_padding">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    style="@style/Basilience.SectionTitle"
+                    android:text="What This Means"
+                    android:layout_marginBottom="@dimen/ds_space_sm" />
+
+                <TextView
+                    android:id="@+id/tvHarvestInterpretation"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    style="@style/Basilience.BodyMuted"
+                    android:text="No harvest has been recorded for this cycle yet." />
+            </LinearLayout>
+
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 
@@ -271,9 +360,11 @@
         android:layout_gravity="bottom|end"
         android:layout_margin="24dp"
         android:src="@android:drawable/ic_input_add"
+        android:contentDescription="Add harvest"
+        android:visibility="gone"
         app:backgroundTint="@color/primary"
-        app:elevation="8dp"
-        app:pressedTranslationZ="12dp"
+        app:elevation="6dp"
+        app:pressedTranslationZ="10dp"
         app:tint="@android:color/white" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

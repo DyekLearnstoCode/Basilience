@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -15,6 +16,7 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.NavController;
@@ -48,7 +50,13 @@ import java.util.Map;
 
 public class HarvestLogFragment extends Fragment {
 
+    private static final String TAG = "HarvestLogFragment";
+
     private TextView tvCycleLabel, tvStatus, tvTotalWeight, tvHarvestCount, tvExpectedDate, tvFrequency, tvNextHarvestLabel;
+    private TextView tvCycleRange, tvHarvestInterpretation, tvEmptyHistory, tvEmptyChart;
+    // Date labels currently plotted, so the tap marker can name the point
+    // the farmer touched using the exact label the axis already shows.
+    private final List<String> currentChartLabels = new ArrayList<>();
     private android.widget.ImageView btnEditFrequency;
     private com.google.android.material.button.MaterialButton btnExportPdf;
     private com.google.android.material.floatingactionbutton.FloatingActionButton fabAddHarvest;
@@ -71,6 +79,15 @@ public class HarvestLogFragment extends Fragment {
     private String currentHarvestSource = "MANUAL";
     private Harvest editingHarvest = null;
     private Cycle currentCycle = null;
+    private NotificationHelper.LoadingHandle loadingHandle;
+    // Explicit re-entrancy guard for the Add/Edit Harvest save action - the
+    // button's own setEnabled(false) is not by itself a guaranteed block
+    // against a second click already dispatched before it takes effect.
+    private boolean isHarvestSubmitting = false;
+    // Gate repeat listener errors (e.g. on every reconnect retry) down to a
+    // single Snackbar instead of spamming one per failed attempt.
+    private boolean cycleSummaryErrorNotified = false;
+    private boolean harvestListErrorNotified = false;
 
     public HarvestLogFragment() {
         // Required empty public constructor
@@ -104,6 +121,10 @@ public class HarvestLogFragment extends Fragment {
         btnEditFrequency = view.findViewById(R.id.btnEditFrequency);
         btnExportPdf = view.findViewById(R.id.btnExportPdf);
         btnCompleteCycle = view.findViewById(R.id.btnCompleteCycle);
+        tvCycleRange = view.findViewById(R.id.tvCycleRange);
+        tvHarvestInterpretation = view.findViewById(R.id.tvHarvestInterpretation);
+        tvEmptyHistory = view.findViewById(R.id.tvEmptyHistory);
+        tvEmptyChart = view.findViewById(R.id.tvEmptyChart);
 
         tvCycleLabel.setText("Cycle #" + cycleNumber);
 
@@ -118,11 +139,11 @@ public class HarvestLogFragment extends Fragment {
         }
 
         fabAddHarvest.setOnClickListener(v -> {
-            if (currentCycle != null) {
-                checkHarvestReadinessAndShowDialog();
-            } else {
-                showHarvestDialog(null);
+            if (currentCycle == null) {
+                NotificationHelper.showError(getContext(), "Cycle data is still loading. Please try again in a moment.");
+                return;
             }
+            checkHarvestReadinessAndShowDialog();
         });
 
         if (btnCompleteCycle != null) {
@@ -262,6 +283,8 @@ public class HarvestLogFragment extends Fragment {
         });
 
         btnSave.setOnClickListener(v -> {
+            if (isHarvestSubmitting) return;
+
             String weightStr = etWeight.getText().toString().trim();
             if (weightStr.isEmpty()) {
                 etWeight.setError("Required");
@@ -280,6 +303,7 @@ public class HarvestLogFragment extends Fragment {
                 return;
             }
             String notes = etNotes.getText().toString().trim();
+            isHarvestSubmitting = true;
             btnSave.setEnabled(false);
 
             if (editingHarvest != null) {
@@ -294,12 +318,22 @@ public class HarvestLogFragment extends Fragment {
         NotificationHelper.showDestructiveConfirmation(requireContext(), "Delete Harvest",
                 "Are you sure you want to delete this harvest entry? This will update the cycle totals.",
                 "Delete", () -> {
+                    loadingHandle = NotificationHelper.showLoading(requireContext(), "Deleting harvest...", () -> {
+                        if (!isAdded()) return;
+                        NotificationHelper.showError(requireContext(), "Request timed out. Please refresh before trying again.");
+                    });
                     dbHelper.deleteHarvestTransaction(cycleId, harvest.getId(), harvest.getWeight())
                             .addOnSuccessListener(aVoid -> {
-                                NotificationHelper.showSuccess(getContext(), "Harvest deleted");
+                                if (!isAdded()) return;
+                                dismissLoading();
+                                NotificationHelper.showSuccess(requireContext(), "Harvest deleted");
                                 loadChartData(); // Refresh chart manually
                             })
-                            .addOnFailureListener(e -> NotificationHelper.showError(getContext(), "Error: " + e.getMessage()));
+                            .addOnFailureListener(e -> {
+                                if (!isAdded()) return;
+                                dismissLoading();
+                                NotificationHelper.showError(requireContext(), "Error: " + e.getMessage());
+                            });
                 });
     }
 
@@ -312,7 +346,16 @@ public class HarvestLogFragment extends Fragment {
         if (deviceId != null && cycleId != null) {
             dbHelper.setSelectedDeviceId(deviceId);
             cycleListener = dbHelper.listenToCycleDetails(cycleId, (documentSnapshot, e) -> {
-                if (e != null || documentSnapshot == null || !documentSnapshot.exists()) return;
+                if (e != null) {
+                    Log.e(TAG, "Cycle summary listener error for cycleId=" + cycleId, e);
+                    if (!cycleSummaryErrorNotified && isAdded() && getView() != null) {
+                        cycleSummaryErrorNotified = true;
+                        NotificationHelper.showSnackbar(getView(), "Unable to refresh cycle summary. Showing last known data.");
+                    }
+                    return;
+                }
+                cycleSummaryErrorNotified = false;
+                if (documentSnapshot == null || !documentSnapshot.exists()) return;
 
                 Cycle cycle = documentSnapshot.toObject(Cycle.class);
                 if (cycle != null) {
@@ -327,11 +370,26 @@ public class HarvestLogFragment extends Fragment {
         String rawStatus = cycle.getStatus();
         String status = (rawStatus == null || rawStatus.isEmpty()) ? "ACTIVE" : rawStatus.toUpperCase();
         tvStatus.setText(status);
-        tvTotalWeight.setText(String.format(Locale.getDefault(), "%.1fg", cycle.getTotalHarvestWeight()));
+        // Display formatting only - the stored grams and the transactional
+        // totals behind them are untouched.
+        tvTotalWeight.setText(HarvestFormatter.formatWeight(cycle.getTotalHarvestWeight()));
         tvHarvestCount.setText(String.valueOf(cycle.getTotalHarvestCount()));
+        if (tvHarvestInterpretation != null) {
+            // Same helper the PDF prints, so screen and export can't diverge.
+            tvHarvestInterpretation.setText(HarvestFormatter.buildProductionSummary(
+                    status, cycle.getTotalHarvestWeight(), cycle.getTotalHarvestCount()));
+        }
 
         boolean isActive = "ACTIVE".equalsIgnoreCase(status);
         boolean isCompleted = "COMPLETED".equalsIgnoreCase(status);
+
+        if (tvCycleRange != null) {
+            String start = cycle.getStartDate() != null ? DateUtils.formatDate(cycle.getStartDate()) : "--";
+            String end = isCompleted
+                    ? (cycle.getEndDate() != null ? DateUtils.formatDate(cycle.getEndDate()) : "Finished")
+                    : "Present";
+            tvCycleRange.setText(start + " – " + end);
+        }
 
         // Update Labels and Dates based on status
         if (isCompleted) {
@@ -346,7 +404,11 @@ public class HarvestLogFragment extends Fragment {
             tvNextHarvestLabel.setText("Next Harvest");
             if (tvFrequency != null) {
                 tvFrequency.setVisibility(View.VISIBLE);
-                tvFrequency.setText("Every " + cycle.getHarvestFrequencyDays() + " Days");
+                // Date and frequency now occupy separate visual roles, so no
+                // joining separator is needed. Display grammar only - the
+                // stored frequency value is untouched.
+                int frequencyDays = cycle.getHarvestFrequencyDays();
+                tvFrequency.setText("Every " + frequencyDays + (frequencyDays == 1 ? " Day" : " Days"));
             }
 
             // Display Next Harvest if available, otherwise fallback to expected
@@ -411,15 +473,60 @@ public class HarvestLogFragment extends Fragment {
     }
 
     private void performPdfGeneration() {
-        try {
-            CycleReportGenerator generator = new CycleReportGenerator(requireContext());
-            android.graphics.Bitmap chartBitmap = (harvestChart != null && !harvestList.isEmpty()) ? harvestChart.getChartBitmap() : null;
-            File pdfFile = generator.generateCycleSummaryPdf(currentCycle, chartBitmap, harvestList, userName);
-            showExportSuccessDialog(pdfFile);
-        } catch (Exception e) {
-            showExportFailedDialog(e.getMessage());
-            e.printStackTrace();
+        btnExportPdf.setEnabled(false);
+        final Context appContext = requireContext().getApplicationContext();
+        // getChartBitmap() captures the chart exactly as drawn, so a marker
+        // left over from a tap would otherwise be baked into the PDF. The
+        // export must always reflect the full cycle range, not whatever the
+        // farmer happens to be zoomed into on screen - so the viewport is
+        // reset before capture and restored afterward, without requerying or
+        // altering any data.
+        android.graphics.Matrix savedHarvestMatrix = null;
+        if (harvestChart != null) {
+            harvestChart.highlightValue(null);
+            savedHarvestMatrix = new android.graphics.Matrix(harvestChart.getViewPortHandler().getMatrixTouch());
+            harvestChart.fitScreen();
         }
+        final android.graphics.Bitmap chartBitmap =
+                harvestChart != null && !harvestList.isEmpty() ? harvestChart.getChartBitmap() : null;
+        if (harvestChart != null && savedHarvestMatrix != null) {
+            harvestChart.getViewPortHandler().refresh(savedHarvestMatrix, harvestChart, true);
+            harvestChart.invalidate();
+        }
+        final Cycle cycleSnapshot = currentCycle;
+        final List<Harvest> harvestSnapshot = new ArrayList<>(harvestList);
+        final String userSnapshot = userName;
+        final SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
+        final String deviceIdSnapshot = prefs.getString("selected_device_id", null);
+        final androidx.fragment.app.FragmentActivity hostActivity = requireActivity();
+        loadingHandle = NotificationHelper.showLoading(requireContext(), "Generating report...", 30_000L, () -> {
+            if (!isAdded()) return;
+            btnExportPdf.setEnabled(true);
+            NotificationHelper.showError(requireContext(), "Report generation is taking longer than expected.");
+        });
+
+        new Thread(() -> {
+            File generated = null;
+            Exception failure = null;
+            try {
+                generated = new CycleReportGenerator(appContext)
+                        .generateCycleSummaryPdf(deviceIdSnapshot, cycleSnapshot, chartBitmap, harvestSnapshot, userSnapshot);
+            } catch (Exception e) {
+                failure = e;
+            }
+            final File result = generated;
+            final Exception error = failure;
+            hostActivity.runOnUiThread(() -> {
+                if (!isAdded()) return;
+                dismissLoading();
+                btnExportPdf.setEnabled(true);
+                if (error == null) {
+                    showExportSuccessDialog(result);
+                } else {
+                    showExportFailedDialog(error.getMessage());
+                }
+            });
+        }, "basilience-report-export").start();
     }
 
     private void showExportSuccessDialog(File file) {
@@ -493,12 +600,30 @@ public class HarvestLogFragment extends Fragment {
                     return;
                 }
 
+                btnUpdate.setEnabled(false);
+                if (btnCancel != null) btnCancel.setEnabled(false);
+                loadingHandle = NotificationHelper.showLoading(requireContext(), "Saving harvest settings...", () -> {
+                    if (!isAdded()) return;
+                    btnUpdate.setEnabled(true);
+                    if (btnCancel != null) btnCancel.setEnabled(true);
+                    NotificationHelper.showError(requireContext(), "Request timed out. Please refresh before trying again.");
+                });
                 dbHelper.updateHarvestFrequency(cycleId, newFreq)
                         .addOnSuccessListener(aVoid -> {
-                            NotificationHelper.showSuccess(getContext(), "Frequency updated");
+                            if (!isAdded()) return;
+                            dismissLoading();
+                            btnUpdate.setEnabled(true);
+                            if (btnCancel != null) btnCancel.setEnabled(true);
+                            NotificationHelper.showSuccess(requireContext(), "Frequency updated");
                             if (dialog != null) dialog.dismiss();
                         })
-                        .addOnFailureListener(e -> NotificationHelper.showError(getContext(), "Update failed: " + e.getMessage()));
+                        .addOnFailureListener(e -> {
+                            if (!isAdded()) return;
+                            dismissLoading();
+                            btnUpdate.setEnabled(true);
+                            if (btnCancel != null) btnCancel.setEnabled(true);
+                            NotificationHelper.showError(requireContext(), "Update failed: " + e.getMessage());
+                        });
             });
         }
 
@@ -513,9 +638,21 @@ public class HarvestLogFragment extends Fragment {
         NotificationHelper.showDestructiveConfirmation(requireContext(), "Complete Cycle?",
                 "This will:\n- Mark the cycle as COMPLETED\n- Record the completion date\n- Stop further harvest entries",
                 "Complete", () -> {
+                    btnCompleteCycle.setEnabled(false);
+                    loadingHandle = NotificationHelper.showLoading(requireContext(), "Completing cycle...", () -> {
+                        if (!isAdded()) return;
+                        btnCompleteCycle.setEnabled(true);
+                        NotificationHelper.showError(requireContext(), "Request timed out. Please refresh before trying again.");
+                    });
                     dbHelper.completeCycle(cycleId).addOnSuccessListener(aVoid -> {
+                        if (!isAdded()) return;
+                        dismissLoading();
+                        if (btnCompleteCycle != null) btnCompleteCycle.setEnabled(true);
                         NotificationHelper.showSuccess(requireContext(), "Cycle completed");
                     }).addOnFailureListener(e -> {
+                        if (!isAdded()) return;
+                        dismissLoading();
+                        if (btnCompleteCycle != null) btnCompleteCycle.setEnabled(true);
                         NotificationHelper.showError(requireContext(), "Failed to complete cycle: " + e.getMessage());
                     });
                 });
@@ -531,15 +668,27 @@ public class HarvestLogFragment extends Fragment {
                 notes
         );
 
+        loadingHandle = NotificationHelper.showLoading(requireContext(), "Saving harvest...", () -> {
+            isHarvestSubmitting = false;
+            if (!isAdded()) return;
+            saveButton.setEnabled(true);
+            NotificationHelper.showError(requireContext(), "Request timed out. Please refresh before trying again.");
+        });
         dbHelper.addHarvestTransaction(cycleId, newHarvest)
                 .addOnSuccessListener(aVoid -> {
-                    NotificationHelper.showSuccess(getContext(), "Harvest saved");
+                    isHarvestSubmitting = false;
+                    if (!isAdded()) return;
+                    dismissLoading();
+                    NotificationHelper.showSuccess(requireContext(), "Harvest saved");
                     dialog.dismiss();
                     loadChartData(); // Refresh chart manually
                 })
                 .addOnFailureListener(e -> {
+                    isHarvestSubmitting = false;
+                    if (!isAdded()) return;
+                    dismissLoading();
                     saveButton.setEnabled(true);
-                    NotificationHelper.showError(getContext(), "Error: " + e.getMessage());
+                    NotificationHelper.showError(requireContext(), "Error: " + e.getMessage());
                 });
     }
 
@@ -550,15 +699,27 @@ public class HarvestLogFragment extends Fragment {
         updates.put("notes", notes);
         updates.put("source", currentHarvestSource);
 
+        loadingHandle = NotificationHelper.showLoading(requireContext(), "Saving harvest...", () -> {
+            isHarvestSubmitting = false;
+            if (!isAdded()) return;
+            saveButton.setEnabled(true);
+            NotificationHelper.showError(requireContext(), "Request timed out. Please refresh before trying again.");
+        });
         dbHelper.updateHarvestTransaction(cycleId, editingHarvest.getId(), oldWeight, newWeight, updates)
                 .addOnSuccessListener(aVoid -> {
-                    NotificationHelper.showSuccess(getContext(), "Harvest updated");
+                    isHarvestSubmitting = false;
+                    if (!isAdded()) return;
+                    dismissLoading();
+                    NotificationHelper.showSuccess(requireContext(), "Harvest updated");
                     dialog.dismiss();
                     loadChartData(); // Refresh chart manually
                 })
                 .addOnFailureListener(e -> {
+                    isHarvestSubmitting = false;
+                    if (!isAdded()) return;
+                    dismissLoading();
                     saveButton.setEnabled(true);
-                    NotificationHelper.showError(getContext(), "Error: " + e.getMessage());
+                    NotificationHelper.showError(requireContext(), "Error: " + e.getMessage());
                 });
     }
 
@@ -572,7 +733,16 @@ public class HarvestLogFragment extends Fragment {
             dbHelper.setSelectedDeviceId(deviceId);
             // Real-time listener for the RecyclerView list (Newest First)
             harvestListener = dbHelper.listenToHarvestEntries(cycleId, (value, error) -> {
-                if (error != null || value == null) return;
+                if (error != null) {
+                    Log.e(TAG, "Harvest list listener error for cycleId=" + cycleId, error);
+                    if (!harvestListErrorNotified && isAdded() && getView() != null) {
+                        harvestListErrorNotified = true;
+                        NotificationHelper.showSnackbar(getView(), "Unable to refresh harvest list. Showing last known data.");
+                    }
+                    return;
+                }
+                if (value == null) return;
+                harvestListErrorNotified = false;
 
                 if (isFirstLoad) {
                     harvestList.clear();
@@ -583,6 +753,7 @@ public class HarvestLogFragment extends Fragment {
                     }
                     adapter.notifyDataSetChanged();
                     isFirstLoad = false;
+                    updateHistoryEmptyState();
                 } else {
                     for (com.google.firebase.firestore.DocumentChange dc : value.getDocumentChanges()) {
                         Harvest entry = dc.getDocument().toObject(Harvest.class);
@@ -613,6 +784,7 @@ public class HarvestLogFragment extends Fragment {
                                 break;
                         }
                     }
+                    updateHistoryEmptyState();
                 }
             });
         }
@@ -623,79 +795,167 @@ public class HarvestLogFragment extends Fragment {
         
         dbHelper.getHarvestHistoryForChart(cycleId).addOnSuccessListener(value -> {
             if (value == null || value.isEmpty()) {
+                currentChartLabels.clear();
                 harvestChart.clear();
+                setChartEmptyState(true);
                 return;
             }
 
+            // Objective 3 requires the chart to visualize ACCUMULATED harvest
+            // weight per cycle, not individual harvest values. value is
+            // ordered ascending by harvestDate (oldest -> newest), so a
+            // running sum here is guaranteed chronological; the stored
+            // per-harvest records themselves are never modified.
             List<Entry> chartEntries = new ArrayList<>();
             List<String> dateLabels = new ArrayList<>();
             int i = 0;
+            double cumulativeWeight = 0;
             for (com.google.firebase.firestore.QueryDocumentSnapshot doc : value) {
                 Harvest entry = doc.toObject(Harvest.class);
-                chartEntries.add(new Entry(i++, (float) entry.getWeight()));
+                cumulativeWeight += entry.getWeight();
+                chartEntries.add(new Entry(i++, (float) cumulativeWeight));
                 dateLabels.add(DateUtils.formatShortDate(entry.getHarvestDate()));
             }
+
+            // The final cumulative point must equal the transactionally
+            // maintained cycle total for a consistent cycle. Never rewrite
+            // stored data here - only log if they disagree, since that would
+            // indicate a data issue elsewhere, not something this screen
+            // should silently "fix".
+            if (currentCycle != null) {
+                double storedTotal = currentCycle.getTotalHarvestWeight();
+                if (Math.abs(storedTotal - cumulativeWeight) > 0.01) {
+                    Log.w(TAG, "Cumulative chart total (" + cumulativeWeight
+                            + "g) does not match cycle.totalHarvestWeight (" + storedTotal
+                            + "g) for cycleId=" + cycleId);
+                }
+            }
+
             updateChart(chartEntries, dateLabels, !isFirstChartLoad);
             isFirstChartLoad = false;
+        }).addOnFailureListener(e -> {
+            Log.e(TAG, "Failed to load harvest chart data for cycleId=" + cycleId, e);
+            if (isAdded() && getView() != null) {
+                NotificationHelper.showSnackbar(getView(), "Unable to load harvest chart data.");
+            }
         });
+    }
+
+    // Toggles the chart's own empty state. No harvest yet is a legitimate
+    // state, not an error - an empty plot area would otherwise read as a
+    // flat zero-production trend.
+    private void setChartEmptyState(boolean empty) {
+        if (harvestChart != null) harvestChart.setVisibility(empty ? View.GONE : View.VISIBLE);
+        if (tvEmptyChart != null) tvEmptyChart.setVisibility(empty ? View.VISIBLE : View.GONE);
+    }
+
+    private void updateHistoryEmptyState() {
+        boolean empty = harvestList.isEmpty();
+        if (tvEmptyHistory != null) tvEmptyHistory.setVisibility(empty ? View.VISIBLE : View.GONE);
+        if (recyclerHarvest != null) recyclerHarvest.setVisibility(empty ? View.GONE : View.VISIBLE);
     }
 
     private void updateChart(List<Entry> chartEntries, List<String> dateLabels, boolean shouldAnimate) {
         if (chartEntries.isEmpty() || getContext() == null) {
+            currentChartLabels.clear();
             harvestChart.clear();
+            setChartEmptyState(true);
             return;
         }
+        setChartEmptyState(false);
 
         LineData lineData = harvestChart.getData();
         if (lineData != null && lineData.getDataSetCount() > 0) {
             LineDataSet dataSet = (LineDataSet) lineData.getDataSetByIndex(0);
             dataSet.setValues(chartEntries);
-            dataSet.setValueFormatter(new ValueFormatter() {
-                @Override
-                public String getFormattedValue(float value) {
-                    return String.format(Locale.getDefault(), "%.0f", value);
-                }
-            });
             lineData.notifyDataChanged();
             harvestChart.notifyDataSetChanged();
         } else {
-            LineDataSet dataSet = new LineDataSet(chartEntries, "Harvest Weight");
+            LineDataSet dataSet = new LineDataSet(chartEntries, "Accumulated Harvest Weight (g)");
             int primaryColor = getResources().getColor(R.color.primary);
-            
+
             dataSet.setColor(primaryColor);
-            dataSet.setValueTextColor(getResources().getColor(R.color.black));
             dataSet.setCircleColor(primaryColor);
             dataSet.setLineWidth(2.5f);
-            dataSet.setCircleRadius(5f);
+            // Small clean points rather than heavy markers.
+            dataSet.setCircleRadius(3.5f);
+            dataSet.setCircleHoleRadius(1.8f);
             dataSet.setDrawCircleHole(true);
             dataSet.setCircleHoleColor(getResources().getColor(R.color.white));
-            dataSet.setValueTextSize(10f);
             dataSet.setDrawFilled(true);
+            // LINEAR is kept deliberately. A curved mode would overshoot
+            // between points, and on a cumulative total an overshoot dips
+            // below the previous value - visually implying harvested weight
+            // went down, which can never happen. Honesty beats smoothness.
             dataSet.setMode(LineDataSet.Mode.LINEAR);
-            dataSet.setFillColor(primaryColor);
-            dataSet.setFillAlpha(40);
-            dataSet.setValueFormatter(new ValueFormatter() {
-                @Override
-                public String getFormattedValue(float value) {
-                    return String.format(Locale.getDefault(), "%.0f", value);
-                }
-            });
+            android.graphics.drawable.Drawable fill =
+                    ContextCompat.getDrawable(requireContext(), R.drawable.ds_chart_fill_gradient);
+            if (fill != null) {
+                dataSet.setFillDrawable(fill);
+            } else {
+                dataSet.setFillColor(primaryColor);
+                dataSet.setFillAlpha(40);
+            }
+            // Values appear on tap via the marker rather than being printed
+            // permanently over every point.
+            dataSet.setDrawValues(false);
+            dataSet.setHighlightEnabled(true);
+            dataSet.setHighLightColor(primaryColor);
+            dataSet.setHighlightLineWidth(1f);
+            dataSet.setDrawHorizontalHighlightIndicator(false);
 
             lineData = new LineData(dataSet);
             harvestChart.setData(lineData);
         }
-        
-        harvestChart.setExtraOffsets(5f, 5f, 5f, 5f);
+
+        // Keep the marker's label source in step with what's plotted, so a
+        // tapped point always names the harvest date the axis is showing.
+        currentChartLabels.clear();
+        currentChartLabels.addAll(dateLabels);
+        if (harvestChart.getMarker() == null) {
+            HarvestChartMarkerView marker = new HarvestChartMarkerView(requireContext(), currentChartLabels);
+            marker.setChartView(harvestChart);
+            harvestChart.setMarker(marker);
+        }
+        harvestChart.setHighlightPerTapEnabled(true);
+        harvestChart.setHighlightPerDragEnabled(false);
+        // Horizontal zoom/pan only - vertical scale isn't meaningful for a
+        // fixed-value-axis cumulative chart and would just be confusing.
+        harvestChart.setScaleYEnabled(false);
+        harvestChart.highlightValue(null);
+
+        // Rotated date labels need real room beneath the plot area. The old
+        // uniform 5dp inset left the bottom edge too tight, so the rotated
+        // Jul/Aug labels - and the first/last ones especially - were clipped
+        // by the chart viewport. Give the bottom a dedicated allowance and
+        // raise the minimum offset so the sides stay clear too.
+        harvestChart.setExtraOffsets(8f, 8f, 8f, 18f);
+        harvestChart.setMinOffset(16f);
+
+        // Approved chart chrome: light grid, muted axis text, no outer
+        // border. Visual only - plotted values and labels are untouched.
+        int mutedAxisColor = android.graphics.Color.parseColor("#8A2E4F46");
+        int hairlineColor = android.graphics.Color.parseColor("#F0F0F0");
+        harvestChart.setDrawGridBackground(false);
+        harvestChart.setDrawBorders(false);
 
         XAxis xAxis = harvestChart.getXAxis();
         xAxis.setPosition(XAxis.XAxisPosition.BOTTOM);
         xAxis.setDrawGridLines(false);
         xAxis.setGranularity(1f);
-        
-        // Dynamic Label Rotation
+        xAxis.setTextColor(mutedAxisColor);
+        xAxis.setTextSize(11f);
+        xAxis.setAxisLineColor(hairlineColor);
+        xAxis.setAvoidFirstLastClipping(true);
+
+        // Cap the label count on longer cycles so dates stay legible instead
+        // of overlapping; short cycles still label every harvest.
         if (dateLabels.size() > 5) {
-            xAxis.setLabelRotationAngle(-35f);
-            xAxis.setLabelCount(dateLabels.size());
+            // A shallower angle needs less vertical space than the previous
+            // -35, which helps keep the labels inside the viewport without
+            // eating further into the plot area.
+            xAxis.setLabelRotationAngle(-30f);
+            xAxis.setLabelCount(Math.min(dateLabels.size(), 6), false);
         } else {
             xAxis.setLabelRotationAngle(0f);
             xAxis.setLabelCount(dateLabels.size());
@@ -720,19 +980,36 @@ public class HarvestLogFragment extends Fragment {
             }
         });
 
-        harvestChart.getAxisLeft().setDrawGridLines(true);
-        harvestChart.getAxisLeft().setAxisMinimum(0f);
-        harvestChart.getAxisLeft().setValueFormatter(new ValueFormatter() {
+        com.github.mikephil.charting.components.YAxis axisLeft = harvestChart.getAxisLeft();
+        axisLeft.setDrawGridLines(true);
+        axisLeft.setAxisMinimum(0f);
+        axisLeft.setTextColor(mutedAxisColor);
+        axisLeft.setTextSize(11f);
+        axisLeft.setGridColor(hairlineColor);
+        axisLeft.setGridLineWidth(0.6f);
+        axisLeft.setAxisLineColor(hairlineColor);
+        // The horizontal grid alone carries the value reference; the axis
+        // spine would just add a second vertical rule inside the surface.
+        axisLeft.setDrawAxisLine(false);
+        axisLeft.setLabelCount(5, false);
+        // Same g/kg treatment as everywhere else, so the axis never reads in
+        // a different unit from the hero or the marker.
+        axisLeft.setValueFormatter(new ValueFormatter() {
             @Override
             public String getFormattedValue(float value) {
-                return String.format(Locale.getDefault(), "%.0f", value);
+                return HarvestFormatter.formatWeight(value);
             }
         });
 
         harvestChart.getAxisRight().setEnabled(false);
         harvestChart.getDescription().setEnabled(false);
         harvestChart.getLegend().setEnabled(false);
-        
+
+        // A new cycle's chart always starts at its own full range - any zoom
+        // left over from a previously viewed cycle's viewport must not carry
+        // over onto this one.
+        harvestChart.fitScreen();
+
         if (shouldAnimate) {
             harvestChart.animateX(800);
         }
@@ -741,8 +1018,14 @@ public class HarvestLogFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
+        dismissLoading();
         super.onDestroyView();
         if (harvestListener != null) harvestListener.remove();
         if (cycleListener != null) cycleListener.remove();
+    }
+
+    private void dismissLoading() {
+        if (loadingHandle != null) loadingHandle.dismiss();
+        loadingHandle = null;
     }
 }

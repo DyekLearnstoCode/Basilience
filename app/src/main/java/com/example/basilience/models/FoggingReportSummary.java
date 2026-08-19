@@ -19,18 +19,40 @@ public class FoggingReportSummary {
 
     private int observedDays = 1;
 
-    public void addCompletedSession(FoggingSession session) {
+    /**
+     * @param effectiveDurationMs the duration to credit toward aggregates
+     *                            (totals/buckets), separate from the
+     *                            session's own raw start/end timestamps so
+     *                            callers can clip to the report window or
+     *                            zero out an anomalous session without
+     *                            altering the underlying event data.
+     */
+    public void addCompletedSession(FoggingSession session, long effectiveDurationMs) {
         completedSessions.add(session);
-        long duration = session.getDurationMs();
-        totalDurationMs += duration;
+        addDurationToTotals(session, effectiveDurationMs);
+    }
+
+    /**
+     * Credits the in-progress portion of a currently-running session to the
+     * aggregates without adding it to completedSessions, since it has no end
+     * event yet. See FoggingReportProcessor for how effectiveDurationMs is
+     * clipped to the report window and the current time.
+     */
+    public void addRunningSessionDuration(FoggingSession session, long effectiveDurationMs) {
+        addDurationToTotals(session, effectiveDurationMs);
+    }
+
+    private void addDurationToTotals(FoggingSession session, long effectiveDurationMs) {
+        if (effectiveDurationMs <= 0) return;
+        totalDurationMs += effectiveDurationMs;
         if (session.isManual()) {
-            totalManualDurationMs += duration;
+            totalManualDurationMs += effectiveDurationMs;
         } else {
-            totalAutoDurationMs += duration;
+            totalAutoDurationMs += effectiveDurationMs;
             String strategy = session.getStrategy();
             if (strategy != null) {
                 long current = autoStrategyDurationMs.containsKey(strategy) ? autoStrategyDurationMs.get(strategy) : 0L;
-                autoStrategyDurationMs.put(strategy, current + duration);
+                autoStrategyDurationMs.put(strategy, current + effectiveDurationMs);
             }
         }
     }

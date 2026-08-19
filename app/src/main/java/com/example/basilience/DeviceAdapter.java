@@ -1,9 +1,9 @@
 package com.example.basilience;
 
 import android.content.res.ColorStateList;
-import android.graphics.Color;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -116,20 +116,24 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
             // Realtime listener for live status updates
             if (device.getDeviceId() != null) {
                 String rtdbUrl = "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app";
-                statusRef = FirebaseDatabase.getInstance(rtdbUrl).getReference("devices/" + device.getDeviceId());
-                
+                statusRef = FirebaseDatabase.getInstance(rtdbUrl)
+                        .getReference("devices/" + device.getDeviceId() + "/status");
+
                 statusListener = new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        backendOnline = snapshot.child("status/online").getValue(Boolean.class);
-                        lastServerSeen = snapshot.child("status/lastServerSeen").getValue(Long.class);
+                        backendOnline = snapshot.child("online").getValue(Boolean.class);
+                        lastServerSeen = snapshot.child("lastServerSeen").getValue(Long.class);
                         provisioning = Boolean.TRUE.equals(
-                                snapshot.child("status/provisioning").getValue(Boolean.class));
+                                snapshot.child("provisioning").getValue(Boolean.class));
                         applyResolvedStatus();
                     }
 
                     @Override
-                    public void onCancelled(@NonNull DatabaseError error) { }
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Log.w("DeviceAdapter", "status listener cancelled for "
+                                + device.getDeviceId() + ": " + error.getMessage());
+                    }
                 };
 
                 statusRef.addValueEventListener(statusListener);
@@ -170,9 +174,9 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
 
         private void applyStatus(DeviceConnectivityState state) {
             tvDeviceStatus.setText(state.getLabel());
-            tvDeviceStatus.setTextColor(Color.parseColor("#757575"));
+            int color = ContextCompat.getColor(itemView.getContext(), state.getColorRes());
+            tvDeviceStatus.setTextColor(color);
             if (vStatusDot != null) {
-                int color = ContextCompat.getColor(itemView.getContext(), state.getColorRes());
                 vStatusDot.setBackgroundTintList(ColorStateList.valueOf(color));
             }
         }

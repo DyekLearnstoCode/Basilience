@@ -1,12 +1,13 @@
 const {setGlobalOptions} = require("firebase-functions");
 const {onValueUpdated, onValueWritten} = require("firebase-functions/v2/database");
-const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const {onDocumentCreated, onDocumentWritten} = require("firebase-functions/v2/firestore");
 const {onTaskDispatched} = require("firebase-functions/v2/tasks");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
-const {onCall, HttpsError} = require("firebase-functions/v2/https");
+const {onCall, HttpsError, onRequest} = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const {getFunctions} = require("firebase-admin/functions");
+const crypto = require("crypto");
 
 admin.initializeApp({
     databaseURL: "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app"
@@ -25,6 +26,97 @@ const CONNECTIVITY_FCM_TTL_MS = 3 * 60 * 1000;
 // that workflow while still allowing a forgotten/dead setup session to expire.
 const PROVISIONING_GRACE_MS = 10 * 60 * 1000;
 const MANILA_TIME_ZONE = "Asia/Manila";
+// Cooling always completes within minutes; an open episode marker older than
+// this was abandoned (e.g. a missed completion event) and must not be used
+// as evidence for a later, unrelated cooling cycle.
+const COOLING_EPISODE_MAX_AGE_MS = 60 * 60 * 1000;
+
+function safeEventId(eventId) {
+    return crypto.createHash("sha256").update(String(eventId)).digest("hex");
+}
+
+const AUTOMATION_LIFECYCLE_OPERATIONS = new Set([
+    "PH_UP", "PH_DOWN", "EC_CORRECTION", "REFILL"
+]);
+
+function automationEpisodeId(deviceId, requestId, operation) {
+    return safeEventId(`automation:${deviceId}:${requestId}:${operation}`);
+}
+
+// requestId alone is not unique across ESP32 reboots (the firmware's
+// auto-request counter restarts at 32768 on every boot), so the success
+// notification identity also folds in the completed operation's own
+// completedTimestamp - an immutable field already present on the COMPLETED
+// RTDB write. The same write's retries always carry the same
+// completedTimestamp (idempotent), while a later reboot that reuses
+// requestId=32768 will have a different completedTimestamp and therefore a
+// different notification ID.
+function automationSuccessNotificationId(deviceId, requestId, operation, completedAt) {
+    return `${safeEventId(`automation:${deviceId}:${requestId}:${operation}:${completedAt}`)}_success`;
+}
+
+// Reads a numeric target from a previously-fetched /devices/{deviceId}/settings
+// snapshot, falling back to the firmware's own compiled default (and logging
+// when that happens) if the setting is missing, still unset, or not a finite
+// number. Keeps success validation in sync with device-configured targets
+// instead of hardcoding them.
+function resolveTargetSetting(settingsSnapshot, key, fallback, context) {
+    const settings = settingsSnapshot ? settingsSnapshot.val() : null;
+    const candidate = settings ? settings[key] : null;
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+        return candidate;
+    }
+    logger.info("Using firmware-default fallback for missing/invalid target setting", {
+        ...context,
+        key,
+        fallback
+    });
+    return fallback;
+}
+
+function automationSuccessContent(operation, variant) {
+    if (operation === "PH_UP") {
+        return {
+            type: "phCorrectionCompleted",
+            title: "pH is back to normal",
+            message: "Basilience successfully corrected the pH level."
+        };
+    }
+
+    if (operation === "PH_DOWN") {
+        return {
+            type: "phCorrectionCompleted",
+            title: "pH is back to normal",
+            message: "Basilience successfully corrected the pH level."
+        };
+    }
+
+    if (operation === "EC_CORRECTION" && variant === "LOW") {
+        return {
+            type: "ecCorrectionCompleted",
+            title: "Nutrient level is back to normal",
+            message: "Basilience successfully restored the nutrient level."
+        };
+    }
+
+    if (operation === "EC_CORRECTION" && variant === "HIGH") {
+        return {
+            type: "ecCorrectionCompleted",
+            title: "Nutrient level is back to normal",
+            message: "Basilience successfully restored the nutrient level."
+        };
+    }
+
+    if (operation === "REFILL") {
+        return {
+            type: "refillCompleted",
+            title: "Reservoir refilled",
+            message: "The reservoir has been refilled to the proper level."
+        };
+    }
+
+    return null;
+}
 
 function isInvalidFcmTokenError(error) {
     const code = error && error.code;
@@ -184,6 +276,83 @@ async function getDeviceUserTokens(db, deviceId) {
     return Array.from(tokensSet);
 }
 
+async function createAutomationSuccessNotification({
+    db,
+    deviceId,
+    requestId,
+    operation,
+    variant,
+    completedAt
+}) {
+    const content = automationSuccessContent(operation, variant);
+    if (!content) return false;
+
+    const notificationId = automationSuccessNotificationId(deviceId, requestId, operation, completedAt);
+    const document = db.collection("devices").doc(deviceId)
+        .collection("notifications").doc(notificationId);
+
+    try {
+        await document.create({
+            title: content.title,
+            message: content.message,
+            type: content.type,
+            timestamp: Date.now(),
+            isRead: false,
+            eventId: notificationId,
+            requestId,
+            operation,
+            operationVariant: variant,
+            source: "AUTOMATIC",
+            lifecycle: "SUCCESS"
+        });
+    } catch (error) {
+        if (error && (error.code === 6 || error.code === "already-exists")) {
+            logger.info("Automation lifecycle event already handled", {
+                deviceId, requestId, operation, lifecycle: "SUCCESS", notificationId
+            });
+            return false;
+        }
+        throw error;
+    }
+
+    const userTokens = await getDeviceUserTokens(db, deviceId);
+    if (userTokens.length === 0) return true;
+
+    try {
+        const response = await sendMulticastWithCleanup(db, {
+            notification: {
+                title: content.title,
+                body: content.message
+            },
+            data: {
+                title: content.title,
+                body: content.message,
+                type: content.type,
+                deviceId: deviceId || "",
+                notificationId,
+                requestId: String(requestId),
+                operation,
+                lifecycle: "SUCCESS"
+            },
+            tokens: userTokens
+        }, "automation-lifecycle");
+        logger.info("Automation lifecycle FCM send result", {
+            deviceId,
+            requestId,
+            operation,
+            lifecycle: "SUCCESS",
+            notificationId,
+            successCount: response.successCount,
+            failureCount: response.failureCount
+        });
+    } catch (error) {
+        await document.delete();
+        throw error;
+    }
+
+    return true;
+}
+
 function dateKeyInManila(epochMs) {
     const parts = new Intl.DateTimeFormat("en-CA", {
         timeZone: MANILA_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit"
@@ -327,23 +496,292 @@ exports.evaluateHarvestReminders = onSchedule({
     }
 });
 
+exports.onAutomaticOperationLifecycleUpdated = onValueWritten({
+    ref: "/devices/{deviceId}/operations/current",
+    instance: "basilience-database-default-rtdb",
+    retry: true
+}, async (event) => {
+    const before = event.data.before.val() || {};
+    const after = event.data.after.val() || {};
+    const deviceId = event.params.deviceId;
+    const operation = String(after.operation || "").toUpperCase();
+    const source = String(after.source || "").toUpperCase();
+    const stateBefore = String(before.state || "").toUpperCase();
+    const stateAfter = String(after.state || "").toUpperCase();
+    const requestId = after.requestId;
+
+    if (source !== "AUTOMATIC"
+            || !AUTOMATION_LIFECYCLE_OPERATIONS.has(operation)
+            || requestId === null || requestId === undefined) {
+        return;
+    }
+
+    const sameEpisodeBefore = String(before.source || "").toUpperCase() === "AUTOMATIC"
+        && String(before.operation || "").toUpperCase() === operation
+        && String(before.requestId) === String(requestId);
+    const started = stateAfter === "RUNNING"
+        && (!sameEpisodeBefore || stateBefore !== "RUNNING");
+    const completed = stateAfter === "COMPLETED"
+        && sameEpisodeBefore
+        && stateBefore !== "COMPLETED";
+
+    if (!started && !completed) return;
+
+    const db = admin.firestore();
+    const episodeId = automationEpisodeId(deviceId, requestId, operation);
+    const episodeRef = db.collection("devices").doc(deviceId)
+        .collection("automationNotificationEpisodes").doc(episodeId);
+    let variant = operation === "PH_UP" ? "LOW"
+        : operation === "PH_DOWN" ? "HIGH"
+        : operation === "REFILL" ? "REFILL"
+        : null;
+
+    if (started) {
+        if (operation === "EC_CORRECTION") {
+            const alertsSnapshot = await admin.database()
+                .ref(`/devices/${deviceId}/alerts`).once("value");
+            const alerts = alertsSnapshot.val() || {};
+            if (alerts.ecLow === true && alerts.ecHigh !== true) {
+                variant = "LOW";
+            } else if (alerts.ecHigh === true && alerts.ecLow !== true) {
+                variant = "HIGH";
+            } else {
+                logger.warn("EC correction direction could not be classified safely", {
+                    deviceId,
+                    requestId,
+                    ecLow: alerts.ecLow === true,
+                    ecHigh: alerts.ecHigh === true
+                });
+                return;
+            }
+        }
+
+        // Internal correlation only: RUNNING creates no Notification History and
+        // sends no FCM. The marker retains EC direction after its alert clears.
+        await episodeRef.set({
+            requestId,
+            operation,
+            operationVariant: variant,
+            source: "AUTOMATIC"
+        });
+        return;
+    }
+
+    if (!completed) return;
+
+    const [episodeDocument, sensorsSnapshot, settingsSnapshot, targetSettingsSnapshot] = await Promise.all([
+        episodeRef.get(),
+        admin.database().ref(`/devices/${deviceId}/sensors`).once("value"),
+        operation === "REFILL"
+            ? admin.database().ref(`/devices/${deviceId}/settings/refillStopLevel`).once("value")
+            : Promise.resolve(null),
+        (operation === "PH_UP" || operation === "PH_DOWN" || operation === "EC_CORRECTION")
+            ? admin.database().ref(`/devices/${deviceId}/settings`).once("value")
+            : Promise.resolve(null)
+    ]);
+
+    if (episodeDocument.exists) {
+        const episode = episodeDocument.data() || {};
+        if (String(episode.requestId) !== String(requestId)
+                || episode.operation !== operation
+                || episode.source !== "AUTOMATIC") {
+            logger.warn("Automation success episode marker mismatch", {
+                deviceId, requestId, operation
+            });
+            return;
+        }
+        variant = episode.operationVariant;
+    } else if (operation === "EC_CORRECTION") {
+        logger.warn("EC success has no matching direction marker", {
+            deviceId, requestId, operation
+        });
+        return;
+    }
+
+    const sensors = sensorsSnapshot.val() || {};
+    const sensorValue = operation === "PH_UP" || operation === "PH_DOWN"
+        ? sensors.ph
+        : operation === "EC_CORRECTION" ? sensors.ec : sensors.waterLevel;
+    const sensorValid = typeof sensorValue === "number"
+        && Number.isFinite(sensorValue)
+        && ((operation === "PH_UP" || operation === "PH_DOWN")
+            ? sensorValue >= 0 && sensorValue <= 14
+            : operation === "EC_CORRECTION"
+                ? sensorValue >= 0
+                : sensorValue >= 0 && sensorValue <= 100);
+    const refillStopLevel = settingsSnapshot ? settingsSnapshot.val() : null;
+    const targetContext = {deviceId, requestId, operation, variant};
+    const phTargetMin = operation === "PH_UP"
+        ? resolveTargetSetting(targetSettingsSnapshot, "phTargetMin", 5.8, targetContext)
+        : null;
+    const phTargetMax = operation === "PH_DOWN"
+        ? resolveTargetSetting(targetSettingsSnapshot, "phTargetMax", 6.3, targetContext)
+        : null;
+    const ecTargetMin = operation === "EC_CORRECTION" && variant === "LOW"
+        ? resolveTargetSetting(targetSettingsSnapshot, "ecTargetMin", 1.4, targetContext)
+        : null;
+    const ecTargetMax = operation === "EC_CORRECTION" && variant === "HIGH"
+        ? resolveTargetSetting(targetSettingsSnapshot, "ecTargetMax", 1.8, targetContext)
+        : null;
+    const targetSatisfied = sensorValid && (
+        (operation === "PH_UP" && sensorValue >= phTargetMin)
+        || (operation === "PH_DOWN" && sensorValue <= phTargetMax)
+        || (operation === "EC_CORRECTION" && variant === "LOW" && sensorValue >= ecTargetMin)
+        || (operation === "EC_CORRECTION" && variant === "HIGH" && sensorValue <= ecTargetMax)
+        || (operation === "REFILL"
+            && typeof refillStopLevel === "number"
+            && Number.isFinite(refillStopLevel)
+            && refillStopLevel >= 0
+            && refillStopLevel <= 100
+            && sensorValue >= refillStopLevel)
+    );
+
+    if (!targetSatisfied) {
+        logger.warn("Completed automation did not satisfy notification success target", {
+            deviceId,
+            requestId,
+            operation,
+            variant,
+            sensorValue: sensorValid ? sensorValue : null,
+            refillStopLevel: operation === "REFILL" ? refillStopLevel : null
+        });
+        return;
+    }
+
+    await createAutomationSuccessNotification({
+        db,
+        deviceId,
+        requestId,
+        operation,
+        variant,
+        completedAt: after.completedTimestamp
+    });
+});
+
+// Reservoir cooling (circulation pump + Peltier) is intentionally controlled
+// directly by AutomationManager::updateCooling() and never creates a
+// systemState.operationRequest episode (see architecture audit: putting it on
+// the shared OperationRequest object risks it overwriting - or being starved
+// by - PH/EC/REFILL). Success tracking is therefore backend-only, correlated
+// purely from data the firmware already publishes.
+//
+// waterTempOutOfRange (highWaterTemp, 25C) and cooling completion
+// (coolerOffTemp, 22.5C) are two different thresholds by firmware design -
+// the alert clears well before cooling actually finishes, while
+// coolingDemandActive/Peltier keep running through that hysteresis gap. So
+// episode OPEN is still driven by the alert (onAlertUpdated below), but
+// episode CLOSE/success is driven separately by the Peltier actuator's own
+// RUNNING -> OFF transition (onCoolingPeltierUpdated), which is what
+// firmware actually does once waterTemp <= coolerOffTemp is reached.
+async function handleWaterTemperatureCoolingEpisodeStart(db, event, deviceId, alertsBefore, alertsAfter) {
+    const wasOutOfRange = alertsBefore.waterTempOutOfRange === true;
+    const isOutOfRange = alertsAfter.waterTempOutOfRange === true;
+    if (!isOutOfRange || wasOutOfRange) return;
+
+    // Episode start: record proof-of-cooling now, but never send anything
+    // here - RUNNING/START stays silent for every automatic correction.
+    const realtimeDb = admin.database();
+    const actuatorSnapshot = await realtimeDb
+        .ref(`/devices/${deviceId}/actuatorStatus`).once("value");
+    const actuators = actuatorSnapshot.val() || {};
+    const peltierAlreadyRunning = !!(actuators.peltier && actuators.peltier.running === true);
+    const coolingObservedAtStart =
+        peltierAlreadyRunning
+        || (actuators.circulationPump && actuators.circulationPump.running === true);
+
+    const episodeRef = db.collection("devices").doc(deviceId)
+        .collection("coolingNotificationEpisodes").doc("current");
+
+    await episodeRef.set({
+        deviceId,
+        episodeId: safeEventId(event.id),
+        startedAt: Date.now(),
+        startedEventId: event.id,
+        coolingObservedAtStart,
+        // Primary completion evidence: refined by onCoolingPeltierUpdated the
+        // moment Peltier is actually confirmed running (usually a few ticks
+        // after the alert fires, once circulation itself confirms first).
+        peltierObserved: peltierAlreadyRunning
+    });
+}
+
+async function emitWaterTemperatureCoolingSuccess(db, deviceId, notificationId) {
+    const title = "Water temperature is back to normal";
+    const message = "Basilience successfully restored the water temperature to the proper range.";
+    const type = "waterTemperatureCorrectionCompleted";
+    const document = db.collection("devices").doc(deviceId)
+        .collection("notifications").doc(notificationId);
+
+    try {
+        await document.create({
+            title,
+            message,
+            type,
+            timestamp: Date.now(),
+            isRead: false,
+            eventId: notificationId,
+            source: "AUTOMATIC",
+            lifecycle: "SUCCESS"
+        });
+    } catch (error) {
+        if (error && (error.code === 6 || error.code === "already-exists")) {
+            logger.info("Water temperature success already handled", {deviceId, notificationId});
+            return;
+        }
+        throw error;
+    }
+
+    const userTokens = await getDeviceUserTokens(db, deviceId);
+    if (userTokens.length === 0) return;
+
+    try {
+        const response = await sendMulticastWithCleanup(db, {
+            notification: {title, body: message},
+            data: {
+                title,
+                body: message,
+                type,
+                deviceId: deviceId || "",
+                notificationId,
+                lifecycle: "SUCCESS"
+            },
+            tokens: userTokens
+        }, "automation-lifecycle");
+        logger.info("Water temperature success FCM send result", {
+            deviceId,
+            notificationId,
+            successCount: response.successCount,
+            failureCount: response.failureCount
+        });
+    } catch (error) {
+        await document.delete();
+        throw error;
+    }
+}
+
 exports.onAlertUpdated = onValueUpdated({
     ref: "/devices/{deviceId}/alerts",
-    instance: "basilience-database-default-rtdb"
+    instance: "basilience-database-default-rtdb",
+    retry: true
 }, async (event) => {
     const alertsBefore = event.data.before.val() || {};
     const alertsAfter = event.data.after.val() || {};
     const deviceId = event.params.deviceId;
 
     const db = admin.firestore();
+
+    await handleWaterTemperatureCoolingEpisodeStart(db, event, deviceId, alertsBefore, alertsAfter);
+
     const alertKeys = [
-        { key: "lowWater", title: "Low Water Level", message: "The reservoir water level is below the configured refill threshold.", type: "parameter" },
-        { key: "ecLow", title: "Low EC Level", message: "EC level is below the safe range.", type: "parameter" },
-        { key: "phLow", title: "pH Low", message: "pH level is below the configured safe range.", type: "parameter" },
-        { key: "phHigh", title: "pH High", message: "pH level is above the configured safe range.", type: "parameter" },
+        { key: "lowWater", title: "Water level is low", message: "The reservoir water level is low. Basilience will refill it automatically when safe.", type: "parameter" },
+        { key: "ecLow", title: "Nutrient level is too low", message: "The nutrient level is below the proper range. Basilience will correct it automatically when safe.", type: "parameter" },
+        { key: "ecHigh", title: "Nutrient level is too high", message: "The nutrient level is above the proper range. Basilience will correct it automatically when safe.", type: "parameter" },
+        { key: "phLow", title: "pH is too low", message: "The pH level is below the proper range. Basilience will correct it automatically when safe.", type: "parameter" },
+        { key: "phHigh", title: "pH is too high", message: "The pH level is above the proper range. Basilience will correct it automatically when safe.", type: "parameter" },
         { key: "waterTempOutOfRange", title: "Water Temperature Alert", message: "Water temperature is outside the safe range.", type: "parameter" },
+        { key: "lowAirTemperature", title: "Low Air Temperature", message: "Air temperature is below the acceptable range.", type: "parameter" },
         { key: "highTemperature", title: "High Air Temperature", message: "Air temperature is above safe limits.", type: "parameter" },
-        { key: "sensorFault", title: "Sensor Fault", message: "One or more sensors are not responding.", type: "hardware" }
+        { key: "sensorFault", title: "Sensor Fault", message: "A sensor reading is unavailable or invalid. Check the affected sensor.", type: "hardware" }
     ];
 
     for (const alert of alertKeys) {
@@ -351,7 +789,7 @@ exports.onAlertUpdated = onValueUpdated({
         const isActive = alertsAfter[alert.key] === true;
 
         if (isActive && !wasActive) {
-            const notificationId = `${event.id}_${alert.key}`;
+            const notificationId = `${safeEventId(event.id)}_${alert.key}`;
             const notificationRef = db.collection("devices")
                 .doc(deviceId)
                 .collection("notifications");
@@ -406,6 +844,102 @@ exports.onAlertUpdated = onValueUpdated({
     }
 });
 
+// Cooling completion (waterTemp <= coolerOffTemp) happens well after the
+// waterTempOutOfRange alert has already cleared (see the hysteresis comment
+// on handleWaterTemperatureCoolingEpisodeStart above), so it cannot be
+// observed from the alert. It is instead observed directly from the Peltier
+// actuator's own RUNNING -> OFF transition, which is exactly what
+// AutomationManager::updateCooling() does the instant coolingDemandActive
+// clears - the same real trigger the firmware itself uses.
+exports.onCoolingPeltierUpdated = onValueWritten({
+    ref: "/devices/{deviceId}/actuatorStatus/peltier",
+    instance: "basilience-database-default-rtdb",
+    retry: true
+}, async (event) => {
+    const before = event.data.before.val() || {};
+    const after = event.data.after.val() || {};
+    const deviceId = event.params.deviceId;
+
+    const wasRunning = before.running === true;
+    const isRunning = after.running === true;
+    if (wasRunning === isRunning) return;
+
+    const db = admin.firestore();
+    const episodeRef = db.collection("devices").doc(deviceId)
+        .collection("coolingNotificationEpisodes").doc("current");
+
+    if (isRunning && !wasRunning) {
+        // Peltier just confirmed running. Record this as completion evidence
+        // on whatever episode is currently open - never create/overwrite one
+        // here, only the alert transition (episode start) does that.
+        if (after.source === "automatic") {
+            await episodeRef.set({peltierObserved: true}, {merge: true}).catch(() => {});
+        }
+        return;
+    }
+
+    // Peltier just stopped. Only a stop that was itself automatic-sourced
+    // (i.e. AutomationManager's own "cooling demand cleared" command, not a
+    // manual toggle or the circulation-failure safety interlock leaving a
+    // stale "manual"-less source) can represent a real cooling completion.
+    if (after.source !== "automatic") {
+        return;
+    }
+
+    const episodeDocument = await episodeRef.get();
+    if (!episodeDocument.exists) {
+        logger.info("Peltier stopped with no open water-temperature cooling episode", {deviceId});
+        return;
+    }
+    const episode = episodeDocument.data() || {};
+
+    if (episode.closedAt) {
+        // Already closed - a duplicate/replayed actuator write.
+        return;
+    }
+
+    const startedAt = Number(episode.startedAt);
+    if (!Number.isFinite(startedAt) || Date.now() - startedAt > COOLING_EPISODE_MAX_AGE_MS) {
+        logger.warn("Water-temperature cooling episode marker is stale; ignoring", {
+            deviceId, episodeId: episode.episodeId, startedAt
+        });
+        return;
+    }
+
+    if (episode.peltierObserved !== true) {
+        logger.warn("Peltier stopped without confirmed automatic-cooling evidence on the open episode", {
+            deviceId, episodeId: episode.episodeId
+        });
+        return;
+    }
+
+    const [sensorsSnapshot, settingsSnapshot] = await Promise.all([
+        admin.database().ref(`/devices/${deviceId}/sensors`).once("value"),
+        admin.database().ref(`/devices/${deviceId}/settings`).once("value")
+    ]);
+
+    const waterTemp = (sensorsSnapshot.val() || {}).waterTemp;
+    const waterTempValid = typeof waterTemp === "number" && Number.isFinite(waterTemp);
+    const coolerOffTemp = resolveTargetSetting(settingsSnapshot, "coolerOffTemp", 22.5, {deviceId});
+    const targetSatisfied = waterTempValid && waterTemp <= coolerOffTemp;
+
+    if (!targetSatisfied) {
+        logger.warn("Peltier stopped but water temperature did not satisfy the cooler-off target", {
+            deviceId,
+            waterTemp: waterTempValid ? waterTemp : null,
+            coolerOffTemp
+        });
+        return;
+    }
+
+    const notificationId = `${safeEventId(event.id)}_waterTempSuccess`;
+    await emitWaterTemperatureCoolingSuccess(db, deviceId, notificationId);
+
+    // Close only after a successful attempt so a retry after a mid-flight
+    // failure (e.g. FCM error) still finds the episode open and evidenced.
+    await episodeRef.update({closedAt: Date.now(), closedEventId: event.id}).catch(() => {});
+});
+
 async function handleDeviceConnectivityTransition(eventId, deviceId, wasOnline, isOnline) {
     const wentOffline = wasOnline === true && isOnline === false;
     const cameOnline = wasOnline === false && isOnline === true;
@@ -414,11 +948,11 @@ async function handleDeviceConnectivityTransition(eventId, deviceId, wasOnline, 
     logger.info(`[PRESENCE] ${deviceId} ${wentOffline ? "ONLINE -> OFFLINE" : "OFFLINE -> ONLINE"}`);
 
     const suffix = wentOffline ? "unreachable" : "online";
-    const notificationId = `${eventId}_${suffix}`;
+    const notificationId = `${safeEventId(eventId)}_${suffix}`;
     const title = wentOffline ? "Basilience Device Unreachable" : "Basilience Device Back Online";
     const body = wentOffline
-        ? "Basilience can no longer communicate with the device. Check the device power or network connection. Local automation may still be running if the device has power."
-        : `${deviceId} is back online and communicating normally.`;
+        ? "Basilience cannot communicate with the device. Check its power or network connection. Local automation may still be running if the device has power."
+        : "The device has reconnected and cloud monitoring has resumed.";
     const notificationType = wentOffline ? "OFFLINE_ALERT" : "ONLINE_RECOVERY";
     const db = admin.firestore();
     const realtimeDb = admin.database();
@@ -500,7 +1034,8 @@ async function handleDeviceConnectivityTransition(eventId, deviceId, wasOnline, 
 
 exports.onDeviceOffline = onValueUpdated({
     ref: "/devices/{deviceId}/status/online",
-    instance: "basilience-database-default-rtdb"
+    instance: "basilience-database-default-rtdb",
+    retry: true
 }, async (event) => {
     await handleDeviceConnectivityTransition(
         event.id,
@@ -523,6 +1058,16 @@ exports.onHarvestCreated = onDocumentCreated("devices/{deviceId}/cycles/{cycleId
     const notificationId = `harvest_recorded_${harvestId}`;
     const title = "Harvest Recorded";
     const message = `New harvest of ${harvestData.weight}g recorded for device ${deviceId}.`;
+    // Copy the recorder identity already stored on the harvest record itself
+    // (HarvestLogFragment writes both at creation time). recorderName is a
+    // display-name snapshot, preferred so history stays accurate even if the
+    // recorder's profile name changes later; recorderUid is kept as a
+    // fallback for the rare record that lacks a name snapshot. A pre-harvest
+    // reminder (createHarvestReminder) never sets either field, which is
+    // exactly how the Android client tells the two "harvest" notifications
+    // apart for "Recorded by" display purposes.
+    const recorderUid = harvestData.recordedBy || null;
+    const recorderName = harvestData.recordedByName || null;
 
     logger.info(`New harvest recorded for device ${deviceId}: ${harvestData.weight}g`);
 
@@ -537,7 +1082,9 @@ exports.onHarvestCreated = onDocumentCreated("devices/{deviceId}/cycles/{cycleId
             isRead: false,
             eventId: notificationId,
             cycleId,
-            harvestId
+            harvestId,
+            recorderUid,
+            recorderName
         });
     } catch (error) {
         if (error && (error.code === 6 || error.code === "already-exists")) {
@@ -893,7 +1440,8 @@ exports.sendTestOfflineNotification = onValueWritten({
 
 exports.onStatusUpdated = onValueUpdated({
     ref: "/devices/{deviceId}/status",
-    instance: "basilience-database-default-rtdb"
+    instance: "basilience-database-default-rtdb",
+    retry: true
 }, async (event) => {
     const statusBefore = event.data.before.val() || {};
     const statusAfter = event.data.after.val() || {};
@@ -901,7 +1449,11 @@ exports.onStatusUpdated = onValueUpdated({
 
     const db = admin.firestore();
     const statusKeys = [
-        { key: "safetyLock", message: "The system has stopped unsafe operations. Resolve the fault before resetting Safety Lock.", type: "hardware", title: "Safety Lock Activated" }
+        { key: "safetyLock", message: "The system has stopped unsafe operations. Resolve the fault before resetting Safety Lock.", type: "hardware", title: "Safety Lock Activated" },
+        { key: "phSubsystemLocked", title: "pH correction needs attention", message: "Basilience could not bring the pH back to normal. Please check the dosing system.", type: "hardware" },
+        { key: "ecSubsystemLocked", title: "Nutrient correction needs attention", message: "Basilience could not restore the nutrient level automatically. Please check the reservoir and dosing system.", type: "hardware" },
+        { key: "refillSubsystemLocked", title: "Reservoir refill needs attention", message: "Basilience could not refill the reservoir normally. Please check the water supply and refill system.", type: "hardware" },
+        { key: "coolingSubsystemLocked", title: "Cooling System Stopped", message: "Water cooling was stopped because the cooling requirements could not be safely maintained.", type: "hardware" }
     ];
 
     for (const status of statusKeys) {
@@ -909,7 +1461,7 @@ exports.onStatusUpdated = onValueUpdated({
         const isActive = statusAfter[status.key] === true;
 
         if (isActive && !wasActive) {
-            const notificationId = `${event.id}_${status.key}`;
+            const notificationId = `${safeEventId(event.id)}_${status.key}`;
             const notificationRef = db.collection("devices")
                 .doc(deviceId)
                 .collection("notifications");
@@ -960,6 +1512,462 @@ exports.onStatusUpdated = onValueUpdated({
                     throw error;
                 }
             }
+        }
+    }
+});
+
+//==================================================================
+// Offline GSM notification pipeline: RTDB projections the ESP32 (RTDB-only,
+// no Firestore access) reads while online, plus the transport bridge that
+// lets a firmware-queued offline event replay into the SAME Firestore
+// notification history every other producer already writes to.
+//==================================================================
+
+// Structural-only Philippine mobile normalization - mirrors the Android
+// PhoneNumberUtils.normalizePhilippineMobile algorithm exactly (same
+// accepted input styles, same canonical +639XXXXXXXXX output, no
+// carrier-prefix table). Legacy Firestore values (0917..., 917..., 639...)
+// are normalized defensively here rather than assumed already-canonical.
+function normalizePhilippineMobile(input) {
+    if (typeof input !== "string") return null;
+    const cleaned = input.trim().replace(/[\s-]+/g, "");
+    if (!cleaned) return null;
+
+    const hasPlus = cleaned.startsWith("+");
+    const digits = hasPlus ? cleaned.slice(1) : cleaned;
+    if (!digits || !/^\d+$/.test(digits)) return null;
+
+    let subscriber;
+    if (digits.startsWith("63") && digits.length === 12) {
+        subscriber = digits.slice(2);
+    } else if (!hasPlus && digits.startsWith("0") && digits.length === 11) {
+        subscriber = digits.slice(1);
+    } else if (!hasPlus && digits.length === 10) {
+        subscriber = digits;
+    } else {
+        return null;
+    }
+
+    if (subscriber.length !== 10 || subscriber[0] !== "9") return null;
+    return "+63" + subscriber;
+}
+
+// Recomputes both the /devices/{deviceId}/smsRecipients AND
+// /deviceAccess/{deviceId} RTDB projections in one pass, from the SAME
+// authoritative Firestore relationship getDeviceUserTokens() already uses
+// (devices.ownerUid + deviceAssignments, filtered by role/ownerAdminUid
+// linkage) - no second ownership model. smsRecipients carries only
+// phone/enabled/role (no email/password/other profile data); deviceAccess
+// carries only role, used exclusively as an RTDB-rules lookup table (Android
+// never reads it directly). One invalid/empty phone is skipped, never
+// blocking the rest of either projection. Both projections are written with
+// a single atomic .set() each - a fully recomputed snapshot with no
+// remaining members clears stale entries automatically (RTDB has no way to
+// persist an "empty object", so .set({}) removes the node), and nothing is
+// written unless every read above succeeded (a failed read throws before any
+// write is attempted, so a partial/stale overwrite cannot happen).
+async function regenerateSmsRecipients(db, deviceId) {
+    if (!deviceId) return;
+
+    const deviceDoc = await db.collection("devices").doc(deviceId).get();
+    const ownerUid = deviceDoc.exists ? (deviceDoc.data().ownerUid || deviceDoc.data().ownerAdminUid) : null;
+
+    const recipients = {};
+    const access = {};
+
+    if (ownerUid) {
+        const ownerDoc = await db.collection("users").doc(ownerUid).get();
+        if (ownerDoc.exists) {
+            // Owner maps to ADMIN - canonical RoleConstants.ROLE_ADMIN value,
+            // never a third/invented role.
+            access[ownerUid] = {role: "ADMIN"};
+            const phone = normalizePhilippineMobile(ownerDoc.data().phone);
+            if (phone) recipients[ownerUid] = {phone, enabled: true, role: "ADMIN"};
+        }
+    }
+
+    const assignmentsSnapshot = await db.collection("deviceAssignments")
+        .where("deviceId", "==", deviceId)
+        .get();
+
+    for (const doc of assignmentsSnapshot.docs) {
+        const userUid = doc.data().userUid;
+        if (!userUid || userUid === ownerUid) continue;
+
+        const userDoc = await db.collection("users").doc(userUid).get();
+        if (!userDoc.exists) continue;
+
+        const user = userDoc.data();
+        // Same eligibility rule as getDeviceUserTokens(): an assignment only
+        // grants access while the personnel profile remains linked to this
+        // device's owner.
+        if ((user.role === "FARMER" || user.role === "PERSONNEL") && user.ownerAdminUid === ownerUid) {
+            // Personnel assignment maps to FARMER - canonical
+            // RoleConstants.ROLE_FARMER value, regardless of whether the
+            // source profile says "FARMER" or the defensive legacy
+            // "PERSONNEL" string.
+            access[userUid] = {role: "FARMER"};
+            const phone = normalizePhilippineMobile(user.phone);
+            if (phone) recipients[userUid] = {phone, enabled: true, role: user.role};
+        }
+    }
+
+    const rtdb = admin.database();
+    await Promise.all([
+        rtdb.ref(`/devices/${deviceId}/smsRecipients`).set(recipients),
+        rtdb.ref(`/deviceAccess/${deviceId}`).set(access)
+    ]);
+    logger.info(`Projections updated for device ${deviceId}: ${Object.keys(recipients).length} SMS-eligible, ${Object.keys(access).length} authorized`);
+}
+
+exports.onDeviceAssignmentWrittenUpdateSmsRecipients = onDocumentWritten(
+    "deviceAssignments/{assignmentId}",
+    async (event) => {
+        const before = event.data.before.exists ? event.data.before.data() : null;
+        const after = event.data.after.exists ? event.data.after.data() : null;
+        const deviceId = (after && after.deviceId) || (before && before.deviceId);
+        if (deviceId) await regenerateSmsRecipients(admin.firestore(), deviceId);
+    }
+);
+
+exports.onUserWrittenUpdateSmsRecipients = onDocumentWritten(
+    "users/{uid}",
+    async (event) => {
+        const uid = event.params.uid;
+        const db = admin.firestore();
+        const deviceIds = new Set();
+
+        const ownedDevices = await db.collection("devices").where("ownerUid", "==", uid).get();
+        ownedDevices.forEach((doc) => deviceIds.add(doc.id));
+
+        const assignments = await db.collection("deviceAssignments").where("userUid", "==", uid).get();
+        assignments.forEach((doc) => {
+            const deviceId = doc.data().deviceId;
+            if (deviceId) deviceIds.add(deviceId);
+        });
+
+        for (const deviceId of deviceIds) {
+            await regenerateSmsRecipients(db, deviceId);
+        }
+    }
+);
+
+exports.onDeviceWrittenUpdateSmsRecipients = onDocumentWritten(
+    "devices/{deviceId}",
+    async (event) => {
+        await regenerateSmsRecipients(admin.firestore(), event.params.deviceId);
+    }
+);
+
+// Recomputes the /devices/{deviceId}/harvestSchedule RTDB projection - the
+// minimum fields the ESP needs to generate an offline HARVEST_DUE event
+// (cycle identity + next due date), never the whole cycle document.
+exports.onCycleWrittenUpdateHarvestSchedule = onDocumentWritten(
+    "devices/{deviceId}/cycles/{cycleId}",
+    async (event) => {
+        const deviceId = event.params.deviceId;
+        const cycleId = event.params.cycleId;
+        const after = event.data.after.exists ? event.data.after.data() : null;
+        const rtdb = admin.database();
+
+        if (!after || String(after.status || "").toUpperCase() !== "ACTIVE") {
+            // Cycle deleted or no longer active - only clear the projection
+            // if THIS cycle was the one currently reflected there, so an
+            // unrelated/older cycle write can't clobber a different,
+            // still-active cycle's schedule.
+            const currentCycleIdSnap = await rtdb.ref(`/devices/${deviceId}/harvestSchedule/cycleId`).get();
+            if (currentCycleIdSnap.exists() && currentCycleIdSnap.val() === cycleId) {
+                await rtdb.ref(`/devices/${deviceId}/harvestSchedule`).set({active: false, updatedAt: Date.now()});
+            }
+            return;
+        }
+
+        const nextHarvestDate = after.nextHarvestDate;
+        const nextHarvestAt = nextHarvestDate && typeof nextHarvestDate.toMillis === "function"
+            ? Math.floor(nextHarvestDate.toMillis() / 1000)
+            : 0;
+
+        await rtdb.ref(`/devices/${deviceId}/harvestSchedule`).set({
+            cycleId,
+            cycleNumber: after.cycleNumber || 0,
+            nextHarvestAt,
+            active: true,
+            updatedAt: Date.now()
+        });
+    }
+);
+
+// Bridges a firmware-replayed offline event into the SAME
+// devices/{deviceId}/notifications history every other producer already
+// writes to - no separate /offlineNotifications system. Idempotent by
+// eventId (document.create() + already-exists as success, same pattern used
+// throughout this file), and deliberately sends no FCM: the farmer likely
+// already received this via SMS while the device was offline, so a fresh
+// real-time-looking push two hours later would be misleading. Normal live
+// FCM from every other producer in this file is unaffected.
+exports.onNotificationQueued = onValueWritten({
+    ref: "/devices/{deviceId}/notificationQueue/{eventId}",
+    instance: "basilience-database-default-rtdb",
+    retry: true
+}, async (event) => {
+    const deviceId = event.params.deviceId;
+    const eventId = event.params.eventId;
+    const data = event.data.after.val();
+
+    if (!data || data.status === "acked") {
+        // Null: entry deleted. "acked": this write is our own ack below (RTDB
+        // triggers on this ref fire for descendant writes too), or a stale
+        // re-trigger - either way, already handled.
+        return;
+    }
+
+    // Maps the firmware's event type to the SAME type strings every other
+    // producer in this file already uses, so a replayed event renders with
+    // the correct icon/title in the existing Android history UI instead of
+    // falling through to the generic "INFORMATION" styling.
+    const FIRMWARE_TYPE_TO_HISTORY_TYPE = {
+        LOW_WATER: "parameter",
+        HIGH_WATER_TEMP: "parameter",
+        HIGH_AIR_TEMP: "parameter",
+        SENSOR_FAULT: "hardware",
+        DEVICE_UNREACHABLE: "connectivity_offline",
+        HARVEST_DUE: "harvest"
+    };
+
+    const db = admin.firestore();
+    const notificationRef = db.collection("devices").doc(deviceId).collection("notifications").doc(eventId);
+
+    try {
+        await notificationRef.create({
+            title: data.title || "Basilience Alert",
+            message: data.message || "",
+            type: FIRMWARE_TYPE_TO_HISTORY_TYPE[data.type] || "info",
+            // Original device-observed time is preserved, never replaced by
+            // replay/server time - only falls back to now() if the firmware
+            // itself never had a valid RTC timestamp to offer.
+            timestamp: (data.timestampValid && data.occurredAt) ? data.occurredAt * 1000 : Date.now(),
+            isRead: false,
+            eventId,
+            offlineRecorded: true,
+            smsFallbackUsed: Boolean(data.smsFallbackUsed)
+        });
+        logger.info(`Offline event ${eventId} for device ${deviceId} recorded in history (no FCM - offline/SMS-fallback)`);
+    } catch (error) {
+        if (!(error && (error.code === 6 || error.code === "already-exists"))) {
+            logger.error(`Failed to mirror queued notification ${eventId} for device ${deviceId}`, error);
+            return; // leave unacked; firmware will resubmit later
+        }
+    }
+
+    await admin.database().ref(`/devices/${deviceId}/notificationQueue/${eventId}/status`).set("acked");
+});
+
+//==================================================================
+// Secure Device Auth: bootstrap endpoint minting a Firebase custom token
+// (uid = deviceId) for a device that proves knowledge of its provisioned
+// bootstrap secret. MAC+secret only ever prove physical device identity here
+// server-side - the client-supplied deviceId is never trusted (there is no
+// client-supplied deviceId at all; it is resolved from the existing
+// /provisioning/{mac}/deviceToken mapping via the Admin SDK, which bypasses
+// RTDB rules the same as every other Admin SDK call in this file).
+//==================================================================
+
+const BOOTSTRAP_FAIL_LIMIT = 5;
+const BOOTSTRAP_LOCKOUT_MS = 15 * 60 * 1000;
+
+function normalizeMac(mac) {
+    if (typeof mac !== "string") return null;
+    const cleaned = mac.trim().toUpperCase().replace(/[^0-9A-F]/g, "");
+    if (cleaned.length !== 12) return null;
+    // Colon-less, matching both the firmware's legacy getMacAddress() (used
+    // to build the existing /provisioning/{mac}/deviceToken RTDB key) and
+    // the actual stored key format (confirmed via a live read:
+    // /provisioning/704BCA48FCB4/deviceToken). The firmware's bootstrap
+    // payload sends WiFi.macAddress() WITH colons, so this function is
+    // exactly where that format has to be normalized away before it's used
+    // as an RTDB path segment - previously this re-inserted colons instead,
+    // so the lookup key never matched the stored one and every real
+    // bootstrap attempt failed at the provisioning-mapping stage.
+    return cleaned;
+}
+
+exports.deviceAuthBootstrap = onRequest(async (req, res) => {
+    let diagnosticStage = "REQUEST_START";
+    logger.info("[BOOTSTRAP] Request received");
+
+    try {
+        if (req.method !== "POST") {
+            logger.info("[BOOTSTRAP] REJECT stage=INVALID_METHOD");
+            res.status(405).json({error: "Method not allowed"});
+            return;
+        }
+
+        // Gen 2 onRequest auto-parses req.body into an object when
+        // Content-Type: application/json is set (the firmware sets this) -
+        // confirmed by direct testing against the deployed function. This
+        // still handles the Buffer/string shapes defensively in case that
+        // header is ever missing/different, without weakening validation:
+        // a parse failure or non-object body falls through to the same
+        // generic 400 the missing-field case already used.
+        diagnosticStage = "READ_BODY";
+        let body = req.body;
+        let bodyParsed = true;
+        if (Buffer.isBuffer(body) || typeof body === "string") {
+            const raw = Buffer.isBuffer(body) ? body.toString("utf8") : body;
+            try {
+                body = raw.length > 0 ? JSON.parse(raw) : {};
+            } catch (parseError) {
+                bodyParsed = false;
+            }
+        }
+        if (body === null || typeof body !== "object") {
+            body = {};
+            bodyParsed = false;
+        }
+        logger.info(`[BOOTSTRAP] Body parsed=${bodyParsed}`);
+
+        if (!bodyParsed) {
+            logger.info("[BOOTSTRAP] REJECT stage=INVALID_REQUEST");
+            res.status(400).json({error: "Invalid request"});
+            return;
+        }
+
+        diagnosticStage = "NORMALIZE_MAC";
+        const mac = normalizeMac(typeof body.mac === "string" ? body.mac : null);
+        const deviceSecret = typeof body.deviceSecret === "string" ? body.deviceSecret : "";
+
+        logger.info(`[BOOTSTRAP] MAC=${mac || "INVALID"}`);
+
+        diagnosticStage = "VALIDATE_REQUEST";
+        // Shape validation only - never logs the secret value itself, only
+        // whether one was present.
+        if (!mac || !deviceSecret) {
+            logger.warn("deviceAuthBootstrap: malformed request", {hasMac: Boolean(mac), hasSecret: Boolean(deviceSecret)});
+            logger.info("[BOOTSTRAP] REJECT stage=INVALID_REQUEST");
+            res.status(400).json({error: "Invalid request"});
+            return;
+        }
+
+        logger.info(`[BOOTSTRAP] Secret supplied=${Boolean(deviceSecret)}`);
+        // Diagnostic only - mirrors the firmware's own length bound, does not
+        // gate any behavior here.
+        logger.info(`[BOOTSTRAP] Secret format valid=${deviceSecret.length >= 16 && deviceSecret.length <= 128}`);
+
+        // Step 1-2 done above (shape/MAC normalization). Step 3: resolve the
+        // authoritative deviceId server-side from the existing provisioning
+        // mapping - the client never gets to assert its own deviceId.
+        diagnosticStage = "LOOKUP_PROVISIONING";
+        const rtdb = admin.database();
+        const tokenSnap = await rtdb.ref(`/provisioning/${mac}/deviceToken`).get();
+        const deviceId = tokenSnap.exists() ? String(tokenSnap.val()) : null;
+
+        logger.info(`[BOOTSTRAP] Provisioning mapping found=${Boolean(deviceId)}`);
+        if (deviceId) {
+            logger.info(`[BOOTSTRAP] Resolved deviceId=${deviceId}`);
+        }
+
+        if (!deviceId) {
+            // Generic failure - never reveals whether this MAC is known.
+            logger.info("[BOOTSTRAP] REJECT stage=MAC_MAPPING_NOT_FOUND");
+            res.status(401).json({error: "Authentication failed"});
+            return;
+        }
+
+        diagnosticStage = "LOOKUP_CREDENTIAL";
+        const db = admin.firestore();
+        const credRef = db.collection("deviceCredentials").doc(deviceId);
+        const credSnap = await credRef.get();
+
+        logger.info(`[BOOTSTRAP] Credential record found=${credSnap.exists}`);
+
+        if (!credSnap.exists) {
+            // Generic failure - never reveals whether a credential record
+            // exists for this device.
+            logger.info("[BOOTSTRAP] REJECT stage=CREDENTIAL_NOT_FOUND");
+            res.status(401).json({error: "Authentication failed"});
+            return;
+        }
+
+        const cred = credSnap.data();
+        const now = Date.now();
+
+        diagnosticStage = "CHECK_LOCKOUT";
+        const lockoutActive = Boolean(cred.bootstrapLockedUntil && cred.bootstrapLockedUntil > now);
+        logger.info(`[BOOTSTRAP] failCount=${cred.bootstrapFailCount || 0}`);
+        logger.info(`[BOOTSTRAP] lockoutActive=${lockoutActive}`);
+
+        if (lockoutActive) {
+            logger.info("[BOOTSTRAP] REJECT stage=LOCKED_OUT");
+            res.status(429).json({error: "Authentication temporarily locked"});
+            return;
+        }
+
+        // Constant-time comparison of SHA-256 hashes - the stored secret is
+        // never plaintext, and the comparison itself cannot leak timing
+        // information about how many leading bytes matched.
+        diagnosticStage = "HASH_SECRET";
+        const receivedHash = crypto.createHash("sha256").update(deviceSecret).digest();
+        const storedHash = Buffer.from(cred.secretHash || "", "hex");
+
+        diagnosticStage = "COMPARE_SECRET";
+        const match = storedHash.length === receivedHash.length
+            && crypto.timingSafeEqual(storedHash, receivedHash);
+
+        logger.info(`[BOOTSTRAP] Secret hash match=${match}`);
+
+        if (!match) {
+            const failCount = (cred.bootstrapFailCount || 0) + 1;
+            const update = {bootstrapFailCount: failCount, updatedAt: now};
+            if (failCount >= BOOTSTRAP_FAIL_LIMIT) {
+                // Bounded lockout, not a permanent brick - a transient
+                // mistake (e.g. a typo during manual injection) recovers on
+                // its own after the cooldown.
+                update.bootstrapLockedUntil = now + BOOTSTRAP_LOCKOUT_MS;
+                update.bootstrapFailCount = 0;
+            }
+            await credRef.update(update);
+            logger.info("[BOOTSTRAP] REJECT stage=SECRET_MISMATCH");
+            res.status(401).json({error: "Authentication failed"});
+            return;
+        }
+
+        await credRef.update({
+            bootstrapFailCount: 0,
+            bootstrapLockedUntil: admin.firestore.FieldValue.delete(),
+            lastBootstrapAt: now,
+            updatedAt: now
+        });
+
+        diagnosticStage = "MINT_TOKEN";
+        let customToken;
+        try {
+            customToken = await admin.auth().createCustomToken(deviceId, {deviceId});
+        } catch (mintError) {
+            logger.error("[BOOTSTRAP] Custom token minting failed", mintError);
+            logger.info("[BOOTSTRAP] REJECT stage=TOKEN_MINT_FAILED");
+            res.status(500).json({error: "Internal error"});
+            return;
+        }
+
+        logger.info("[BOOTSTRAP] Authentication accepted");
+        logger.info(`[BOOTSTRAP] Custom token minted for deviceId=${deviceId}`);
+
+        // deviceId is returned alongside the token purely because it is not
+        // secret (it is already the Firestore claim code shown to Admins
+        // during device claiming) and a first-time device that has not yet
+        // persisted one needs it - never secretHash, never internal
+        // credential/lockout state.
+        res.status(200).json({customToken, deviceId});
+    } catch (error) {
+        // Only the stage and the error's class name are logged - every
+        // throwable reachable here originates from JSON.parse, the Admin
+        // SDK, or Node's own runtime, never from code that embeds the
+        // secret/hash/token into a message, but the message text itself is
+        // still withheld as a precaution rather than relying on that.
+        logger.error(`[BOOTSTRAP] UNEXPECTED_ERROR stage=${diagnosticStage}`);
+        logger.error(`[BOOTSTRAP] Error type=${(error && error.name) || "UnknownError"}`);
+        if (!res.headersSent) {
+            res.status(500).json({error: "Internal error"});
         }
     }
 });

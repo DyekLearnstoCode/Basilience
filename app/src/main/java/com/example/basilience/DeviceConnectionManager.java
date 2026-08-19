@@ -75,7 +75,7 @@ public class DeviceConnectionManager {
         }
 
         long ageMs = Math.max(0L, nowMs - lastServerSeen);
-        if (ageMs >= OFFLINE_TIMEOUT_MS) return DeviceConnectivityState.OFFLINE;
+        if (ageMs >= OFFLINE_TIMEOUT_MS) return DeviceConnectivityState.RECONNECTING;
         if (ageMs > FRESH_HEARTBEAT_MAX_AGE_MS) return DeviceConnectivityState.RECONNECTING;
         return DeviceConnectivityState.ONLINE;
     }

@@ -63,9 +63,9 @@
                 android:id="@+id/tvDeviceStatus"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Offline"
+                android:text="Reconnecting..."
                 android:textSize="13sp"
-                android:textColor="#757575"
+                android:textColor="@color/device_status_reconnecting"
                 android:layout_marginTop="2dp"/>
 
         </LinearLayout>

@@ -55,12 +55,22 @@
                 android:id="@+id/tvConnectionStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
+                android:layout_marginBottom="4dp"
                 android:gravity="center"
                 android:text="Checking Status..."
                 android:textColor="@color/device_status_reconnecting"
                 android:textSize="14sp"
                 android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvConnectionDetail"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:gravity="center"
+                android:text="Checking Basilience cloud connection..."
+                android:textColor="@color/state_no_data"
+                android:textSize="13sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnRetryWifiConfiguration"

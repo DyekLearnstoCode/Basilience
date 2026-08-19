@@ -13,6 +13,8 @@ import androidx.fragment.app.Fragment;
 import androidx.navigation.NavController;
 import androidx.navigation.Navigation;
 
+import com.google.firebase.database.FirebaseDatabase;
+
 public class SettingsFragment extends Fragment {
     private static final String PREFS_NAME = "basilience_prefs";
     private static final String KEY_DEVELOPER_MODE_ENABLED = "developer_mode_enabled";
@@ -79,8 +81,24 @@ public class SettingsFragment extends Fragment {
         if (devOptionsContainer == null || getContext() == null) return;
 
         SharedPreferences prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        boolean isAdmin = "ADMIN".equalsIgnoreCase(prefs.getString("user_role", ""));
+        if (!isAdmin) {
+            devOptionsContainer.setVisibility(View.GONE);
+            return;
+        }
         boolean developerModeEnabled = prefs.getBoolean(KEY_DEVELOPER_MODE_ENABLED, false);
         devOptionsContainer.setVisibility(developerModeEnabled ? View.VISIBLE : View.GONE);
+
+        String deviceId = prefs.getString("selected_device_id", null);
+        if (deviceId == null || deviceId.trim().isEmpty()) return;
+        FirebaseDatabase.getInstance("https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app")
+                .getReference("devices").child(deviceId).child("settings").child("devModeEnabled")
+                .get().addOnSuccessListener(snapshot -> {
+                    if (!isAdded() || devOptionsContainer == null) return;
+                    boolean enabled = Boolean.TRUE.equals(snapshot.getValue(Boolean.class));
+                    prefs.edit().putBoolean(KEY_DEVELOPER_MODE_ENABLED, enabled).apply();
+                    devOptionsContainer.setVisibility(enabled ? View.VISIBLE : View.GONE);
+                });
     }
 
     private void performLogout() {

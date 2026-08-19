@@ -282,10 +282,22 @@ public class Personnel_Details_Fragment extends Fragment {
 
     private void saveChanges() {
         String name = value(etName);
-        String phone = value(etPhone);
+        String rawPhone = value(etPhone);
         if (name.isEmpty()) {
             etName.setError("Personnel name is required");
             return;
+        }
+
+        final String phone;
+        if (!rawPhone.isEmpty()) {
+            String normalizedPhone = PhoneNumberUtils.normalizePhilippineMobile(rawPhone);
+            if (normalizedPhone == null) {
+                etPhone.setError(PhoneNumberUtils.INVALID_MESSAGE);
+                return;
+            }
+            phone = normalizedPhone;
+        } else {
+            phone = rawPhone;
         }
 
         Map<String, Object> updates = new HashMap<>();

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Basilience Design System pilot: flattened Spinner selector background -
+     thin neutral border instead of the heavier mint-tinted outline, with
+     the dropdown chevron baked in. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/white" />
+            <stroke android:width="1dp" android:color="@color/ds_divider" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+    <item
+        android:gravity="end|center_vertical"
+        android:drawable="@drawable/ic_arrow_drop_down"
+        android:right="12dp" />
+</layer-list>

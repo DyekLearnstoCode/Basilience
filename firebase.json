@@ -16,5 +16,16 @@
         "*.local"
       ]
     }
-  ]
+  ],
+  "emulators": {
+    "database": {
+      "port": 9010
+    },
+    "functions": {
+      "port": 5011
+    },
+    "ui": {
+      "enabled": false
+    }
+  }
 }

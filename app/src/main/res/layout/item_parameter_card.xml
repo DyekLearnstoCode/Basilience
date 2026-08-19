@@ -35,7 +35,7 @@
                 android:layout_height="wrap_content"
                 android:text="pH"
                 android:textSize="13sp"
-                android:textColor="#454545"/>
+                android:textColor="@color/state_primary_text"/>
         </LinearLayout>
 
         <!-- VALUE -->
@@ -46,7 +46,7 @@
             android:text="--"
             android:textSize="22sp"
             android:textStyle="bold"
-            android:textColor="#000000"
+            android:textColor="@color/state_primary_text"
             android:layout_marginTop="8dp"/>
 
     </LinearLayout>

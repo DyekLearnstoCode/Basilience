@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- V2 "What This Means" surface - same soft-green family as the insight
+     hero, diluted lighter so it reads as related but less prominent. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/ds_interpretation_bg" />
+    <corners android:radius="@dimen/ds_surface_radius" />
+</shape>

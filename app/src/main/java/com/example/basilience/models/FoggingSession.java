@@ -3,9 +3,22 @@ package com.example.basilience.models;
 public class FoggingSession {
     private final FoggingEvent startEvent;
     private FoggingEvent endEvent;
+    // Set by FoggingReportProcessor when the raw ON->OFF gap is too large to
+    // be a real fog cycle (e.g. a reboot/offline gap between events). Kept
+    // visible in Recent Activity/PDF so the anomaly isn't hidden, but its
+    // duration is excluded from report aggregates so it can't skew totals.
+    private boolean anomalous;
 
     public FoggingSession(FoggingEvent startEvent) {
         this.startEvent = startEvent;
+    }
+
+    public boolean isAnomalous() {
+        return anomalous;
+    }
+
+    public void setAnomalous(boolean anomalous) {
+        this.anomalous = anomalous;
     }
 
     public void setEndEvent(FoggingEvent endEvent) {

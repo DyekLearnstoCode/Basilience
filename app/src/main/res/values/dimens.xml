@@ -14,4 +14,45 @@
     <dimen name="button_height">48dp</dimen>
     <dimen name="button_corner_radius">12dp</dimen>
     <dimen name="button_horizontal_padding">20dp</dimen>
+
+    <!-- Reports UI modernization: one shared card/spacing rhythm across
+         Parameter, Fogging and Harvest reports. -->
+    <dimen name="report_card_radius">18dp</dimen>
+    <dimen name="report_card_padding">18dp</dimen>
+    <dimen name="report_section_spacing">24dp</dimen>
+    <dimen name="report_chart_height">260dp</dimen>
+    <dimen name="report_metric_value_size">26sp</dimen>
+
+    <!-- Basilience Design System pilot (Parameter Report). Additive only -
+         report_* dimens above stay untouched since Fogging and Harvest
+         reports still use them until this direction is ported to them. -->
+
+    <!-- Typography scale - one shared size per hierarchy level, reused
+         across styles instead of hardcoding sp values per element. -->
+    <dimen name="ds_text_page_title">26sp</dimen>
+    <dimen name="ds_text_section_title">18sp</dimen>
+    <dimen name="ds_text_body">14sp</dimen>
+    <dimen name="ds_text_caption">13sp</dimen>
+    <!-- Metric numerals sit at the low end of the 22-24sp band; the unit is
+         shrunk to ~55% of this at runtime (see formatMetric) so long units
+         like "mS/cm" stay on the same line as the number. -->
+    <dimen name="ds_metric_value_size">23sp</dimen>
+
+    <!-- Spacing scale - reused for vertical rhythm/margins instead of
+         one-off dp values scattered through the layout. -->
+    <dimen name="ds_space_xs">8dp</dimen>
+    <dimen name="ds_space_sm">12dp</dimen>
+    <dimen name="ds_space_md">16dp</dimen>
+    <dimen name="ds_space_lg">24dp</dimen>
+    <dimen name="ds_space_xl">32dp</dimen>
+
+    <dimen name="ds_selector_height">50dp</dimen>
+    <dimen name="ds_chip_height">34dp</dimen>
+    <dimen name="ds_chart_height">260dp</dimen>
+    <dimen name="ds_header_icon_size">40dp</dimen>
+
+    <!-- V2: shared corner radius for the hero/chart/interpretation surfaces
+         so the "one intentional surface" language stays visually uniform. -->
+    <dimen name="ds_surface_radius">14dp</dimen>
+    <dimen name="ds_surface_padding">16dp</dimen>
 </resources>
