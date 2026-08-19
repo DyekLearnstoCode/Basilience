@@ -1,7 +1,10 @@
 package com.example.basilience;
 
+import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -10,6 +13,9 @@ import android.widget.EditText;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.core.content.ContextCompat;
 import androidx.core.splashscreen.SplashScreen;
 
 import com.google.android.gms.tasks.OnFailureListener;
@@ -22,6 +28,8 @@ public class Auth_Login_Activity extends AppCompatActivity {
 
     private static final String PREFS_NAME = "basilience_prefs";
     private static final String KEY_IS_LOGGED_IN = "is_logged_in";
+    private static final String KEY_NOTIFICATION_PERMISSION_REQUESTED =
+            "notification_permission_requested";
     private static final long BACKEND_TIMEOUT_MS = 15000L;
     private static final String BACKEND_UNAVAILABLE_MESSAGE =
             "Unable to connect to Basilience services. Check your internet connection.";
@@ -36,6 +44,19 @@ public class Auth_Login_Activity extends AppCompatActivity {
     private Database_Helper helper;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
+    // Splash overlay state. Both flags must be set before the app is
+    // uncovered; splashOverlayHidden makes the reveal idempotent so a late
+    // callback cannot restart the fade.
+    private android.view.View splashOverlay;
+    private boolean splashAnimationDone;
+    private boolean splashContentReady;
+    private boolean splashOverlayHidden;
+    private static final long SPLASH_OVERLAY_MAX_WAIT_MS = 1500L;
+    private final ActivityResultLauncher<String> notificationPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
+                // Permission affects Android tray notifications only. Login continues either way.
+            });
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
@@ -43,6 +64,27 @@ public class Auth_Login_Activity extends AppCompatActivity {
 
         final boolean[] keepSplash = {true};
         splashScreen.setKeepOnScreenCondition(() -> keepSplash[0]);
+
+        // EXIT ONLY - this hands the native launch splash over to the Lottie
+        // overlay underneath, which is what actually animates the logo.
+        //
+        // The listener fires only once the app is ready to draw, i.e. after
+        // all of this onCreate. Startup work can take seconds, so anything
+        // animated here would sit frozen for that whole time and only move
+        // at the very end; that is why the reveal lives in the overlay,
+        // which starts as soon as the content view exists.
+        //
+        // Both surfaces share the same celadon background and logo position,
+        // so this cross-fade lands on an identical backdrop instead of a
+        // second, visibly different splash.
+        //
+        // Presentation only: routing, session validation and the login UI
+        // have all already run underneath, and nothing here gates them. The
+        // fade removes the splash via withEndAction, which still fires when
+        // the animator duration scale is 0 (animations disabled), so the
+        // splash can never be stranded on screen.
+        splashScreen.setOnExitAnimationListener(splashViewProvider ->
+                fadeOutSplash(splashViewProvider.getView(), splashViewProvider));
 
         helper = new Database_Helper();
 
@@ -52,6 +94,8 @@ public class Auth_Login_Activity extends AppCompatActivity {
 
         setContentView(R.layout.auth_login);
         keepSplash[0] = false;
+
+        startSplashOverlay();
 
         if (getSupportActionBar() != null) getSupportActionBar().hide();
 
@@ -64,6 +108,8 @@ public class Auth_Login_Activity extends AppCompatActivity {
         layoutLoading = findViewById(R.id.layoutLoading);
         tvLoadingTitle = findViewById(R.id.tvLoadingTitle);
 
+        requestNotificationPermissionAtStartup();
+
         btnlogin.setOnClickListener(v -> doLogin());
         tvSignup.setVisibility(android.view.View.VISIBLE);
         tvSignup.setOnClickListener(v -> startActivity(new Intent(this, Auth_Register_Activity.class)));
@@ -72,6 +118,117 @@ public class Auth_Login_Activity extends AppCompatActivity {
         if (isLoggedIn && currentUid != null) {
             revalidateRememberedSession(currentUid);
         }
+
+        // Startup work above is done and the content is laid out, so the app
+        // is ready to be revealed as soon as the splash animation allows.
+        // Routing decisions are made above and never inside an animation
+        // callback - the overlay only controls when the cover comes off.
+        splashContentReady = true;
+        maybeRevealApp();
+    }
+
+    // ------------------------------------------------------------------
+    // Splash overlay (presentation only)
+    //
+    // The native system splash is the launch surface and shows a static
+    // logo; this overlay sits on top of the login content showing the same
+    // mark on the same celadon background, and plays the Lottie reveal.
+    // Because it is an ordinary view rather than the system splash icon, it
+    // is free of Android 12's circular icon mask and can render the logo
+    // considerably larger.
+    //
+    // The app is revealed only once BOTH the animation has finished and
+    // startup is ready, so a long initialization never truncates the
+    // animation and a fast one never leaves a half-played logo.
+    // ------------------------------------------------------------------
+
+    private void startSplashOverlay() {
+        splashOverlay = findViewById(R.id.splashOverlay);
+        com.airbnb.lottie.LottieAnimationView lottie = findViewById(R.id.splashLottie);
+        if (splashOverlay == null || lottie == null) {
+            splashAnimationDone = true;
+            return;
+        }
+
+        // With animations disabled there is nothing to play: jump straight to
+        // the composition's final frame so the settled logo is still shown,
+        // then let the normal reveal path continue.
+        if (animatorDurationScale() == 0f) {
+            lottie.setProgress(1f);
+            splashAnimationDone = true;
+            return;
+        }
+
+        lottie.addAnimatorListener(new android.animation.AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(android.animation.Animator animation) {
+                splashAnimationDone = true;
+                maybeRevealApp();
+            }
+
+            @Override
+            public void onAnimationCancel(android.animation.Animator animation) {
+                splashAnimationDone = true;
+                maybeRevealApp();
+            }
+        });
+        lottie.playAnimation();
+
+        // Safety net: if the composition ever fails to load or its end
+        // callback does not arrive, the overlay must not strand the user on
+        // a covered screen. This only ever fires early, never late.
+        mainHandler.postDelayed(() -> {
+            if (!splashAnimationDone) {
+                splashAnimationDone = true;
+                maybeRevealApp();
+            }
+        }, SPLASH_OVERLAY_MAX_WAIT_MS);
+    }
+
+    private float animatorDurationScale() {
+        return android.provider.Settings.Global.getFloat(getContentResolver(),
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f);
+    }
+
+    /** Uncovers the app once the reveal has played and startup is ready. */
+    private void maybeRevealApp() {
+        if (!splashAnimationDone || !splashContentReady || splashOverlayHidden) return;
+        if (splashOverlay == null) return;
+        splashOverlayHidden = true;
+
+        splashOverlay.animate()
+                .alpha(0f)
+                .setDuration(180L)
+                .withEndAction(() -> splashOverlay.setVisibility(android.view.View.GONE))
+                .start();
+    }
+
+    /**
+     * Splash-to-app transition: fades the splash out and always removes it,
+     * even with animations off. The logo is never moved or scaled here - by
+     * this point it has long since finished its entrance and settled.
+     */
+    private void fadeOutSplash(android.view.View splashView,
+                               androidx.core.splashscreen.SplashScreenViewProvider provider) {
+        splashView.animate()
+                .alpha(0f)
+                .setDuration(190L)
+                .setInterpolator(new android.view.animation.AccelerateInterpolator())
+                .withEndAction(provider::remove)
+                .start();
+    }
+
+    private void requestNotificationPermissionAtStartup() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        if (prefs.getBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED, false)) return;
+
+        prefs.edit().putBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED, true).apply();
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
     }
 
     private void showLoading(boolean show, String message) {

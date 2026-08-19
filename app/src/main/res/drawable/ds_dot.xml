@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Basilience Design System pilot: small status dot, tinted at runtime to
+     match the resolved status color (success/warning/neutral). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="@color/nav_inactive" />
+</shape>

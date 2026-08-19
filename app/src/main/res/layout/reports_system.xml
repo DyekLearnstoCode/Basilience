@@ -33,346 +33,444 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingTop="@dimen/report_content_top_padding"
+            android:paddingTop="20dp"
             android:paddingStart="@dimen/container_side_padding"
             android:paddingEnd="@dimen/container_side_padding"
-            android:paddingBottom="@dimen/container_side_padding">
+            android:paddingBottom="@dimen/ds_space_xl">
 
-            <!-- Title -->
+            <!-- PAGE HEADER (V2): title/subtitle centered on their own
+                 lines; export/info actions live on a separate row below,
+                 right-aligned, so they never sit beside the title text and
+                 can never pull its true center off-balance. -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center">
-                
+                android:orientation="vertical"
+                android:layout_marginBottom="@dimen/ds_space_lg">
+
                 <TextView
                     android:id="@+id/tvTitle"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Parameter Reports"
-                    android:textColor="#212121"
-                    android:textSize="28sp"
-                    android:fontFamily="sans-serif-black"
-                    android:letterSpacing="-0.02" />
-                    
-                <ImageButton
-                    android:id="@+id/btnInfo"
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
-                    android:layout_marginStart="8dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@drawable/ic_info_outline"
-                    android:tint="#757575"
-                    android:contentDescription="Help" />
+                    style="@style/Basilience.PageTitle"
+                    android:gravity="center"
+                    android:text="Parameter Report" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    style="@style/Basilience.PageSubtitle"
+                    android:layout_marginTop="@dimen/ds_space_xs"
+                    android:gravity="center"
+                    android:text="Cultivation conditions for the selected cycle" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="end|center_vertical"
+                    android:layout_marginTop="@dimen/ds_space_sm">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnShare"
+                        style="@style/Basilience.HeaderIconButton"
+                        android:text=""
+                        android:contentDescription="Export report"
+                        app:icon="@drawable/ic_share"
+                        app:iconSize="22dp" />
+
+                    <ImageButton
+                        android:id="@+id/btnInfo"
+                        android:layout_width="@dimen/ds_header_icon_size"
+                        android:layout_height="@dimen/ds_header_icon_size"
+                        android:padding="9dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@drawable/ic_info_outline"
+                        android:tint="@color/nav_inactive"
+                        android:contentDescription="How Parameter Reports work" />
+                </LinearLayout>
             </LinearLayout>
 
-            <TextView
+            <!-- NO CYCLES EMPTY STATE -->
+            <LinearLayout
+                android:id="@+id/noCyclesEmptyState"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:orientation="vertical"
                 android:gravity="center"
-                android:text="Monitor and analyze your system's performance."
-                android:textColor="#757575"
-                android:textSize="14sp"
-                android:fontFamily="sans-serif-medium"
-                android:layout_marginTop="6dp"
-                android:layout_marginBottom="24dp" />
+                android:paddingTop="48dp"
+                android:paddingBottom="48dp"
+                android:visibility="gone">
 
-            <!-- SELECTION & FILTER CARD -->
-            <com.google.android.material.card.MaterialCardView
+                <TextView
+                    android:id="@+id/tvNoCyclesEmptyState"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:text="No cultivation cycles exist for this device yet."
+                    android:textColor="@color/nav_inactive"
+                    android:textSize="15sp"
+                    android:lineSpacingExtra="3dp"
+                    android:fontFamily="sans-serif-medium" />
+            </LinearLayout>
+
+            <!-- REPORT CONTENT -->
+            <LinearLayout
+                android:id="@+id/reportContentContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="2dp"
-                app:cardBackgroundColor="@android:color/white">
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <!-- CYCLE SELECTOR: flat context row, no boxed outline - a
+                     bottom divider is the row's only edge. -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    style="@style/Basilience.SectionLabel"
+                    android:text="Cultivation Cycle"
+                    android:layout_marginBottom="@dimen/ds_space_xs" />
+
+                <Spinner
+                    android:id="@+id/spinnerCycle"
+                    android:layout_width="match_parent"
+                    android:layout_height="@dimen/ds_selector_height"
+                    android:paddingStart="0dp"
+                    android:paddingEnd="32dp"
+                    android:background="@drawable/ds_selector_bg_flat"
+                    android:theme="@style/ThemeOverlay.AppCompat.Light" />
+
+                <View style="@style/Basilience.Divider" />
+
+                <!-- PARAMETER SELECTOR -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    style="@style/Basilience.SectionLabel"
+                    android:text="Parameter"
+                    android:layout_marginTop="@dimen/ds_space_lg"
+                    android:layout_marginBottom="@dimen/ds_space_xs" />
+
+                <Spinner
+                    android:id="@+id/spinnerParameter"
+                    android:layout_width="match_parent"
+                    android:layout_height="@dimen/ds_selector_height"
+                    android:paddingStart="0dp"
+                    android:paddingEnd="32dp"
+                    android:background="@drawable/ds_selector_bg_flat"
+                    android:entries="@array/parameters_array"
+                    android:theme="@style/ThemeOverlay.AppCompat.Light" />
+
+                <View style="@style/Basilience.Divider" />
+
+                <!-- PERIOD FILTER: one segmented-control track, five equal
+                     segments - only the active segment gets a filled pill. -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    style="@style/Basilience.SectionLabel"
+                    android:text="Period"
+                    android:layout_marginTop="@dimen/ds_space_lg"
+                    android:layout_marginBottom="@dimen/ds_space_xs" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    android:orientation="horizontal"
+                    android:background="@drawable/ds_segment_track_bg"
+                    android:padding="3dp">
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Configurations"
-                        android:fontFamily="sans-serif-bold"
-                        android:textColor="#212121"
-                        android:textSize="18sp"
-                        android:layout_marginBottom="16dp"/>
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnEntireCycle"
+                        style="@style/Basilience.SegmentChip.Selected"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:text="Entire"
+                        android:layout_marginEnd="2dp"
+                        android:padding="0dp"
+                        app:backgroundTint="@null" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnToday"
+                        style="@style/Basilience.SegmentChip"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:text="Today"
+                        android:layout_marginEnd="2dp"
+                        android:padding="0dp"
+                        app:backgroundTint="@null" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnWeek"
+                        style="@style/Basilience.SegmentChip"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:text="7D"
+                        android:layout_marginEnd="2dp"
+                        android:padding="0dp"
+                        app:backgroundTint="@null" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnMonth"
+                        style="@style/Basilience.SegmentChip"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:text="30D"
+                        android:layout_marginEnd="2dp"
+                        android:padding="0dp"
+                        app:backgroundTint="@null" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCustom"
+                        style="@style/Basilience.SegmentChip"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:text="Custom"
+                        android:padding="0dp"
+                        app:backgroundTint="@null" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvEffectiveRange"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    style="@style/Basilience.Caption"
+                    android:layout_marginTop="@dimen/ds_space_md"
+                    android:text="" />
+
+                <!-- INSIGHT HERO: one grouped surface - status badge, then
+                     evidence, then a thin internal rule, then the primary
+                     threshold/range value. A slim status-colored edge and
+                     dot are the only accent color; the card itself stays a
+                     restrained neutral/green tint. -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardInsightHero"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/ds_space_lg"
+                    app:cardCornerRadius="@dimen/ds_surface_radius"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp"
+                    app:cardBackgroundColor="@color/ds_hero_bg">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:layout_marginBottom="16dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Parameter:"
-                            android:textColor="#333"
-                            android:textStyle="bold" />
-
-                        <Spinner
-                            android:id="@+id/spinnerParameter"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:layout_marginStart="8dp"
-                            android:paddingStart="12dp"
-                            android:paddingEnd="12dp"
-                            android:paddingTop="8dp"
-                            android:paddingBottom="8dp"
-                            android:background="@drawable/spinner_outline_bg"
-                            android:entries="@array/parameters_array"
-                            android:theme="@style/ThemeOverlay.AppCompat.Light" />
-
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:id="@+id/filterRow"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center"
                         android:orientation="horizontal">
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnToday"
-                            style="@style/FilterChipSelected"
+                        <View
+                            android:id="@+id/heroAccentEdge"
+                            android:layout_width="4dp"
+                            android:layout_height="match_parent"
+                            android:background="@color/ds_divider" />
+
+                        <LinearLayout
                             android:layout_width="0dp"
                             android:layout_weight="1"
-                            android:layout_height="40dp"
-                            android:text="Today"
-                            android:layout_marginEnd="4dp"
-                            android:textSize="12sp"
-                            android:padding="0dp"
-                            app:backgroundTint="@null" />
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="@dimen/ds_surface_padding">
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnWeek"
-                            style="@style/FilterChip"
-                            android:layout_width="0dp"
-                            android:layout_weight="1"
-                            android:layout_height="40dp"
-                            android:text="7 Days"
-                            android:layout_marginEnd="4dp"
-                            android:textSize="12sp"
-                            android:padding="0dp"
-                            app:backgroundTint="@null" />
+                            <LinearLayout
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnMonth"
-                            style="@style/FilterChip"
-                            android:layout_width="0dp"
-                            android:layout_weight="1"
-                            android:layout_height="40dp"
-                            android:text="30 Days"
-                            android:layout_marginEnd="4dp"
-                            android:textSize="12sp"
-                            android:padding="0dp"
-                            app:backgroundTint="@null" />
+                                <View
+                                    android:id="@+id/dotInsightStatus"
+                                    android:layout_width="8dp"
+                                    android:layout_height="8dp"
+                                    android:layout_marginEnd="8dp"
+                                    android:background="@drawable/ds_dot"
+                                    android:visibility="gone" />
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnCycle"
-                            style="@style/FilterChip"
-                            android:layout_width="0dp"
-                            android:layout_weight="1"
-                            android:layout_height="40dp"
-                            android:text="Cycle"
-                            android:textSize="12sp"
-                            android:padding="0dp"
-                            app:backgroundTint="@null" />
+                                <TextView
+                                    android:id="@+id/tvInsightStatus"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    style="@style/Basilience.StatusBadge"
+                                    android:text="SELECT A PARAMETER"
+                                    android:textColor="@color/nav_inactive"
+                                    android:background="@drawable/ds_status_pill_neutral"
+                                    android:paddingHorizontal="14dp"
+                                    android:paddingVertical="6dp"
+                                    android:visibility="gone" />
+                            </LinearLayout>
 
+                            <TextView
+                                android:id="@+id/tvEvidence"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                style="@style/Basilience.BodyMuted"
+                                android:layout_marginTop="@dimen/ds_space_sm"
+                                android:text="" />
+
+                            <View
+                                style="@style/Basilience.Divider"
+                                android:layout_marginTop="@dimen/ds_space_sm"
+                                android:layout_marginBottom="@dimen/ds_space_sm" />
+
+                            <TextView
+                                android:id="@+id/tvTargetRange"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                style="@style/Basilience.HeroValue"
+                                android:text="" />
+                        </LinearLayout>
                     </LinearLayout>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+                </com.google.android.material.card.MaterialCardView>
 
-            <!-- DATA VISUALIZATION CARD -->
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="2dp"
-                app:cardBackgroundColor="@android:color/white">
-
+                <!-- KEY METRICS: compact typography-first row, no filled
+                     tiles - the surrounding gaps above/below already give it
+                     room to breathe. -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    android:layout_marginTop="@dimen/ds_space_lg"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
 
-                    <RelativeLayout
-                        android:layout_width="match_parent"
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="12dp">
+                        android:orientation="vertical"
+                        android:gravity="center">
+
+                        <TextView
+                            android:id="@+id/tvAverage"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            style="@style/Basilience.MetricValue"
+                            android:text="--" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Trends"
-                            android:fontFamily="sans-serif-bold"
-                            android:textColor="#212121"
-                            android:textSize="18sp"
-                            android:layout_alignParentStart="true"
-                            android:layout_centerVertical="true"/>
-
-                        <ImageButton
-                            android:id="@+id/btnShare"
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
-                            android:layout_alignParentEnd="true"
-                            android:background="@android:color/transparent"
-                            android:contentDescription="Share"
-                            android:src="@drawable/saveas_icon" />
-                    </RelativeLayout>
-
-                    <com.github.mikephil.charting.charts.LineChart
-                        android:id="@+id/lineChart"
-                        android:layout_width="match_parent"
-                        android:layout_height="260dp"
-                        android:layout_marginTop="4dp"
-                        android:layout_marginBottom="4dp" />
+                            style="@style/Basilience.MetricLabel"
+                            android:layout_marginTop="2dp"
+                            android:text="Average" />
+                    </LinearLayout>
 
                     <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:background="#EEEEEE"
-                        android:layout_marginTop="16dp"
-                        android:layout_marginBottom="16dp"/>
+                        android:layout_width="1dp"
+                        android:layout_height="32dp"
+                        android:background="@color/ds_divider" />
 
                     <LinearLayout
-                        android:id="@+id/statsLayout"
-                        android:layout_width="match_parent"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
                         android:layout_height="wrap_content"
-                        android:minHeight="64dp"
-                        android:orientation="horizontal">
+                        android:orientation="vertical"
+                        android:gravity="center">
 
-                        <LinearLayout
-                            android:layout_width="0dp"
+                        <TextView
+                            android:id="@+id/tvHigh"
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:gravity="center">
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="AVERAGE"
-                                android:textSize="11sp"
-                                android:textColor="@color/nav_inactive"
-                                android:fontFamily="sans-serif-medium"
-                                android:letterSpacing="0.05"
-                                android:layout_marginBottom="2dp"/>
-                            <TextView
-                                android:id="@+id/tvAverage"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="--"
-                                android:textSize="22sp"
-                                android:fontFamily="sans-serif-black"
-                                android:textColor="@color/text_dark"/>
-                        </LinearLayout>
+                            style="@style/Basilience.MetricValue"
+                            android:text="--" />
 
-                        <LinearLayout
-                            android:layout_width="0dp"
+                        <TextView
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:gravity="center">
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="PEAK"
-                                android:textSize="11sp"
-                                android:textColor="@color/nav_inactive"
-                                android:fontFamily="sans-serif-medium"
-                                android:letterSpacing="0.05"
-                                android:layout_marginBottom="2dp"/>
-                            <TextView
-                                android:id="@+id/tvHigh"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="--"
-                                android:textSize="22sp"
-                                android:fontFamily="sans-serif-black"
-                                android:textColor="@color/text_dark"/>
-                        </LinearLayout>
+                            style="@style/Basilience.MetricLabel"
+                            android:layout_marginTop="2dp"
+                            android:text="Highest" />
+                    </LinearLayout>
 
-                        <LinearLayout
-                            android:layout_width="0dp"
+                    <View
+                        android:layout_width="1dp"
+                        android:layout_height="32dp"
+                        android:background="@color/ds_divider" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center">
+
+                        <TextView
+                            android:id="@+id/tvLow"
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:gravity="center">
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="LOWEST"
-                                android:textSize="11sp"
-                                android:textColor="@color/nav_inactive"
-                                android:fontFamily="sans-serif-medium"
-                                android:letterSpacing="0.05"
-                                android:layout_marginBottom="2dp"/>
-                            <TextView
-                                android:id="@+id/tvLow"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="--"
-                                android:textSize="22sp"
-                                android:fontFamily="sans-serif-black"
-                                android:textColor="@color/text_dark"/>
-                        </LinearLayout>
+                            style="@style/Basilience.MetricValue"
+                            android:text="--" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            style="@style/Basilience.MetricLabel"
+                            android:layout_marginTop="2dp"
+                            android:text="Lowest" />
                     </LinearLayout>
                 </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
 
-            <!-- INTERPRETATION CARD -->
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:layout_marginBottom="16dp"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="2dp"
-                app:cardBackgroundColor="@color/background_light">
-
+                <!-- CHART SURFACE: one subtle neutral surface, title
+                     integrated inside it instead of floating above. -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/ds_space_xl"
                     android:orientation="vertical"
-                    android:padding="16dp">
+                    android:background="@drawable/ds_surface_chart_bg"
+                    android:padding="@dimen/ds_surface_padding">
+
+                    <TextView
+                        android:id="@+id/tvChartTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        style="@style/Basilience.SectionTitle"
+                        android:text="Parameter Trend" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="System Insights"
-                        android:fontFamily="sans-serif-bold"
-                        android:textColor="@color/text_dark"
-                        android:textSize="18sp"
-                        android:layout_marginBottom="10dp"/>
+                        style="@style/Basilience.Caption"
+                        android:layout_marginTop="2dp"
+                        android:layout_marginBottom="@dimen/ds_space_md"
+                        android:text="Readings across the selected period" />
+
+                    <com.example.basilience.ThresholdBandLineChart
+                        android:id="@+id/lineChart"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/ds_chart_height" />
+                </LinearLayout>
+
+                <!-- WHAT THIS MEANS: a lighter, less prominent surface from
+                     the same soft-green family as the insight hero. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/ds_space_xl"
+                    android:orientation="vertical"
+                    android:background="@drawable/ds_surface_interpretation_bg"
+                    android:padding="@dimen/ds_surface_padding">
 
                     <TextView
-                        android:id="@+id/tvInsightStatus"
-                        android:layout_width="match_parent"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="SELECT A PARAMETER"
-                        android:textColor="@color/nav_inactive"
-                        android:textSize="12sp"
-                        android:textStyle="bold"
-                        android:visibility="gone" />
+                        style="@style/Basilience.SectionTitle"
+                        android:text="What This Means"
+                        android:layout_marginBottom="@dimen/ds_space_sm" />
 
                     <TextView
                         android:id="@+id/tvInterpretation"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Select a parameter to view insights."
-                        android:textSize="14sp"
-                        android:layout_marginTop="4dp"
-                        android:textColor="@color/text_dark"
-                        android:lineSpacingExtra="4dp" />
+                        style="@style/Basilience.BodyMuted"
+                        android:text="Select a cycle and parameter to view a report." />
                 </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+
+            </LinearLayout>
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

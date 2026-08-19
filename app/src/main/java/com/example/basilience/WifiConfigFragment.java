@@ -49,6 +49,7 @@ public class WifiConfigFragment extends Fragment {
     private DeviceConnectivityState connectivityState = DeviceConnectivityState.RECONNECTING;
     private Boolean lastReportedWifiConnected = null;
     private boolean setupApReachable = false;
+    private boolean setupApCheckInProgress = false;
     private boolean awaitingReconnect = false;
     private boolean reconnectSuccessDialogShown = false;
     private Long lastServerSeen = null;
@@ -339,7 +340,10 @@ public class WifiConfigFragment extends Fragment {
     }
 
     private void checkSetupApReachability() {
-        if (networkExecutor == null || networkExecutor.isShutdown() || awaitingReconnect) return;
+        if (networkExecutor == null || networkExecutor.isShutdown() || awaitingReconnect
+                || setupApCheckInProgress) return;
+        setupApCheckInProgress = true;
+        final String requestDeviceId = selectedDeviceId;
         final boolean showDetectionLoading = initialApCheck;
         if (showDetectionLoading) {
             initialApCheck = false;
@@ -350,11 +354,22 @@ public class WifiConfigFragment extends Fragment {
             boolean reachable = LocalProvisioningClient.isSetupApReachable(appContext);
 
             mainHandler.post(() -> {
+                setupApCheckInProgress = false;
                 if (!isAdded()) return;
+                String currentDeviceId = requireContext().getSharedPreferences(
+                        "basilience_prefs", Context.MODE_PRIVATE)
+                        .getString("selected_device_id", null);
+                if (requestDeviceId == null || !requestDeviceId.equals(currentDeviceId)) return;
+                if (isCurrentlyOnline) {
+                    setupApReachable = false;
+                    updateStatusUI();
+                    return;
+                }
                 setupApReachable = reachable;
-                if (reachable && !isCurrentlyOnline && selectedDeviceId != null) {
+                if (reachable) {
                     NotificationHelper.showWifiConfigurationRequiredNotification(
-                            requireContext(), selectedDeviceId);
+                            requireContext(), requestDeviceId);
+                    MainActivity.onLocalSetupApConfirmed(requestDeviceId);
                 }
                 if (showDetectionLoading) {
                     hideLoading();
@@ -390,7 +405,7 @@ public class WifiConfigFragment extends Fragment {
         if (tvWifiStatus == null || !isAdded()) return;
 
         if (setupApReachable) {
-            tvWifiStatus.setText("● Provisioning");
+            tvWifiStatus.setText("● WI-FI CONFIGURATION REQUIRED");
             tvWifiStatus.setTextColor(androidx.core.content.ContextCompat.getColor(
                     requireContext(), R.color.device_status_reconnecting));
         } else {

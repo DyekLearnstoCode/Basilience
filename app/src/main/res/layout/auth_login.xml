@@ -188,4 +188,42 @@
         </com.google.android.material.card.MaterialCardView>
     </RelativeLayout>
 
+    <!-- SPLASH OVERLAY
+         Last child, so it covers the login content during the launch
+         handoff. Same celadon background as the native splash window, so the
+         system splash dissolving above this reveals an identical backdrop
+         rather than a second, differently-coloured screen.
+
+         Sized as a percentage of screen width rather than a fixed dp value:
+         the artwork fills ~90% of the 500x500 composition, so 52% of the
+         screen width puts the visible logo at roughly 47% - noticeably
+         larger than the mask-limited native splash icon could ever be.
+
+         Clickable/focusable so stray taps cannot reach the login form
+         underneath while it is still covered. Hidden by the activity once
+         the animation has played and startup is ready. -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/splashOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/celadon"
+        android:clickable="true"
+        android:focusable="true">
+
+        <com.airbnb.lottie.LottieAnimationView
+            android:id="@+id/splashLottie"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            app:layout_constraintDimensionRatio="1:1"
+            app:layout_constraintWidth_percent="0.52"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:lottie_rawRes="@raw/basilience_splash"
+            app:lottie_imageAssetsFolder="lottie"
+            app:lottie_autoPlay="false"
+            app:lottie_loop="false" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
 </FrameLayout>

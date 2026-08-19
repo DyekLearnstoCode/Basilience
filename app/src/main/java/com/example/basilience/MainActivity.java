@@ -26,12 +26,6 @@ import com.google.firebase.database.ValueEventListener;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.auth.FirebaseAuth;
-import android.os.Build;
-import android.Manifest;
-import android.content.pm.PackageManager;
-import androidx.core.content.ContextCompat;
-import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.activity.result.ActivityResultLauncher;
 import android.util.Log;
 import java.util.HashMap;
 import java.util.Map;
@@ -51,16 +45,43 @@ public class MainActivity extends AppCompatActivity {
     private static String parameterAlertDeviceId;
     private NotificationHelper.UpdatableParameterDialog parameterAlertDialog;
     private androidx.appcompat.app.AlertDialog criticalAlertDialog;
+    private androidx.appcompat.app.AlertDialog connectivityRecoveryDialog;
+    private androidx.appcompat.app.AlertDialog automationLifecycleDialog;
     private boolean criticalAlertShowing;
     private final ArrayDeque<CriticalAlertRequest> pendingCriticalAlerts = new ArrayDeque<>();
+    private CriticalAlertRequest activeCriticalAlert;
+    private final ArrayDeque<AutomationLifecycleRequest> pendingAutomationLifecycleAlerts =
+            new ArrayDeque<>();
+    private AutomationLifecycleRequest activeAutomationLifecycleAlert;
+
+    private static final String DEVICE_UNREACHABLE_TITLE = "Basilience Device Unreachable";
 
     private static final class CriticalAlertRequest {
         final String title;
         final String message;
+        final boolean connectivity;
 
         CriticalAlertRequest(String title, String message) {
             this.title = title;
             this.message = message;
+            this.connectivity = DEVICE_UNREACHABLE_TITLE.equals(title);
+        }
+    }
+
+    private static final class AutomationLifecycleRequest {
+        final String title;
+        final String message;
+        final String eventId;
+        final String episodeId;
+        final boolean success;
+
+        AutomationLifecycleRequest(String title, String message, String eventId,
+                                   String episodeId, boolean success) {
+            this.title = title;
+            this.message = message;
+            this.eventId = eventId;
+            this.episodeId = episodeId;
+            this.success = success;
         }
     }
 
@@ -78,20 +99,10 @@ public class MainActivity extends AppCompatActivity {
     private String currentParameterAlertDeviceId;
     private final Map<String, Boolean> currentParameterAlertStates = new HashMap<>();
 
-    private final ActivityResultLauncher<String> requestPermissionLauncher =
-            registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
-                if (isGranted) {
-                    Log.d("FCM", "Notification permission granted");
-                } else {
-                    Log.w("FCM", "Notification permission denied");
-                }
-            });
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
-        askNotificationPermission();
         retrieveAndSaveFCMToken();
         // Ensure status bar icons are dark (for light background)
         WindowInsetsControllerCompat windowInsetsController =
@@ -128,6 +139,20 @@ public class MainActivity extends AppCompatActivity {
         DeviceConnectionManager.getInstance().getConnectivityState().observe(this, state -> {
             // Presence UI observes backend-owned status. Cloud Functions alone create
             // persistent alert history and send FCM events.
+            if (state == DeviceConnectivityState.ONLINE) {
+                String selectedDeviceId = prefs.getString("selected_device_id", null);
+                if (selectedDeviceId != null) {
+                    NotificationHelper.clearWifiConfigurationRequiredNotification(
+                            this, selectedDeviceId);
+                }
+                clearStaleConnectivityOutageAlerts();
+            } else if (state == DeviceConnectivityState.OFFLINE) {
+                String selectedDeviceId = prefs.getString("selected_device_id", null);
+                if (selectedDeviceId != null) {
+                    NotificationHelper.recordCloudConnectivityPresentation(
+                            this, selectedDeviceId, true);
+                }
+            }
         });
 
         prefs.registerOnSharedPreferenceChangeListener((sharedPreferences, key) -> {
@@ -372,42 +397,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // The listener is still here if you need it later, but it won't run unless called
-    private void startAlertBannerListener() {
-        SharedPreferences prefs = getSharedPreferences("basilience_prefs", MODE_PRIVATE);
-        String deviceId = prefs.getString("selected_device_id", null);
-
-        if (deviceId == null || deviceId.isEmpty()) return;
-
-        FirebaseDatabase.getInstance(
-                        "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app"
-                )
-                .getReference("devices").child(deviceId)
-                .addValueEventListener(new ValueEventListener() {
-                    @Override
-                    public void onDataChange(DataSnapshot snapshot) {
-                        // ... (Logic for showing the banner)
-                    }
-                    @Override
-                    public void onCancelled(DatabaseError error) {}
-                });
-    }
-
-    private void askNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
-                    PackageManager.PERMISSION_GRANTED) {
-                // FCM SDK (and your app) can post notifications.
-            } else if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
-                // Display an educational UI explaining to the user the features that will be enabled
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
-            } else {
-                // Directly ask for the permission
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
-            }
-        }
-    }
-
     private void retrieveAndSaveFCMToken() {
         FirebaseMessaging.getInstance().getToken()
             .addOnCompleteListener(task -> {
@@ -475,7 +464,13 @@ public class MainActivity extends AppCompatActivity {
         shownIds.add(stableId);
         prefs.edit().putStringSet("shown_critical_alert_ids", shownIds).apply();
 
-        activity.runOnUiThread(() -> activity.enqueueCriticalAlert(title, message));
+        activity.runOnUiThread(() -> {
+            if (DEVICE_UNREACHABLE_TITLE.equals(title)) {
+                activity.enqueueConnectivityCriticalAlert(title, message);
+            } else {
+                activity.enqueueCriticalAlert(title, message);
+            }
+        });
         return true;
     }
 
@@ -493,12 +488,153 @@ public class MainActivity extends AppCompatActivity {
         shownIds.add(stableId);
         prefs.edit().putStringSet("shown_recovery_alert_ids", shownIds).apply();
 
-        activity.runOnUiThread(() -> NotificationHelper.showSuccessAcknowledgement(
-                activity, title, message, null));
+        activity.runOnUiThread(() -> activity.showConnectivityRecovery(title, message));
         return true;
     }
 
+    public static boolean showForegroundAutomationLifecycle(
+            String title,
+            String message,
+            String eventId,
+            String lifecycleKind) {
+        MainActivity activity = foregroundActivity.get();
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return false;
+
+        boolean success = "SUCCESS".equals(lifecycleKind);
+        if (!success && !"START".equals(lifecycleKind)) return false;
+
+        String stableId = eventId == null || eventId.trim().isEmpty()
+                ? title + "|" + message
+                : eventId;
+        String episodeId = automationLifecycleEpisodeId(stableId);
+        SharedPreferences prefs = activity.getSharedPreferences("basilience_prefs", MODE_PRIVATE);
+        Set<String> completedEpisodes = new HashSet<>(prefs.getStringSet(
+                "completed_automation_lifecycle_episodes", new HashSet<>()));
+        if (!success && completedEpisodes.contains(episodeId)) return true;
+
+        Set<String> shownIds = new HashSet<>(prefs.getStringSet(
+                "shown_automation_lifecycle_ids", new HashSet<>()));
+        if (shownIds.contains(stableId)) return true;
+        shownIds.add(stableId);
+
+        SharedPreferences.Editor editor = prefs.edit()
+                .putStringSet("shown_automation_lifecycle_ids", shownIds);
+        if (success) {
+            completedEpisodes.add(episodeId);
+            editor.putStringSet("completed_automation_lifecycle_episodes", completedEpisodes);
+        }
+        editor.apply();
+
+        AutomationLifecycleRequest request = new AutomationLifecycleRequest(
+                title, message, stableId, episodeId, success);
+        activity.runOnUiThread(() -> activity.enqueueAutomationLifecycleAlert(request));
+        return true;
+    }
+
+    private static String automationLifecycleEpisodeId(String eventId) {
+        if (eventId.endsWith("_start")) {
+            return eventId.substring(0, eventId.length() - "_start".length());
+        }
+        if (eventId.endsWith("_success")) {
+            return eventId.substring(0, eventId.length() - "_success".length());
+        }
+        return eventId;
+    }
+
+    public static void onLocalSetupApConfirmed(String deviceId) {
+        MainActivity activity = foregroundActivity.get();
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()
+                || deviceId == null) return;
+        String selectedDeviceId = activity.getSharedPreferences(
+                "basilience_prefs", MODE_PRIVATE).getString("selected_device_id", null);
+        if (!deviceId.equals(selectedDeviceId)) return;
+
+        DeviceConnectivityState currentState = DeviceConnectionManager.getInstance()
+                .getConnectivityState().getValue();
+        if (currentState == DeviceConnectivityState.ONLINE
+                || !NotificationHelper.isSetupApRecentlyConfirmed(activity, deviceId)) {
+            return;
+        }
+
+        activity.runOnUiThread(() -> {
+            String currentSelectedDeviceId = activity.getSharedPreferences(
+                    "basilience_prefs", MODE_PRIVATE).getString("selected_device_id", null);
+            DeviceConnectivityState latestState = DeviceConnectionManager.getInstance()
+                    .getConnectivityState().getValue();
+            if (!deviceId.equals(currentSelectedDeviceId)
+                    || latestState != DeviceConnectivityState.OFFLINE
+                    || !NotificationHelper.isSetupApRecentlyConfirmed(activity, deviceId)
+                    || !activity.hasDeviceUnreachablePresentation(deviceId)) {
+                return;
+            }
+            activity.clearStaleConnectivityOutageAlerts();
+            NotificationHelper.cancelCloudConnectivityNotification(activity, deviceId);
+            NotificationHelper.markCloudConnectivitySupersededByOrange(activity, deviceId);
+        });
+    }
+
+    private boolean hasDeviceUnreachablePresentation(String deviceId) {
+        if (activeCriticalAlert != null && activeCriticalAlert.connectivity) return true;
+        for (CriticalAlertRequest request : pendingCriticalAlerts) {
+            if (request.connectivity) return true;
+        }
+        return NotificationHelper.isCloudConnectivityPresentationOffline(this, deviceId);
+    }
+
+    private void enqueueConnectivityCriticalAlert(String title, String message) {
+        dismissConnectivityRecovery();
+        pendingCriticalAlerts.removeIf(request -> request.connectivity);
+        if (activeCriticalAlert != null && activeCriticalAlert.connectivity
+                && title.equals(activeCriticalAlert.title)) {
+            return;
+        }
+        enqueueCriticalAlert(title, message);
+    }
+
+    private void showConnectivityRecovery(String title, String message) {
+        pendingCriticalAlerts.removeIf(request -> request.connectivity);
+        if (activeCriticalAlert != null && activeCriticalAlert.connectivity) {
+            if (criticalAlertDialog != null && criticalAlertDialog.isShowing()) {
+                criticalAlertDialog.dismiss();
+            }
+            criticalAlertDialog = null;
+            activeCriticalAlert = null;
+            criticalAlertShowing = false;
+        }
+
+        dismissConnectivityRecovery();
+        connectivityRecoveryDialog = NotificationHelper.showSuccessAcknowledgement(
+                this, title, message, () -> {
+                    connectivityRecoveryDialog = null;
+                    showNextCriticalAlert();
+                });
+    }
+
+    private void dismissConnectivityRecovery() {
+        if (connectivityRecoveryDialog != null && connectivityRecoveryDialog.isShowing()) {
+            connectivityRecoveryDialog.dismiss();
+        }
+        connectivityRecoveryDialog = null;
+    }
+
+    private void clearStaleConnectivityOutageAlerts() {
+        pendingCriticalAlerts.removeIf(request -> request.connectivity);
+        if (activeCriticalAlert == null || !activeCriticalAlert.connectivity) return;
+
+        if (criticalAlertDialog != null && criticalAlertDialog.isShowing()) {
+            criticalAlertDialog.dismiss();
+        }
+        criticalAlertDialog = null;
+        activeCriticalAlert = null;
+        criticalAlertShowing = false;
+
+        if (connectivityRecoveryDialog == null || !connectivityRecoveryDialog.isShowing()) {
+            showNextCriticalAlert();
+        }
+    }
+
     private void enqueueCriticalAlert(String title, String message) {
+        deferAutomationLifecycleAlertForCritical();
         pendingCriticalAlerts.add(new CriticalAlertRequest(title, message));
         dismissParameterAlertForCritical();
         showNextCriticalAlert();
@@ -508,21 +644,88 @@ public class MainActivity extends AppCompatActivity {
         if (criticalAlertShowing) return;
         CriticalAlertRequest request = pendingCriticalAlerts.poll();
         if (request == null) {
-            showPendingParameterAlertIfNeeded();
+            if (!showNextAutomationLifecycleAlert()) {
+                showPendingParameterAlertIfNeeded();
+            }
             return;
         }
 
         criticalAlertShowing = true;
+        activeCriticalAlert = request;
         criticalAlertDialog = NotificationHelper.showCriticalAlert(this, request.title,
                 request.message, () -> {
                     criticalAlertShowing = false;
                     criticalAlertDialog = null;
+                    activeCriticalAlert = null;
                     showNextCriticalAlert();
                 });
         if (criticalAlertDialog == null) {
             criticalAlertShowing = false;
+            activeCriticalAlert = null;
             showNextCriticalAlert();
         }
+    }
+
+    private void enqueueAutomationLifecycleAlert(AutomationLifecycleRequest request) {
+        if (request.success) {
+            pendingAutomationLifecycleAlerts.removeIf(pending ->
+                    !pending.success && pending.episodeId.equals(request.episodeId));
+
+            if (activeAutomationLifecycleAlert != null
+                    && !activeAutomationLifecycleAlert.success
+                    && activeAutomationLifecycleAlert.episodeId.equals(request.episodeId)) {
+                if (automationLifecycleDialog != null && automationLifecycleDialog.isShowing()) {
+                    automationLifecycleDialog.dismiss();
+                }
+                automationLifecycleDialog = null;
+                activeAutomationLifecycleAlert = null;
+            }
+        }
+
+        pendingAutomationLifecycleAlerts.add(request);
+        if (criticalAlertShowing || !pendingCriticalAlerts.isEmpty()) return;
+        showNextAutomationLifecycleAlert();
+    }
+
+    private boolean showNextAutomationLifecycleAlert() {
+        if (criticalAlertShowing || !pendingCriticalAlerts.isEmpty()) return false;
+        if (automationLifecycleDialog != null && automationLifecycleDialog.isShowing()) return true;
+
+        AutomationLifecycleRequest request = pendingAutomationLifecycleAlerts.poll();
+        if (request == null) return false;
+
+        dismissParameterAlertForCritical();
+        activeAutomationLifecycleAlert = request;
+        NotificationHelper.DialogCallback acknowledged = () -> {
+            automationLifecycleDialog = null;
+            activeAutomationLifecycleAlert = null;
+            if (!showNextAutomationLifecycleAlert()) {
+                showPendingParameterAlertIfNeeded();
+            }
+        };
+
+        automationLifecycleDialog = request.success
+                ? NotificationHelper.showSuccessAcknowledgement(
+                        this, request.title, request.message, acknowledged)
+                : NotificationHelper.showAutomationAcknowledgement(
+                        this, request.title, request.message, acknowledged);
+
+        if (automationLifecycleDialog == null) {
+            activeAutomationLifecycleAlert = null;
+            return showNextAutomationLifecycleAlert();
+        }
+        return true;
+    }
+
+    private void deferAutomationLifecycleAlertForCritical() {
+        if (activeAutomationLifecycleAlert == null) return;
+
+        pendingAutomationLifecycleAlerts.addFirst(activeAutomationLifecycleAlert);
+        if (automationLifecycleDialog != null && automationLifecycleDialog.isShowing()) {
+            automationLifecycleDialog.dismiss();
+        }
+        automationLifecycleDialog = null;
+        activeAutomationLifecycleAlert = null;
     }
 
     public static boolean showForegroundParameterAlert(String type, String eventId, String deviceId) {
@@ -603,10 +806,14 @@ public class MainActivity extends AppCompatActivity {
                         Boolean.TRUE.equals(snapshot.child("lowWater").getValue(Boolean.class)));
                 currentParameterAlertStates.put("ecLow",
                         Boolean.TRUE.equals(snapshot.child("ecLow").getValue(Boolean.class)));
+                currentParameterAlertStates.put("ecHigh",
+                        Boolean.TRUE.equals(snapshot.child("ecHigh").getValue(Boolean.class)));
                 currentParameterAlertStates.put("phLow",
                         Boolean.TRUE.equals(snapshot.child("phLow").getValue(Boolean.class)));
                 currentParameterAlertStates.put("phHigh",
                         Boolean.TRUE.equals(snapshot.child("phHigh").getValue(Boolean.class)));
+                currentParameterAlertStates.put("lowAirTemperature",
+                        Boolean.TRUE.equals(snapshot.child("lowAirTemperature").getValue(Boolean.class)));
                 currentParameterAlertStates.put("highTemperature",
                         Boolean.TRUE.equals(snapshot.child("highTemperature").getValue(Boolean.class)));
                 currentParameterAlertStates.put("waterTempOutOfRange",
@@ -664,8 +871,10 @@ public class MainActivity extends AppCompatActivity {
             String only = activeParameterAlerts.values().iterator().next();
             if ("Water Level — Low".equals(only)) return "Water Level is below the configured threshold.";
             if ("EC — Low".equals(only)) return "EC is below the configured range.";
+            if ("EC — High".equals(only)) return "Electrical conductivity is above the acceptable range.";
             if ("pH — Low".equals(only)) return "pH is below the configured range.";
             if ("pH — High".equals(only)) return "pH is above the configured range.";
+            if ("Air Temperature — Low".equals(only)) return "Air temperature is below the acceptable range.";
             if ("Air Temperature — High".equals(only)) return "Air Temperature is above the configured range.";
             return "Water Temperature is outside the configured range.";
         }
@@ -728,8 +937,10 @@ public class MainActivity extends AppCompatActivity {
     private static String parameterLabel(String type) {
         if ("lowWater".equalsIgnoreCase(type)) return "Water Level — Low";
         if ("ecLow".equalsIgnoreCase(type)) return "EC — Low";
+        if ("ecHigh".equalsIgnoreCase(type)) return "EC — High";
         if ("phLow".equalsIgnoreCase(type)) return "pH — Low";
         if ("phHigh".equalsIgnoreCase(type)) return "pH — High";
+        if ("lowAirTemperature".equalsIgnoreCase(type)) return "Air Temperature — Low";
         if ("highTemperature".equalsIgnoreCase(type)) return "Air Temperature — High";
         if ("waterTempOutOfRange".equalsIgnoreCase(type)) return "Water Temperature — Out of Range";
         return null;
@@ -742,6 +953,14 @@ public class MainActivity extends AppCompatActivity {
         parameterAlertDialog = null;
         if (criticalAlertDialog != null && criticalAlertDialog.isShowing()) criticalAlertDialog.dismiss();
         criticalAlertDialog = null;
+        if (automationLifecycleDialog != null && automationLifecycleDialog.isShowing()) {
+            automationLifecycleDialog.dismiss();
+        }
+        automationLifecycleDialog = null;
+        activeAutomationLifecycleAlert = null;
+        pendingAutomationLifecycleAlerts.clear();
+        dismissConnectivityRecovery();
+        activeCriticalAlert = null;
         pendingCriticalAlerts.clear();
         super.onDestroy();
     }

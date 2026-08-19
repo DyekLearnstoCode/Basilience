@@ -9,8 +9,11 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
+import com.google.firebase.firestore.FirebaseFirestore;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
@@ -37,16 +40,36 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         public boolean isHeader = false;
         public String headerText;
         public boolean showMarkAllAction;
+        // Only ever populated for a notification tied to an actual stored
+        // harvest record (never for a pre-harvest reminder) - a persisted
+        // name snapshot taken at the moment the harvest was recorded, so it
+        // stays historically correct even if the recorder's profile name
+        // later changes. recorderUid is a fallback for older/incomplete
+        // records that never captured a name snapshot.
+        public String recorderName;
+        public String recorderUid;
+        // Set only for an event replayed from the firmware's offline queue -
+        // see functions/onNotificationQueued. Drives a subtle secondary note,
+        // never a badge.
+        public boolean offlineRecorded = false;
+        public boolean smsFallbackUsed = false;
 
         public NotificationItem() {}
 
         public NotificationItem(String docId, String message, long timestamp, String type, boolean isRead) {
+            this(docId, message, timestamp, type, isRead, null, null);
+        }
+
+        public NotificationItem(String docId, String message, long timestamp, String type, boolean isRead,
+                                 String recorderName, String recorderUid) {
             this.docId = docId;
             this.message = message;
             this.timestamp = timestamp;
             this.type = type;
             this.isRead = isRead;
             this.isHeader = false;
+            this.recorderName = recorderName;
+            this.recorderUid = recorderUid;
         }
 
         public static NotificationItem createHeader(String headerText, boolean showMarkAllAction) {
@@ -63,6 +86,11 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
     private final Runnable markAllReadAction;
     private boolean markAllEnabled;
     private boolean markingAllRead;
+    // Fallback-tier cache: resolves a recorder UID to a display name (from
+    // users/{uid}.fullName, the same source the Harvest page itself uses)
+    // only when a record predates the recorderName snapshot. Avoids
+    // re-fetching the same profile on every scroll/rebind.
+    private final Map<String, String> resolvedRecorderNames = new HashMap<>();
 
     public NotificationAdapter(List<NotificationItem> notifications,
                                OnNotificationClickListener clickListener,
@@ -154,6 +182,8 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             contentHolder.viewTypeColor.setBackgroundColor(color);
             contentHolder.iconBackground.getBackground().setTint(color);
 
+            bindRecordedBy(contentHolder, item);
+
             // Read / Unread UI formatting
             if (item.isRead) {
                 if (contentHolder.vUnreadDot != null) contentHolder.vUnreadDot.setVisibility(View.GONE);
@@ -173,6 +203,62 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         }
     }
 
+    // Shares one secondary-note line with two mutually exclusive uses (a
+    // notification is never both a stored harvest record and an offline-
+    // replayed event): "Recorded by" for an actual stored harvest record,
+    // or a subtle note when the event was captured/delivered while the
+    // device was offline. The persisted recorder-name snapshot is preferred
+    // over a live UID lookup, which is only a fallback for older records.
+    private void bindRecordedBy(ContentViewHolder holder, NotificationItem item) {
+        if (holder.tvRecordedBy == null) return;
+
+        if (item.offlineRecorded) {
+            holder.tvRecordedBy.setVisibility(View.VISIBLE);
+            holder.tvRecordedBy.setText(item.smsFallbackUsed
+                    ? "Delivered by SMS while device was offline"
+                    : "Recorded while device was offline");
+            return;
+        }
+
+        if (!NotificationItem.TYPE_HARVEST.equals(item.type)
+                || (isEmpty(item.recorderName) && isEmpty(item.recorderUid))) {
+            holder.tvRecordedBy.setVisibility(View.GONE);
+            return;
+        }
+
+        if (!isEmpty(item.recorderName)) {
+            holder.tvRecordedBy.setVisibility(View.VISIBLE);
+            holder.tvRecordedBy.setText("Recorded by: " + item.recorderName);
+            return;
+        }
+
+        String cached = resolvedRecorderNames.get(item.recorderUid);
+        if (cached != null) {
+            holder.tvRecordedBy.setVisibility(View.VISIBLE);
+            holder.tvRecordedBy.setText("Recorded by: " + cached);
+            return;
+        }
+
+        holder.tvRecordedBy.setVisibility(View.VISIBLE);
+        holder.tvRecordedBy.setText("Recorded by: Unknown");
+
+        final String uid = item.recorderUid;
+        FirebaseFirestore.getInstance().collection("users").document(uid).get()
+                .addOnSuccessListener(doc -> {
+                    String fullName = doc != null ? doc.getString("fullName") : null;
+                    if (isEmpty(fullName)) return;
+                    resolvedRecorderNames.put(uid, fullName);
+                    int position = holder.getBindingAdapterPosition();
+                    if (position != RecyclerView.NO_POSITION) {
+                        notifyItemChanged(position);
+                    }
+                });
+    }
+
+    private static boolean isEmpty(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
     @Override
     public int getItemCount() {
         return notifications.size();
@@ -188,7 +274,7 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
     }
 
     public static class ContentViewHolder extends RecyclerView.ViewHolder {
-        TextView tvMessage, tvTimestamp, tvTitle;
+        TextView tvMessage, tvTimestamp, tvTitle, tvRecordedBy;
         ImageView ivIcon;
         View viewTypeColor, iconBackground, vUnreadDot;
 
@@ -197,6 +283,7 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             tvMessage = itemView.findViewById(R.id.tvMessage);
             tvTimestamp = itemView.findViewById(R.id.tvTimestamp);
             tvTitle = itemView.findViewById(R.id.tvTitle);
+            tvRecordedBy = itemView.findViewById(R.id.tvRecordedBy);
             ivIcon = itemView.findViewById(R.id.ivIcon);
             viewTypeColor = itemView.findViewById(R.id.viewTypeColor);
             iconBackground = itemView.findViewById(R.id.iconBackground);

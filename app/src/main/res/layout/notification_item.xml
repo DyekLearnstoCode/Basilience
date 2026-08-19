@@ -95,6 +95,16 @@
                     android:lineSpacingExtra="2dp" />
 
                 <TextView
+                    android:id="@+id/tvRecordedBy"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Recorded by: User"
+                    android:textColor="#777777"
+                    android:textSize="12sp"
+                    android:visibility="gone" />
+
+                <TextView
                     android:id="@+id/tvTimestamp"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

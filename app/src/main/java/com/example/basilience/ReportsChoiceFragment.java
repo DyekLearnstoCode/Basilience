@@ -25,19 +25,23 @@ public class ReportsChoiceFragment extends Fragment {
 
         View btnParameter = view.findViewById(R.id.btnParameter);
         View btnFoggingReports = view.findViewById(R.id.btnFoggingReports);
+        View cardParameter = view.findViewById(R.id.cardParameter);
+        View cardFogging = view.findViewById(R.id.cardFogging);
         View btnBack = view.findViewById(R.id.btnBack);
 
-        if (btnParameter != null) {
-            btnParameter.setOnClickListener(v ->
-                    navController.navigate(R.id.action_reportschoiceFragment_to_reportsFragment)
-            );
-        }
+        // The whole row reads as tappable, so the card and its arrow share
+        // one listener per destination rather than each declaring its own
+        // navigation call - there is still exactly one place per destination.
+        View.OnClickListener parameterClick = v ->
+                navController.navigate(R.id.action_reportschoiceFragment_to_reportsFragment);
+        View.OnClickListener foggingClick = v ->
+                navController.navigate(R.id.action_reportschoiceFragment_to_foggingReportsFragment);
 
-        if (btnFoggingReports != null) {
-            btnFoggingReports.setOnClickListener(v ->
-                    navController.navigate(R.id.action_reportschoiceFragment_to_foggingReportsFragment)
-            );
-        }
+        if (btnParameter != null) btnParameter.setOnClickListener(parameterClick);
+        if (cardParameter != null) cardParameter.setOnClickListener(parameterClick);
+
+        if (btnFoggingReports != null) btnFoggingReports.setOnClickListener(foggingClick);
+        if (cardFogging != null) cardFogging.setOnClickListener(foggingClick);
 
         if (btnBack != null) {
             btnBack.setVisibility(View.GONE);

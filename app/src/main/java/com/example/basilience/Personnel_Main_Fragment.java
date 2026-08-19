@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Personnel_Main_Fragment extends Fragment {
+    private NotificationHelper.LoadingHandle loadingHandle;
 
     private RecyclerView recyclerView;
     private final List<Personnel> list = new ArrayList<>();
@@ -154,13 +155,21 @@ public class Personnel_Main_Fragment extends Fragment {
             MaterialButton negative = d.findViewById(R.id.dialog_button_secondary);
             if (positive != null) positive.setEnabled(false);
             if (negative != null) negative.setEnabled(false);
+            loadingHandle = NotificationHelper.showLoading(requireContext(), "Adding personnel...", () -> {
+                if (!isAdded()) return;
+                if (positive != null) positive.setEnabled(true);
+                if (negative != null) negative.setEnabled(true);
+                NotificationHelper.showError(requireContext(), "Request timed out. Please refresh before trying again.");
+            });
             helper.linkExistingPersonnelByEmail(email).addOnSuccessListener(unused -> {
                 if (!isAdded()) return;
+                dismissLoading();
                 d.dismiss();
                 NotificationHelper.showSuccess(requireContext(), "Personnel linked successfully.");
                 loadFarmersFromFirestore();
             }).addOnFailureListener(e -> {
                 if (!isAdded()) return;
+                dismissLoading();
                 if (positive != null) positive.setEnabled(true);
                 if (negative != null) negative.setEnabled(true);
                 NotificationHelper.showError(requireContext(), e.getMessage());
@@ -171,5 +180,16 @@ public class Personnel_Main_Fragment extends Fragment {
             android.widget.ImageView icon = dialog.findViewById(R.id.dialog_icon);
             if (icon != null) icon.setImageResource(R.drawable.ic_account_info);
         }
+    }
+
+    private void dismissLoading() {
+        if (loadingHandle != null) loadingHandle.dismiss();
+        loadingHandle = null;
+    }
+
+    @Override
+    public void onDestroyView() {
+        dismissLoading();
+        super.onDestroyView();
     }
 }

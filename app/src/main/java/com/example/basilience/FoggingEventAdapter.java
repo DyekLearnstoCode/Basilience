@@ -37,24 +37,38 @@ public class FoggingEventAdapter extends RecyclerView.Adapter<FoggingEventAdapte
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         FoggingSession session = sessions.get(position);
-        
+
         long startTimestamp = session.getStartEvent().timestamp;
         holder.tvDate.setText(DateUtils.formatDateTime(new Timestamp(startTimestamp / 1000, 0)));
-        
-        if (!session.isCompleted()) {
-            holder.tvDuration.setText("Running...");
+
+        int dotColor;
+        if (session.isAnomalous()) {
+            // A reboot/offline gap between the start and end of this session
+            // makes its real duration untrustworthy - say so in farmer terms
+            // rather than showing a misleadingly huge or technical duration.
+            holder.tvDuration.setText("Incomplete fogging record");
+            holder.tvDuration.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.alert_orange));
+            dotColor = R.color.alert_orange;
+        } else if (!session.isCompleted()) {
+            // Display only: the elapsed calculation is unchanged, just
+            // formatted readably ("25h 48m" rather than "1548m elapsed").
+            long elapsedMs = Math.max(0, System.currentTimeMillis() - startTimestamp);
+            holder.tvDuration.setText("Running now · " + DurationFormatter.formatRuntime(elapsedMs));
             holder.tvDuration.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.primary));
+            dotColor = R.color.primary;
         } else {
-            long durSecs = session.getDurationMs() / 1000;
-            long durMins = durSecs / 60;
-            long remSecs = durSecs % 60;
-            
-            String durStr = durMins > 0 ? (durMins + "m " + remSecs + "s") : (remSecs + "s");
-            holder.tvDuration.setText(durStr);
+            holder.tvDuration.setText(DurationFormatter.formatSession(session.getDurationMs()));
             holder.tvDuration.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.text_dark));
+            dotColor = R.color.state_success;
         }
 
+        holder.dotActivity.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(holder.itemView.getContext(), dotColor)));
+
         holder.tvType.setText(session.getDisplayType());
+
+        // Last row needs no trailing rule - the section below provides it.
+        holder.divider.setVisibility(position == getItemCount() - 1 ? View.GONE : View.VISIBLE);
     }
 
     @Override
@@ -66,12 +80,16 @@ public class FoggingEventAdapter extends RecyclerView.Adapter<FoggingEventAdapte
         TextView tvDate;
         TextView tvDuration;
         TextView tvType;
+        View dotActivity;
+        View divider;
 
         public ViewHolder(@NonNull View itemView) {
             super(itemView);
             tvDate = itemView.findViewById(R.id.tvDate);
             tvDuration = itemView.findViewById(R.id.tvDuration);
             tvType = itemView.findViewById(R.id.tvType);
+            dotActivity = itemView.findViewById(R.id.dotActivity);
+            divider = itemView.findViewById(R.id.activityDivider);
         }
     }
 }

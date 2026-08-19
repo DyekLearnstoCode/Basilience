@@ -4,8 +4,9 @@ import androidx.annotation.ColorRes;
 
 public enum DeviceConnectivityState {
     ONLINE("Online", R.color.device_status_online),
+    WIFI_CONFIGURATION_REQUIRED("Wi-Fi Configuration Required", R.color.device_status_reconnecting),
     RECONNECTING("Reconnecting...", R.color.device_status_reconnecting),
-    OFFLINE("Offline", R.color.device_status_offline);
+    OFFLINE("Device Unreachable", R.color.device_status_offline);
 
     private final String label;
     private final int colorRes;

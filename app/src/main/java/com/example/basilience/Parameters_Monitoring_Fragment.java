@@ -1,6 +1,7 @@
 package com.example.basilience;
 
 import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -13,6 +14,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.Navigation;
+import androidx.core.content.ContextCompat;
 
 import com.google.android.material.switchmaterial.SwitchMaterial;
 import com.google.android.material.button.MaterialButton;
@@ -68,6 +70,11 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     // ===== MAIN =====
     private TextView tvPH, tvEC, tvTemp, tvHumidity;
     private TextView tvWaterTemp, tvWaterLevel;
+    private boolean phAlertActive;
+    private boolean ecAlertActive;
+    private boolean airTemperatureAlertActive;
+    private boolean waterTemperatureAlertActive;
+    private boolean waterLevelAlertActive;
 
     // ===== ACTUATORS =====
     class Actuator {
@@ -76,6 +83,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         int state;
         boolean physicalRunning;
         String physicalSource;
+        String strategy;
         boolean manualIntent;
         String reason;
 
@@ -85,14 +93,23 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             this.state = 0;
             this.physicalRunning = false;
             this.physicalSource = "";
+            this.strategy = "";
             this.manualIntent = false;
         }
     }
 
-    private DatabaseReference sensorsRef;
-    private ValueEventListener sensorsListener;
+    private DatabaseReference alertsRef;
+    private ValueEventListener alertsListener;
+    private DatabaseReference statusRef;
+    private ValueEventListener statusListener;
+    private DatabaseReference manualModeRef;
+    private ValueEventListener manualModeListener;
+    private DatabaseReference actuatorStatusRef;
+    private ValueEventListener actuatorStatusListener;
 
+    private static final long SETUP_AP_RECHECK_INTERVAL_MS = 15_000L;
     private TextView tvConnectionStatus;
+    private TextView tvConnectionDetail;
     private MaterialButton btnRetryWifiConfiguration;
     private SensorRepository sensorRepository;
     private final MutableLiveData<SensorData> sensorLiveData = new MutableLiveData<>();
@@ -101,9 +118,12 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private DeviceConnectivityState connectivityState = DeviceConnectivityState.RECONNECTING;
     private boolean setupApReachable = false;
     private boolean setupApCheckInProgress = false;
-    private boolean setupApCheckCompleted = false;
     private String selectedDeviceId;
     private ExecutorService connectivityExecutor;
+    private final Runnable setupApRecheck = () -> {
+        if (!isAdded() || isCurrentlyOnline || selectedDeviceId == null) return;
+        confirmSetupApReachability(selectedDeviceId);
+    };
 
     private final Actuator waterPumpValve = new Actuator("Water Pump (Valve)", "solenoid");
     private final Actuator canopyFan = new Actuator("Canopy Fan", "canopyFan");
@@ -185,11 +205,18 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         tvActuatorLoadingStatus = view.findViewById(R.id.tvActuatorLoadingStatus);
 
         tvConnectionStatus = view.findViewById(R.id.tvConnectionStatus);
+        tvConnectionDetail = view.findViewById(R.id.tvConnectionDetail);
         btnRetryWifiConfiguration = view.findViewById(R.id.btnRetryWifiConfiguration);
         connectivityExecutor = Executors.newSingleThreadExecutor();
         if (btnRetryWifiConfiguration != null) {
-            btnRetryWifiConfiguration.setOnClickListener(v ->
-                    Navigation.findNavController(v).navigate(R.id.wifiConfigFragment));
+            btnRetryWifiConfiguration.setOnClickListener(v -> {
+                androidx.navigation.NavController controller = Navigation.findNavController(v);
+                if (controller.getCurrentDestination() != null
+                        && controller.getCurrentDestination().getId() != R.id.wifiConfigFragment) {
+                    controller.navigate(R.id.wifiConfigFragment, null,
+                            new androidx.navigation.NavOptions.Builder().setLaunchSingleTop(true).build());
+                }
+            });
         }
         sensorRepository = new SensorRepository();
 
@@ -199,8 +226,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                             ? DeviceConnectivityState.RECONNECTING : state;
                     isCurrentlyOnline = connectivityState == DeviceConnectivityState.ONLINE;
                     if (isCurrentlyOnline) {
+                        mainHandler.removeCallbacks(setupApRecheck);
                         setupApReachable = false;
-                        setupApCheckCompleted = false;
                         if (selectedDeviceId != null) {
                             NotificationHelper.clearWifiConfigurationRequiredNotification(
                                     requireContext(), selectedDeviceId);
@@ -348,6 +375,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
         dbHelper.setSelectedDeviceId(deviceId);
         sensorRepository.startListening(deviceId, sensorLiveData);
+        if (!isCurrentlyOnline) confirmSetupApReachability(deviceId);
 
         View v = getView();
         if (v != null) {
@@ -358,28 +386,76 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             }
         }
 
-        sensorsRef = dbHelper.getDeviceReference();
-        if (sensorsRef == null) {
+        DatabaseReference deviceRef = dbHelper.getDeviceReference();
+        if (deviceRef == null) {
             Log.e("Monitoring", "Device reference is null. Ensure deviceId is set.");
             return;
         }
-        sensorsListener = new ValueEventListener() {
+
+        // Each RTDB subtree gets its own narrowly-scoped listener rather than one
+        // listener on the whole device node, so each stays within what the RTDB
+        // rules actually grant Android read access to, and so a failure on one
+        // path (see onCancelled below) cannot wipe state owned by another path.
+
+        alertsRef = deviceRef.child("alerts");
+        alertsListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!isAdded()) return;
+
+                // Reuse firmware-published alert truth for presentation only.
+                // No Android-side threshold or warning range is introduced.
+                phAlertActive = isAlertActive(snapshot, "phLow")
+                        || isAlertActive(snapshot, "phHigh")
+                        || isAlertActive(snapshot, "phOutOfRange");
+                ecAlertActive = isAlertActive(snapshot, "ecLow")
+                        || isAlertActive(snapshot, "ecHigh");
+                airTemperatureAlertActive = isAlertActive(snapshot, "lowAirTemperature")
+                        || isAlertActive(snapshot, "highTemperature");
+                waterTemperatureAlertActive = isAlertActive(snapshot, "waterTempOutOfRange");
+                waterLevelAlertActive = isAlertActive(snapshot, "lowWater");
+                updateSensorUI();
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("RTDB", "alerts listener cancelled: " + error.getMessage());
+            }
+        };
+        alertsRef.addValueEventListener(alertsListener);
+
+        statusRef = dbHelper.getStatusReference();
+        statusListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (!isAdded()) return;
 
                 // Sync status: reservoirLocked & safetyLock
-                Boolean reservoirLocked = snapshot.child("status").child("reservoirLocked").getValue(Boolean.class);
+                Boolean reservoirLocked = snapshot.child("reservoirLocked").getValue(Boolean.class);
                 if (reservoirLocked != null) isReservoirLocked = reservoirLocked;
 
-                Boolean safetyLock = snapshot.child("status").child("safetyLock").getValue(Boolean.class);
+                Boolean safetyLock = snapshot.child("safetyLock").getValue(Boolean.class);
                 if (safetyLock != null) {
                     isSafetyLock = safetyLock;
                     updateConnectionUI();
                 }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("RTDB", "status listener cancelled: " + error.getMessage());
+            }
+        };
+        statusRef.addValueEventListener(statusListener);
+
+        manualModeRef = deviceRef.child("commands").child("manualMode");
+        manualModeListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!isAdded()) return;
 
                 // Sync Manual Mode from RTDB
-                Boolean manualMode = snapshot.child("commands").child("manualMode").getValue(Boolean.class);
+                Boolean manualMode = snapshot.getValue(Boolean.class);
                 if (manualMode != null) {
                     isManualMode = manualMode;
                     SwitchMaterial modeSwitch = getView() != null ? getView().findViewById(R.id.switchMode) : null;
@@ -417,34 +493,46 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                     }
                     updateActuatorControls();
                 }
-
-                // Sync Actuators from RTDB using the new actuatorStatus node
-                DataSnapshot actuatorStatus = snapshot.child("actuatorStatus");
-                if (!actuatorStatus.exists()) {
-                    // Fallback to old 'actuators' node for backward compatibility during transition
-                    actuatorStatus = snapshot.child("actuators");
-                }
-                if (actuatorStatus.exists()) {
-                    syncActuatorState(waterPumpValve, actWaterPumpValve, actuatorStatus.child(waterPumpValve.dbKey));
-                    syncActuatorState(canopyFan, actCanopyFan, actuatorStatus.child(canopyFan.dbKey));
-                    syncActuatorState(growLights, actGrowLights, actuatorStatus.child(growLights.dbKey));
-                    syncActuatorState(phUp, actPhUp, actuatorStatus.child(phUp.dbKey));
-                    syncActuatorState(phDown, actPhDown, actuatorStatus.child(phDown.dbKey));
-                    // nutrients uses both growPump + bloomPump — use combined sync
-                    syncNutrientsState(actuatorStatus.child("growPump"), actuatorStatus.child("bloomPump"));
-                    syncActuatorState(fogger, actFogger, actuatorStatus.child(fogger.dbKey));
-                    syncActuatorState(reservoirFan, actReservoirFan, actuatorStatus.child(reservoirFan.dbKey));
-                    syncActuatorState(peltier, actPeltier, actuatorStatus.child(peltier.dbKey));
-                    syncActuatorState(circulationPump, actCirculationPump, actuatorStatus.child(circulationPump.dbKey));
-                }
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
-                Log.e("RTDB", error.getMessage());
+                Log.e("RTDB", "commands/manualMode listener cancelled: " + error.getMessage());
             }
         };
-        sensorsRef.addValueEventListener(sensorsListener);
+        manualModeRef.addValueEventListener(manualModeListener);
+
+        // actuatorStatus is the sole authoritative runtime actuator state path.
+        // The legacy 'actuators' node is never written by current firmware
+        // (confirmed: no writer for that literal path in FirebaseManager.cpp),
+        // so no fallback listener is created for it.
+        actuatorStatusRef = deviceRef.child("actuatorStatus");
+        actuatorStatusListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!isAdded() || !snapshot.exists()) return;
+
+                syncActuatorState(waterPumpValve, actWaterPumpValve, snapshot.child(waterPumpValve.dbKey));
+                syncActuatorState(canopyFan, actCanopyFan, snapshot.child(canopyFan.dbKey));
+                syncActuatorState(growLights, actGrowLights, snapshot.child(growLights.dbKey));
+                syncActuatorState(phUp, actPhUp, snapshot.child(phUp.dbKey));
+                syncActuatorState(phDown, actPhDown, snapshot.child(phDown.dbKey));
+                // nutrients uses both growPump + bloomPump — use combined sync
+                syncNutrientsState(snapshot.child("growPump"), snapshot.child("bloomPump"));
+                syncActuatorState(fogger, actFogger, snapshot.child(fogger.dbKey));
+                syncActuatorState(reservoirFan, actReservoirFan, snapshot.child(reservoirFan.dbKey));
+                syncActuatorState(peltier, actPeltier, snapshot.child(peltier.dbKey));
+                syncActuatorState(circulationPump, actCirculationPump, snapshot.child(circulationPump.dbKey));
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                // Do not touch actuator.state on cancellation — leaves the last
+                // confirmed physical state on screen instead of showing a false OFF.
+                Log.e("RTDB", "actuatorStatus listener cancelled: " + error.getMessage());
+            }
+        };
+        actuatorStatusRef.addValueEventListener(actuatorStatusListener);
     }
 
     private void syncActuatorState(Actuator actuator, View card, DataSnapshot stateSnap) {
@@ -467,6 +555,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             actuator.state = state;
             actuator.physicalRunning = running != null ? running : state == 5;
             actuator.physicalSource = source;
+            actuator.strategy = stateSnap.hasChild("strategy")
+                    ? stateSnap.child("strategy").getValue(String.class)
+                    : "";
             actuator.reason = stateSnap.hasChild("reason")
                     ? stateSnap.child("reason").getValue(String.class)
                     : null;
@@ -548,18 +639,15 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
         // Clear any previous listener first
         toggle.setOnCheckedChangeListener(null);
-        toggle.setChecked(actuator.manualIntent
-                && actuator.physicalRunning
-                && "manual".equalsIgnoreCase(actuator.physicalSource));
+        // Confirmed firmware state is authoritative for both AUTO and MANUAL.
+        toggle.setChecked(actuator.physicalRunning);
         toggle.setEnabled(isManualMode && isCurrentlyOnline && !isSafetyLock && !isActuatorBusy);
 
         toggle.setOnCheckedChangeListener((buttonView, checked) -> {
             if (!isManualMode) {
                 // Snap back immediately — no popup
                 toggle.setOnCheckedChangeListener(null);
-                toggle.setChecked(actuator.manualIntent
-                        && actuator.physicalRunning
-                        && "manual".equalsIgnoreCase(actuator.physicalSource));
+                toggle.setChecked(actuator.physicalRunning);
                 setupActuatorUI(card, actuator);
                 return;
             }
@@ -594,9 +682,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
             // Revert toggle to original position — popup will be the feedback
             toggle.setOnCheckedChangeListener(null);
-            toggle.setChecked(previousManualIntent
-                    && actuator.physicalRunning
-                    && "manual".equalsIgnoreCase(actuator.physicalSource));
+            toggle.setChecked(actuator.physicalRunning);
 
             // Show loading popup
             showActuatorLoading("Sending command...", "");
@@ -941,9 +1027,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (toggle != null) {
             // Update switch position without triggering listener
             toggle.setOnCheckedChangeListener(null);
-            toggle.setChecked(actuator.manualIntent
-                    && actuator.physicalRunning
-                    && "manual".equalsIgnoreCase(actuator.physicalSource));
+            toggle.setChecked(actuator.physicalRunning);
             toggle.setEnabled(isManualMode);
             // Re-register listener cleanly
             toggle.setOnCheckedChangeListener(null);
@@ -951,35 +1035,47 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
         
         if (status != null) {
+            int stateColorRes;
             switch (actuator.state) {
                 case 0:
                     status.setText("OFF");
-                    status.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
+                    stateColorRes = R.color.actuator_off;
                     break;
                 case 1:
                     status.setText("COMMAND RECEIVED" + actuatorSourceSuffix(actuator));
-                    status.setTextColor(getResources().getColor(android.R.color.darker_gray));
+                    stateColorRes = R.color.actuator_pending;
                     break;
                 case 2:
                     status.setText("VALIDATING" + actuatorSourceSuffix(actuator));
-                    status.setTextColor(getResources().getColor(android.R.color.darker_gray));
+                    stateColorRes = R.color.actuator_pending;
                     break;
                 case 3:
                     status.setText("REJECTED" + actuatorSourceSuffix(actuator));
-                    status.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
+                    stateColorRes = R.color.actuator_rejected;
                     break;
                 case 4:
                     status.setText("ACTIVATING" + actuatorSourceSuffix(actuator));
-                    status.setTextColor(getResources().getColor(android.R.color.darker_gray));
+                    stateColorRes = R.color.actuator_pending;
                     break;
                 case 5:
-                    status.setText("RUNNING" + actuatorSourceSuffix(actuator));
-                    status.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
+                    status.setText("RUNNING" + runningActuatorSuffix(actuator));
+                    stateColorRes = "manual".equalsIgnoreCase(actuator.physicalSource)
+                            || "android".equalsIgnoreCase(actuator.physicalSource)
+                            ? R.color.actuator_manual : R.color.actuator_auto;
                     break;
                 case 6:
                     status.setText("STOPPING" + actuatorSourceSuffix(actuator));
-                    status.setTextColor(getResources().getColor(android.R.color.darker_gray));
+                    stateColorRes = R.color.actuator_pending;
                     break;
+                default:
+                    stateColorRes = R.color.actuator_off;
+                    break;
+            }
+            int stateColor = ContextCompat.getColor(requireContext(), stateColorRes);
+            status.setTextColor(stateColor);
+            if (toggle != null) {
+                toggle.setThumbTintList(ColorStateList.valueOf(stateColor));
+                toggle.setTrackTintList(ColorStateList.valueOf(stateColor));
             }
         }
     }
@@ -989,6 +1085,18 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if ("manual".equalsIgnoreCase(actuator.physicalSource)) return " · MANUAL";
         if ("android".equalsIgnoreCase(actuator.physicalSource)) return " · ANDROID";
         return "";
+    }
+
+    private String runningActuatorSuffix(Actuator actuator) {
+        String suffix = actuatorSourceSuffix(actuator);
+        if ("automatic".equalsIgnoreCase(actuator.physicalSource)
+                && (actuator == fogger || actuator == reservoirFan)
+                && ("cold".equalsIgnoreCase(actuator.strategy)
+                    || "normal".equalsIgnoreCase(actuator.strategy)
+                    || "hot".equalsIgnoreCase(actuator.strategy))) {
+            suffix += " · " + actuator.strategy.toUpperCase(java.util.Locale.ROOT);
+        }
+        return suffix;
     }
 
     private Actuator getActuatorFromCard(View card) {
@@ -1064,6 +1172,30 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 data != null ? data.waterTemperature : null, -55.0, 125.0, 1, "°C", -127.0));
         if (tvWaterLevel != null) tvWaterLevel.setText(formatSensor(
                 data != null ? data.waterLevel : null, 0.0, 100.0, 1, "%", null));
+
+        applyParameterStateColor(tvPH, phAlertActive);
+        applyParameterStateColor(tvEC, ecAlertActive);
+        applyParameterStateColor(tvTemp, airTemperatureAlertActive);
+        applyParameterStateColor(tvHumidity, false);
+        applyParameterStateColor(tvWaterTemp, waterTemperatureAlertActive);
+        applyParameterStateColor(tvWaterLevel, waterLevelAlertActive);
+    }
+
+    private boolean isAlertActive(DataSnapshot alerts, String key) {
+        return Boolean.TRUE.equals(alerts.child(key).getValue(Boolean.class));
+    }
+
+    private void applyParameterStateColor(TextView valueView, boolean alertActive) {
+        if (valueView == null) return;
+        final int colorRes;
+        if ("--".contentEquals(valueView.getText())) {
+            colorRes = R.color.state_no_data;
+        } else if (alertActive) {
+            colorRes = R.color.state_critical;
+        } else {
+            colorRes = R.color.state_success;
+        }
+        valueView.setTextColor(ContextCompat.getColor(requireContext(), colorRes));
     }
 
     private String formatSensor(Double value, double minimum, double maximum,
@@ -1078,14 +1210,26 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (tvConnectionStatus == null || !isAdded()) return;
 
         DeviceConnectivityState displayState = setupApReachable
-                ? DeviceConnectivityState.RECONNECTING : connectivityState;
-        String label = setupApReachable ? "Provisioning" : displayState.getLabel();
-        tvConnectionStatus.setText("● " + label);
+                ? DeviceConnectivityState.WIFI_CONFIGURATION_REQUIRED : connectivityState;
+        tvConnectionStatus.setText("● "
+                + displayState.getLabel().toUpperCase(java.util.Locale.ROOT));
         tvConnectionStatus.setTextColor(androidx.core.content.ContextCompat.getColor(
                 requireContext(), displayState.getColorRes()));
 
+        if (tvConnectionDetail != null) {
+            if (displayState == DeviceConnectivityState.ONLINE) {
+                tvConnectionDetail.setText("Connected to Basilience cloud");
+            } else if (displayState == DeviceConnectivityState.WIFI_CONFIGURATION_REQUIRED) {
+                tvConnectionDetail.setText("Device is powered and running locally.\nConnect it to Wi-Fi to restore cloud monitoring.");
+            } else if (displayState == DeviceConnectivityState.OFFLINE) {
+                tvConnectionDetail.setText("Basilience cannot communicate with the device.\nCheck its power or network connection.");
+            } else {
+                tvConnectionDetail.setText("Restoring Basilience cloud connection...");
+            }
+        }
+
         if (btnRetryWifiConfiguration != null) {
-            btnRetryWifiConfiguration.setVisibility(isCurrentlyOnline ? View.GONE : View.VISIBLE);
+            btnRetryWifiConfiguration.setVisibility(setupApReachable ? View.VISIBLE : View.GONE);
         }
 
         View v = getView();
@@ -1101,24 +1245,34 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     }
 
     private void confirmSetupApReachability(String deviceId) {
-        if (setupApCheckCompleted || setupApCheckInProgress
+        if (setupApCheckInProgress || isCurrentlyOnline
                 || connectivityExecutor == null || connectivityExecutor.isShutdown()) return;
+        mainHandler.removeCallbacks(setupApRecheck);
         setupApCheckInProgress = true;
         android.content.Context appContext = requireContext().getApplicationContext();
         connectivityExecutor.execute(() -> {
             boolean reachable = LocalProvisioningClient.isSetupApReachable(appContext);
             mainHandler.post(() -> {
                 setupApCheckInProgress = false;
-                if (!isAdded() || isCurrentlyOnline) return;
-                setupApCheckCompleted = true;
+                if (!isAdded() || isCurrentlyOnline || !isStillSelectedDevice(deviceId)) return;
                 setupApReachable = reachable;
                 if (reachable) {
                     NotificationHelper.showWifiConfigurationRequiredNotification(
                             requireContext(), deviceId);
+                    MainActivity.onLocalSetupApConfirmed(deviceId);
                 }
                 updateConnectionUI();
+                mainHandler.postDelayed(setupApRecheck, SETUP_AP_RECHECK_INTERVAL_MS);
             });
         });
+    }
+
+    private boolean isStillSelectedDevice(String deviceId) {
+        if (deviceId == null || !deviceId.equals(selectedDeviceId)) return false;
+        String current = requireContext().getSharedPreferences(
+                "basilience_prefs", android.content.Context.MODE_PRIVATE)
+                .getString("selected_device_id", null);
+        return deviceId.equals(current);
     }
 
     @Override
@@ -1138,8 +1292,17 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (sensorRepository != null) {
             sensorRepository.stopListening();
         }
-        if (sensorsRef != null && sensorsListener != null) {
-            sensorsRef.removeEventListener(sensorsListener);
+        if (alertsRef != null && alertsListener != null) {
+            alertsRef.removeEventListener(alertsListener);
+        }
+        if (statusRef != null && statusListener != null) {
+            statusRef.removeEventListener(statusListener);
+        }
+        if (manualModeRef != null && manualModeListener != null) {
+            manualModeRef.removeEventListener(manualModeListener);
+        }
+        if (actuatorStatusRef != null && actuatorStatusListener != null) {
+            actuatorStatusRef.removeEventListener(actuatorStatusListener);
         }
         super.onDestroyView();
     }

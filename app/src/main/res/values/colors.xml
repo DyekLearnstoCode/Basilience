@@ -22,15 +22,71 @@
     <color name="nav_active">#000000</color>
     <color name="icon_secondary_green">#5E8F82</color>
 
-    <color name="alert_red">#D32F2F</color>
-    <color name="alert_orange">#F57C00</color>
+    <color name="alert_red">@color/state_critical</color>
+    <color name="alert_orange">@color/state_warning</color>
     <color name="alert_text">#FFFFFF</color>
 
-    <!-- Status Colors -->
-    <color name="device_status_online">#4CAF50</color>
-    <color name="device_status_reconnecting">#F9A825</color>
-    <color name="device_status_offline">#D32F2F</color>
+    <!-- Semantic state colors -->
+    <color name="state_success">#2E7D32</color>
+    <color name="state_warning">#F9A825</color>
+    <color name="state_critical">#D32F2F</color>
+    <color name="state_manual">#1976D2</color>
+    <color name="state_off">#757575</color>
+    <color name="state_no_data">#757575</color>
+    <color name="state_primary_text">#212121</color>
+
+    <!-- Context aliases keep state meaning explicit at use sites. -->
+    <color name="device_status_online">@color/state_success</color>
+    <color name="device_status_reconnecting">@color/state_warning</color>
+    <color name="device_status_offline">@color/state_critical</color>
+    <color name="actuator_auto">@color/state_success</color>
+    <color name="actuator_manual">@color/state_manual</color>
+    <color name="actuator_off">@color/state_off</color>
+    <color name="actuator_pending">@color/state_warning</color>
+    <color name="actuator_rejected">@color/state_critical</color>
+    <color name="sensor_reading">@color/state_success</color>
+    <color name="sensor_no_data">@color/state_no_data</color>
+    <color name="sensor_test_active">@color/state_warning</color>
+    <color name="action_destructive">@color/state_critical</color>
+    <color name="dialog_success">@color/state_success</color>
+    <color name="dialog_warning">@color/state_warning</color>
+    <color name="dialog_critical">@color/state_critical</color>
     <color name="status_completed_text">#757575</color>
     <color name="status_completed_background">#E0E0E0</color>
     <color name="status_completed_border">#BDBDBD</color>
+
+    <!-- Soft status-accent containers for report status summaries (Reports UI
+         modernization). Paired bg/border tints of the existing semantic
+         state colors above - used as a restrained accent, never a solid
+         saturated block. -->
+    <color name="state_success_bg">#E6F4EA</color>
+    <color name="state_success_border">#A8D5B5</color>
+    <color name="state_warning_bg">#FFF4E0</color>
+    <color name="state_warning_border">#F5D28C</color>
+    <color name="state_critical_bg">#FDECEA</color>
+    <color name="state_critical_border">#F3B4AE</color>
+    <color name="state_neutral_bg">#EFEFEF</color>
+    <color name="state_neutral_border">#D6D6D6</color>
+
+    <!-- Water Outlook is current/predictive, not part of the selected
+         historical report - a distinct soft blue tint keeps that visually
+         obvious without a heavy banner. -->
+    <color name="water_outlook_bg">#EAF3FB</color>
+    <color name="water_outlook_border">#BEE0F5</color>
+
+    <!-- Basilience Design System pilot (Parameter Report). Additive only -
+         the report_*/bg_chip/status_container_* tokens above stay untouched
+         since Fogging and Harvest reports still use them until ported. -->
+    <color name="ds_divider">#EAEAEA</color>
+    <color name="ds_chip_border">#DCDCDC</color>
+
+    <!-- V2: the "small number of intentional surfaces" - insight hero,
+         interpretation and chart surfaces each get one flat, restrained
+         tint instead of a saturated card fill. Hero/interpretation share
+         the same soft green family (interpretation is the lighter, less
+         prominent of the two); the chart surface is neutral gray so the
+         chart data itself stays the only green in that surface. -->
+    <color name="ds_hero_bg">#F2F8F5</color>
+    <color name="ds_interpretation_bg">#F8FBFA</color>
+    <color name="ds_surface_neutral">#FAFAFA</color>
 </resources>

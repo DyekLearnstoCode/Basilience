@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Compact status pill for genuine failures (REPORT UNAVAILABLE), kept
+     visually distinct from the warning pill so a failed load never reads
+     the same as "queried successfully and found nothing". -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/state_critical_bg" />
+    <corners android:radius="999dp" />
+</shape>

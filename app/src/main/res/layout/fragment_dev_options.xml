@@ -70,12 +70,32 @@
                 android:layout_marginBottom="20dp">
 
                 <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnFilterMock"
+                    android:id="@+id/btnFilterSensorTest"
                     style="@style/FilterChipSelected"
                     android:layout_width="0dp"
                     android:layout_height="42dp"
                     android:layout_weight="1"
-                    android:layout_marginEnd="4dp"
+                    android:layout_marginEnd="3dp"
+                    android:paddingStart="0dp"
+                    android:paddingEnd="0dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:text="Sensor Test"
+                    android:textSize="10sp"
+                    android:textColor="@color/white"
+                    android:background="@drawable/bg_chip_selected"
+                    app:backgroundTint="@null" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnFilterMock"
+                    style="@style/FilterChip"
+                    android:layout_width="0dp"
+                    android:layout_height="42dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="3dp"
+                    android:layout_marginEnd="3dp"
                     android:paddingStart="0dp"
                     android:paddingEnd="0dp"
                     app:iconPadding="0dp"
@@ -84,9 +104,9 @@
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
                     android:text="Mock Data"
-                    android:textSize="11sp"
-                    android:textColor="@color/white"
-                    android:background="@drawable/bg_chip_selected"
+                    android:textSize="10sp"
+                    android:textColor="@color/black"
+                    android:background="@drawable/bg_chip"
                     app:backgroundTint="@null" />
 
                 <com.google.android.material.button.MaterialButton
@@ -95,8 +115,8 @@
                     android:layout_width="0dp"
                     android:layout_height="42dp"
                     android:layout_weight="1"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginEnd="4dp"
+                    android:layout_marginStart="3dp"
+                    android:layout_marginEnd="3dp"
                     android:paddingStart="0dp"
                     android:paddingEnd="0dp"
                     app:iconPadding="0dp"
@@ -105,7 +125,7 @@
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
                     android:text="Water Refill"
-                    android:textSize="11sp"
+                    android:textSize="10sp"
                     android:textColor="@color/black"
                     android:background="@drawable/bg_chip"
                     app:backgroundTint="@null" />
@@ -116,7 +136,7 @@
                     android:layout_width="0dp"
                     android:layout_height="42dp"
                     android:layout_weight="1"
-                    android:layout_marginStart="4dp"
+                    android:layout_marginStart="3dp"
                     android:paddingStart="0dp"
                     android:paddingEnd="0dp"
                     app:iconPadding="0dp"
@@ -125,19 +145,175 @@
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
                     android:text="Wi-Fi Config"
-                    android:textSize="11sp"
+                    android:textSize="10sp"
                     android:textColor="@color/black"
                     android:background="@drawable/bg_chip"
                     app:backgroundTint="@null" />
             </LinearLayout>
 
-            <!-- 1. MOCK DATA CONTAINER -->
+            <!-- 1. PHYSICAL SENSOR TEST CONTAINER -->
+            <LinearLayout
+                android:id="@+id/containerSensorTest"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="visible">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="2dp"
+                    app:strokeColor="#E0E0E0"
+                    app:strokeWidth="1dp"
+                    app:cardBackgroundColor="@android:color/white">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Physical Sensor Test"
+                            android:fontFamily="sans-serif-bold"
+                            android:textColor="#212121"
+                            android:textSize="18sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="Reads actual ESP32 hardware sensors while automatic cultivation control is paused."
+                            android:textColor="#757575"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/tvSensorTestIndicator"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:gravity="center"
+                            android:padding="10dp"
+                            android:text="SENSOR TEST INACTIVE"
+                            android:textColor="@color/state_off"
+                            android:textStyle="bold" />
+
+                        <GridLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:columnCount="2"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:id="@+id/tvDiagnosticPh"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_columnWeight="1"
+                                android:layout_margin="4dp"
+                                android:background="@drawable/card_option"
+                                android:gravity="center"
+                                android:padding="12dp"
+                                android:text="pH\n--\nNO VALID READING"
+                                android:textColor="@color/sensor_no_data" />
+
+                            <TextView
+                                android:id="@+id/tvDiagnosticEc"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_columnWeight="1"
+                                android:layout_margin="4dp"
+                                android:background="@drawable/card_option"
+                                android:gravity="center"
+                                android:padding="12dp"
+                                android:text="EC\n--\nNO VALID READING"
+                                android:textColor="@color/sensor_no_data" />
+
+                            <TextView
+                                android:id="@+id/tvDiagnosticAirTemperature"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_columnWeight="1"
+                                android:layout_margin="4dp"
+                                android:background="@drawable/card_option"
+                                android:gravity="center"
+                                android:padding="12dp"
+                                android:text="Air Temperature\n--\nNO VALID READING"
+                                android:textColor="@color/sensor_no_data" />
+
+                            <TextView
+                                android:id="@+id/tvDiagnosticHumidity"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_columnWeight="1"
+                                android:layout_margin="4dp"
+                                android:background="@drawable/card_option"
+                                android:gravity="center"
+                                android:padding="12dp"
+                                android:text="Humidity\n--\nNO VALID READING"
+                                android:textColor="@color/sensor_no_data" />
+
+                            <TextView
+                                android:id="@+id/tvDiagnosticWaterTemperature"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_columnWeight="1"
+                                android:layout_margin="4dp"
+                                android:background="@drawable/card_option"
+                                android:gravity="center"
+                                android:padding="12dp"
+                                android:text="Water Temperature\n--\nNO VALID READING"
+                                android:textColor="@color/sensor_no_data" />
+
+                            <TextView
+                                android:id="@+id/tvDiagnosticWaterLevel"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_columnWeight="1"
+                                android:layout_margin="4dp"
+                                android:background="@drawable/card_option"
+                                android:gravity="center"
+                                android:padding="12dp"
+                                android:text="Water Level\n--\nNO VALID READING"
+                                android:textColor="@color/sensor_no_data" />
+
+                            <TextView
+                                android:id="@+id/tvDiagnosticWaterLevelDistance"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_columnWeight="1"
+                                android:layout_margin="4dp"
+                                android:background="@drawable/card_option"
+                                android:gravity="center"
+                                android:padding="12dp"
+                                android:text="Water Level Distance\n--\nNO VALID READING"
+                                android:textColor="@color/sensor_no_data" />
+                        </GridLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSensorTest"
+                            style="@style/BasilienceButton.Primary"
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:layout_marginTop="16dp"
+                            android:text="START SENSOR TEST"
+                            android:textStyle="bold"
+                            app:cornerRadius="12dp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
+            <!-- 2. MOCK DATA CONTAINER -->
             <LinearLayout
                 android:id="@+id/containerMockData"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:visibility="visible">
+                android:visibility="gone">
 
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"

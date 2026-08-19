@@ -12,8 +12,17 @@
     <style name="Theme.App.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/celadon</item>
         <item name="postSplashScreenTheme">@style/Theme.Basilience</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/animated_logo</item>
-        <item name="splashScreenIconSize">200dp</item>
+        <!-- Static logo. The launch surface deliberately does NOT animate:
+             the reveal is played by the Lottie overlay in auth_login.xml, and
+             two animated logos in a row would read as two separate splashes.
+             This just needs to match the overlay's background and logo
+             position so the handoff between them is not perceptible. -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/basiliencelogosvg</item>
+        <!-- Pre-Android-12 only (core-splashscreen compat); Android 12+ sizes
+             the icon itself. 288dp matches the platform's own 288dp icon
+             canvas, so the logo renders at the same physical size on every
+             version instead of being noticeably smaller on older ones. -->
+        <item name="splashScreenIconSize">288dp</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
 
@@ -101,6 +110,184 @@
     <style name="HarvestDialogTheme" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
         <item name="colorSurface">@color/snow</item>
         <item name="android:textColorPrimary">@color/black</item>
+    </style>
+
+    <!-- ============================================================
+         5. Basilience Design System pilot - Parameter Report
+         Flatter, typography-first tokens (white surfaces, restrained
+         brand green, thin dividers instead of cards). Candidate for
+         reuse once this direction is approved for Fogging/Harvest/
+         Monitoring/etc. Deliberately additive: FilterChip/
+         BasilienceButton/status_container_*/bg_chip above are
+         untouched so other screens keep their current look until
+         ported to these tokens.
+         ============================================================ -->
+    <style name="Basilience.PageTitle" parent="">
+        <item name="android:textSize">@dimen/ds_text_page_title</item>
+        <item name="android:textColor">@color/text_dark</item>
+        <item name="android:fontFamily">sans-serif-black</item>
+        <item name="android:letterSpacing">-0.01</item>
+    </style>
+
+    <style name="Basilience.PageSubtitle" parent="">
+        <item name="android:textSize">@dimen/ds_text_body</item>
+        <item name="android:textColor">@color/nav_inactive</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <!-- Field/section labels ("Cultivation Cycle", "Parameter", "Period",
+         "Parameter Trend") - 13sp medium, distinguished from Caption below
+         by weight, not size, so nothing "looks bigger" without reason. -->
+    <style name="Basilience.SectionLabel" parent="">
+        <item name="android:textSize">@dimen/ds_text_caption</item>
+        <item name="android:textColor">@color/nav_inactive</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0.01</item>
+    </style>
+
+    <!-- Small supporting metadata (resolved date range) - same 13sp as
+         SectionLabel, regular weight instead of medium. -->
+    <style name="Basilience.Caption" parent="">
+        <item name="android:textSize">@dimen/ds_text_caption</item>
+        <item name="android:textColor">@color/nav_inactive</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <!-- Shared body-muted style for supporting report text: evidence,
+         threshold/target-range detail, and the interpretation paragraph
+         all use this one style so they read as one coherent text family. -->
+    <style name="Basilience.BodyMuted" parent="">
+        <item name="android:textSize">@dimen/ds_text_body</item>
+        <item name="android:textColor">@color/nav_inactive</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:lineSpacingExtra">4dp</item>
+    </style>
+
+    <style name="Basilience.SectionTitle" parent="">
+        <item name="android:textSize">@dimen/ds_text_section_title</item>
+        <item name="android:textColor">@color/text_dark</item>
+        <item name="android:fontFamily">sans-serif-bold</item>
+    </style>
+
+    <style name="Basilience.StatusBadge" parent="">
+        <item name="android:textSize">@dimen/ds_text_body</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.01</item>
+    </style>
+
+    <style name="Basilience.MetricValue" parent="">
+        <item name="android:textSize">@dimen/ds_metric_value_size</item>
+        <item name="android:textColor">@color/text_dark</item>
+        <item name="android:fontFamily">sans-serif-black</item>
+    </style>
+
+    <style name="Basilience.MetricLabel" parent="">
+        <item name="android:textSize">@dimen/ds_text_caption</item>
+        <item name="android:textColor">@color/nav_inactive</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <style name="Basilience.ChipCompact" parent="">
+        <item name="android:layout_height">@dimen/ds_chip_height</item>
+        <item name="android:minHeight">@dimen/ds_chip_height</item>
+        <item name="android:paddingLeft">14dp</item>
+        <item name="android:paddingRight">14dp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">@dimen/ds_text_body</item>
+        <item name="android:background">@drawable/ds_chip_bg</item>
+        <item name="android:backgroundTint">@null</item>
+        <item name="android:textColor">@color/text_dark</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="Basilience.ChipCompact.Selected">
+        <item name="android:background">@drawable/ds_chip_bg_selected</item>
+        <item name="android:textColor">@android:color/white</item>
+    </style>
+
+    <!-- V2: segments inside the period filter's single track surface -
+         unselected segments carry no border/fill of their own since the
+         track itself supplies the container edge; only the active segment
+         gets a solid pill, which is what reads as "segmented control"
+         instead of five separate buttons. -->
+    <style name="Basilience.SegmentChip" parent="">
+        <item name="android:layout_height">@dimen/ds_chip_height</item>
+        <item name="android:minHeight">@dimen/ds_chip_height</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:paddingLeft">4dp</item>
+        <item name="android:paddingRight">4dp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">@dimen/ds_text_body</item>
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:backgroundTint">@null</item>
+        <item name="android:textColor">@color/nav_inactive</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="Basilience.SegmentChip.Selected">
+        <item name="android:background">@drawable/ds_chip_bg_selected</item>
+        <item name="android:textColor">@android:color/white</item>
+    </style>
+
+    <!-- V2: the hero's "primary range/value" line (target/threshold text) -
+         same 14sp body size as the evidence line above it, just medium
+         weight and full-strength text_dark instead of muted, so the two
+         lines form a deliberate label/value hierarchy without ever looking
+         like a different text size. -->
+    <style name="Basilience.HeroValue" parent="">
+        <item name="android:textSize">@dimen/ds_text_body</item>
+        <item name="android:textColor">@color/text_dark</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:lineSpacingExtra">3dp</item>
+    </style>
+
+    <style name="Basilience.HeaderIconButton" parent="Widget.MaterialComponents.Button.TextButton">
+        <item name="android:layout_width">@dimen/ds_header_icon_size</item>
+        <item name="android:layout_height">@dimen/ds_header_icon_size</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
+        <item name="iconPadding">0dp</item>
+        <item name="iconGravity">textStart</item>
+        <item name="iconTint">@color/nav_inactive</item>
+        <item name="cornerRadius">20dp</item>
+        <item name="rippleColor">@color/background_light</item>
+    </style>
+
+    <!-- Restrained destructive action: outlined rather than a filled red
+         block, so a cycle-level action sitting inside report content reads
+         as clearly destructive without dominating the page. -->
+    <style name="Basilience.DestructiveAction" parent="Widget.MaterialComponents.Button.OutlinedButton">
+        <item name="android:minHeight">40dp</item>
+        <item name="android:paddingLeft">16dp</item>
+        <item name="android:paddingRight">16dp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">@dimen/ds_text_body</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="cornerRadius">10dp</item>
+        <item name="strokeColor">@color/alert_red</item>
+        <item name="backgroundTint">@android:color/white</item>
+        <item name="android:textColor">@color/alert_red</item>
+        <item name="rippleColor">@color/state_critical_bg</item>
+    </style>
+
+    <style name="Basilience.Divider" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+        <item name="android:background">@color/ds_divider</item>
     </style>
 
 </resources>

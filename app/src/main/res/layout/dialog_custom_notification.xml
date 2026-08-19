@@ -23,8 +23,7 @@
             android:padding="3dp"
             android:scaleType="centerInside"
             android:src="@drawable/basilience_logo"
-            android:layout_marginBottom="16dp"
-            app:tint="@color/celadon" />
+            android:layout_marginBottom="16dp" />
 
         <TextView
             android:id="@+id/dialog_title"

@@ -12,7 +12,7 @@ public class Auth_ForgotPass_Activity extends AppCompatActivity {
     private TextInputEditText etForgotEmail;
     private MaterialButton btnResetPassword;
     private TextView tvBackToLogin;
-    private View layoutLoading;
+    private NotificationHelper.LoadingHandle loadingHandle;
 
     // Fixed: Pointing to your actual database helper class
     private Database_Helper helper;
@@ -26,7 +26,6 @@ public class Auth_ForgotPass_Activity extends AppCompatActivity {
         etForgotEmail = findViewById(R.id.etForgotEmail);
         btnResetPassword = findViewById(R.id.btnResetPassword);
         tvBackToLogin = findViewById(R.id.tvBackToLogin);
-        layoutLoading = findViewById(R.id.layoutLoading);
 
         // 2. Initialize your backend helper
         helper = new Database_Helper(); // Fixed: Using your zero-argument constructor
@@ -53,17 +52,17 @@ public class Auth_ForgotPass_Activity extends AppCompatActivity {
             return;
         }
 
-        // Show Loading Overlay
-        layoutLoading.setVisibility(View.VISIBLE);
-        layoutLoading.bringToFront();
         btnResetPassword.setEnabled(false);
+        loadingHandle = NotificationHelper.showLoading(this, "Sending reset link...", () -> {
+            btnResetPassword.setEnabled(true);
+            NotificationHelper.showError(this, "Request timed out. Please check your connection and try again.");
+        });
 
         // Execute original logic
         helper.sendPasswordResetEmail(email)
                 .addOnSuccessListener(aVoid -> {
                     if (isFinishing() || isDestroyed()) return;
-                    // Hide Loading Overlay
-                    layoutLoading.setVisibility(View.GONE);
+                    dismissLoading();
                     btnResetPassword.setEnabled(true);
                     NotificationHelper.showSuccessAcknowledgement(this,
                             "Password Reset Email Sent",
@@ -72,12 +71,22 @@ public class Auth_ForgotPass_Activity extends AppCompatActivity {
                 })
                 .addOnFailureListener(e -> {
                     if (isFinishing() || isDestroyed()) return;
-                    // Hide Loading Overlay
-                    layoutLoading.setVisibility(View.GONE);
+                    dismissLoading();
                     btnResetPassword.setEnabled(true);
                     NotificationHelper.showError(this,
                             "Password reset is temporarily unavailable. Check your connection and try again.");
                 });
+    }
+
+    private void dismissLoading() {
+        if (loadingHandle != null) loadingHandle.dismiss();
+        loadingHandle = null;
+    }
+
+    @Override
+    protected void onDestroy() {
+        dismissLoading();
+        super.onDestroy();
     }
 
 }

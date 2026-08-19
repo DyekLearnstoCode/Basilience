@@ -49,32 +49,39 @@
                 android:gravity="center"
                 android:layout_marginBottom="20dp" />
 
-            <!-- PARAMETER REPORTS CARD -->
+            <!-- PARAMETER REPORTS CARD
+                 Horizontal composition matching the Settings/Dashboard rows:
+                 icon left, label centred vertically, arrow right. Icons are
+                 48dp here against Settings' 40dp - the same family, one step
+                 larger for this screen. Card background/radius unchanged. -->
             <LinearLayout
                 android:id="@+id/cardParameter"
                 android:layout_width="match_parent"
-                android:layout_height="200dp"
+                android:layout_height="100dp"
                 android:background="@drawable/input_card"
-                android:orientation="vertical"
-                android:gravity="center"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="12dp"
                 android:layout_marginBottom="16dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground"
                 android:backgroundTint="@color/primary" >
 
                 <ImageView
                     android:layout_width="48dp"
                     android:layout_height="48dp"
-                    android:padding="3dp"
-                    android:scaleType="centerInside"
-                    android:src="@drawable/parameters_icon"/>
+                    android:scaleType="fitCenter"
+                    android:contentDescription="Parameter Reports"
+                    android:src="@drawable/ic_parameters_monitoring"/>
 
                 <TextView
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="14dp"
                     android:text="Parameter Reports"
                     android:textSize="18sp"
-                    android:layout_marginTop="10dp"
-                    android:textAlignment="center"
-                    
                     android:textColor="#212121"/>
 
                 <FrameLayout
@@ -84,7 +91,7 @@
                     android:layout_width="50dp"
                     android:layout_height="50dp"
                     android:background="@drawable/circle_button"
-                    android:layout_marginTop="10dp">
+                    android:gravity="center">
 
                     <ImageView
                         android:layout_width="wrap_content"
@@ -98,27 +105,30 @@
             <LinearLayout
                 android:id="@+id/cardFogging"
                 android:layout_width="match_parent"
-                android:layout_height="200dp"
+                android:layout_height="100dp"
                 android:background="@drawable/input_card"
-                android:orientation="vertical"
-                android:gravity="center"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="12dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground"
                 android:backgroundTint="@color/primary">
 
                 <ImageView
                     android:layout_width="48dp"
                     android:layout_height="48dp"
-                    android:padding="3dp"
-                    android:scaleType="centerInside"
-                    android:src="@drawable/reports_icon"/>
+                    android:scaleType="fitCenter"
+                    android:contentDescription="Fogging Reports"
+                    android:src="@drawable/ic_fogging_reports"/>
 
                 <TextView
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="14dp"
                     android:text="Fogging Reports"
-                    android:textAlignment="center"
                     android:textSize="18sp"
-                    
                     android:textColor="#212121"/>
 
                 <FrameLayout
@@ -128,7 +138,7 @@
                     android:layout_width="50dp"
                     android:layout_height="50dp"
                     android:background="@drawable/circle_button"
-                    android:layout_marginTop="10dp">
+                    android:gravity="center">
 
                     <ImageView
                         android:layout_width="wrap_content"

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- V2 insight hero surface - one soft green-tinted surface, no border. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/ds_hero_bg" />
+    <corners android:radius="@dimen/ds_surface_radius" />
+</shape>

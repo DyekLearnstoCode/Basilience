@@ -61,6 +61,14 @@ public class Personnel_Add_Fragment extends Fragment {
             return;
         }
 
+        String normalizedPhone = PhoneNumberUtils.normalizePhilippineMobile(phone);
+        if (normalizedPhone == null) {
+            etPhone.setError(PhoneNumberUtils.INVALID_MESSAGE);
+            NotificationHelper.showError(requireContext(), PhoneNumberUtils.INVALID_MESSAGE);
+            return;
+        }
+        phone = normalizedPhone;
+
         if (password.length() < 6) {
             NotificationHelper.showError(requireContext(), "Password must be at least 6 characters");
             return;
