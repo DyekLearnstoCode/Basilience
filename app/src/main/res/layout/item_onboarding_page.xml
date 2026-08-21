@@ -1,0 +1,95 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:paddingHorizontal="@dimen/ds_space_xl"
+    android:paddingVertical="@dimen/ds_space_lg">
+
+    <!-- IMAGE (real asset, e.g. the logo on Welcome/Ready) OR PLACEHOLDER -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/ivPageImage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitCenter"
+            android:visibility="gone"
+            android:contentDescription="@null" />
+
+        <LinearLayout
+            android:id="@+id/layoutImagePlaceholder"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="@dimen/ds_space_lg"
+            android:background="@drawable/guide_image_placeholder_bg">
+
+            <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:alpha="0.55"
+                android:src="@android:drawable/ic_menu_report_image"
+                app:tint="@color/nav_inactive"
+                android:contentDescription="@null" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:fontFamily="sans-serif-medium"
+                android:text="IMAGE REQUIRED"
+                android:textColor="@color/nav_inactive"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/tvImagePlaceholderCaption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:gravity="center"
+                android:textColor="@color/nav_inactive"
+                android:textSize="12sp"
+                android:text="Caption of what this image should show" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/tvRoleNote"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/ds_space_lg"
+        style="@style/Basilience.StatusBadge"
+        android:background="@drawable/ds_status_pill_neutral"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="4dp"
+        android:textColor="@color/nav_inactive"
+        android:textSize="11sp"
+        android:text="Admin Only"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/tvPageTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/ds_space_md"
+        style="@style/Basilience.PageTitle"
+        android:textSize="24sp"
+        android:gravity="center"
+        android:text="Page title" />
+
+    <TextView
+        android:id="@+id/tvPageDescription"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/ds_space_sm"
+        style="@style/Basilience.BodyMuted"
+        android:gravity="center"
+        android:text="Page description" />
+
+</LinearLayout>

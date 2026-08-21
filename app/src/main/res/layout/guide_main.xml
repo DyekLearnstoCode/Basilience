@@ -138,6 +138,21 @@
                 </FrameLayout>
             </LinearLayout>
 
+            <!-- APP WALKTHROUGH: deliberately a slim secondary action, not a
+                 third big teal card - it's a short replay of first-install
+                 onboarding, not another detailed guide, so it shouldn't
+                 compete visually with Hardware/Mobile Tutorial above. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAppWalkthrough"
+                style="@style/BasilienceButton.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="View App Walkthrough"
+                app:icon="@android:drawable/ic_menu_recent_history"
+                app:iconTint="@color/primary"
+                app:iconGravity="textStart" />
+
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 

@@ -62,6 +62,17 @@ public class Auth_Login_Activity extends AppCompatActivity {
         SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
         super.onCreate(savedInstanceState);
 
+        // First-install walkthrough gate: checked before any of the existing
+        // splash-overlay/session-restore logic below runs, so that logic stays
+        // completely untouched and only ever executes once onboarding is done.
+        // OnboardingActivity hands back to this same Activity (fresh Intent)
+        // when it finishes, at which point this check passes through normally.
+        if (!OnboardingActivity.hasCompletedOnboarding(this)) {
+            startActivity(new Intent(this, OnboardingActivity.class));
+            finish();
+            return;
+        }
+
         final boolean[] keepSplash = {true};
         splashScreen.setKeepOnScreenCondition(() -> keepSplash[0]);
 

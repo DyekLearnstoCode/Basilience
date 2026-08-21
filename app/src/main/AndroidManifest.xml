@@ -50,6 +50,14 @@
             android:theme="@style/Theme.Basilience"
             android:windowSoftInputMode="adjustPan" />
 
+        <!-- First-install walkthrough. Never a LAUNCHER entry point - always
+             reached either from Auth_Login_Activity (first run) or from the
+             User Guide (manual replay). -->
+        <activity
+            android:name=".OnboardingActivity"
+            android:theme="@style/Theme.Basilience"
+            android:exported="false" />
+
         <service
             android:name=".MyFirebaseMessagingService"
             android:exported="false">

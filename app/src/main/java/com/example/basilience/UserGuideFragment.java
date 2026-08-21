@@ -39,9 +39,15 @@ public class UserGuideFragment extends Fragment {
 
         View btnMobile = view.findViewById(R.id.btnMobileTutorial);
         if (btnMobile != null) {
-            btnMobile.setOnClickListener(v -> 
+            btnMobile.setOnClickListener(v ->
                 navController.navigate(R.id.action_userGuideFragment_to_mobileGuideFragment)
             );
+        }
+
+        View btnWalkthrough = view.findViewById(R.id.btnAppWalkthrough);
+        if (btnWalkthrough != null) {
+            btnWalkthrough.setOnClickListener(v ->
+                    startActivity(OnboardingActivity.replayIntent(requireContext())));
         }
     }
 }

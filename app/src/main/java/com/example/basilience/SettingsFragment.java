@@ -107,7 +107,16 @@ public class SettingsFragment extends Fragment {
             helper.logout().addOnCompleteListener(task -> {
                 if (!isAdded() || getActivity() == null) return;
                 android.content.SharedPreferences prefs = getActivity().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
-                prefs.edit().clear().apply();
+                // Clear only session/identity state (same keys Auth_Login_Activity's own
+                // clearInvalidSession() removes) - a blanket clear() would also wipe
+                // device-local UI state like onboarding completion, which must survive
+                // logout so the walkthrough doesn't reappear for a returning user.
+                prefs.edit()
+                        .remove("is_logged_in")
+                        .remove("user_role")
+                        .remove("owner_uid")
+                        .remove("selected_device_id")
+                        .apply();
 
                 android.content.Intent intent = new android.content.Intent(getActivity(), Auth_Login_Activity.class);
                 intent.setFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK);

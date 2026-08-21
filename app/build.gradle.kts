@@ -47,6 +47,7 @@ dependencies {
     implementation("com.google.firebase:firebase-messaging:23.4.1")
 
     implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("com.airbnb.android:lottie:6.3.0")
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
 
