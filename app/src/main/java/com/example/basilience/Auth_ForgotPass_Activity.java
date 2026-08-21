@@ -32,6 +32,13 @@ public class Auth_ForgotPass_Activity extends AppCompatActivity {
 
         // 3. Set Up Listeners
         btnResetPassword.setOnClickListener(v -> handlePasswordReset());
+        etForgotEmail.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                handlePasswordReset();
+                return true;
+            }
+            return false;
+        });
 
         tvBackToLogin.setOnClickListener(v -> {
             // Close this activity to return to the Login Screen

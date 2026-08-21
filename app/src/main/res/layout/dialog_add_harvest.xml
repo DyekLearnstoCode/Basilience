@@ -17,14 +17,24 @@
         android:textSize="20sp"
         android:textStyle="bold" />
 
-    <com.google.android.material.textfield.TextInputLayout
-        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+    <!-- Read-only: the harvest date itself isn't user-editable here (new
+         entries are always logged as of now; edits keep their original
+         date), so this simply shows what will be/was recorded. -->
+    <TextView
+        android:id="@+id/tvHarvestDate"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="16dp"
-        android:hint="Harvested Weight (grams)"
-        app:boxStrokeColor="@color/primary"
-        app:hintTextColor="@color/primary">
+        style="@style/Basilience.Caption"
+        android:text="Harvest Date: --" />
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/layoutWeight"
+        style="@style/InputFieldStyle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:hint="Harvested Weight (grams)">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etWeight"
@@ -35,13 +45,11 @@
     </com.google.android.material.textfield.TextInputLayout>
 
     <com.google.android.material.textfield.TextInputLayout
-        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+        style="@style/InputFieldStyle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="16dp"
-        android:hint="Notes (Optional)"
-        app:boxStrokeColor="@color/primary"
-        app:hintTextColor="@color/primary">
+        android:hint="Notes (Optional)">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etNotes"
@@ -77,9 +85,7 @@
             android:layout_height="wrap_content"
             android:layout_marginEnd="8dp"
             android:layout_weight="1"
-            android:text="Cancel"
-            android:textColor="@color/black"
-            app:strokeColor="@color/black" />
+            android:text="Cancel" />
 
         <com.google.android.material.button.MaterialButton
         android:id="@+id/btnSaveHarvest"
@@ -88,9 +94,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
             android:layout_weight="1"
-            android:backgroundTint="@color/primary"
-            android:text="Save"
-            android:textColor="@android:color/white" />
+            android:text="Save" />
     </LinearLayout>
 
 </LinearLayout>

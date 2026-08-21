@@ -26,6 +26,7 @@
         android:layout_marginTop="@dimen/container_overlap_margin"
         android:background="@drawable/top_rounded_white"
         android:elevation="5dp"
+        android:fillViewport="true"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <LinearLayout
@@ -35,80 +36,29 @@
             android:paddingTop="@dimen/container_top_padding"
             android:paddingStart="@dimen/container_side_padding"
             android:paddingEnd="@dimen/container_side_padding"
-            android:paddingBottom="@dimen/container_side_padding">
+            android:paddingBottom="@dimen/ds_space_xl">
 
             <TextView
+                style="@style/Basilience.PageTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="System Setup and Hardware Guide"
-                android:textSize="22sp"
-                android:textStyle="bold"
-                android:textColor="#2E7D32"
-                android:layout_marginBottom="16dp" />
+                android:gravity="center"
+                android:text="Hardware &amp; System Guide" />
 
             <TextView
+                style="@style/Basilience.PageSubtitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Step 1: Reservoir Preparation"
-                android:textStyle="bold"
-                android:textColor="#000000"
-                android:textSize="18sp"
-                android:layout_marginBottom="4dp"/>
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Fill the primary nutrient reservoir with clean water. Ensure the water level is sufficient for the ultrasonic fogger to operate (usually 2-3 inches above the fogger head)."
-                android:textSize="14sp"
-                android:textColor="#444444"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginTop="@dimen/ds_space_xs"
+                android:layout_marginBottom="@dimen/ds_space_md"
+                android:gravity="center"
+                android:text="How the physical Basilience system works" />
 
-            <TextView
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recyclerGuideSections"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Step 2: Sensor Calibration and Placement"
-                android:textStyle="bold"
-                android:textColor="#000000"
-                android:textSize="18sp"
-                android:layout_marginBottom="4dp"/>
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Submerge the pH and EC probes in the reservoir. Ensure they are placed away from the ultrasonic fogger to avoid electrical interference. Probes should be cleaned monthly for accuracy."
-                android:textSize="14sp"
-                android:textColor="#444444"
-                android:layout_marginBottom="16dp" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Step 3: Actuator Connection"
-                android:textStyle="bold"
-                android:textColor="#000000"
-                android:textSize="18sp"
-                android:layout_marginBottom="4dp"/>
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Connect the Fogger, Water Pump, Canopy Fans, and Grow Lights to their respective relay channels on the Basilience Controller."
-                android:textSize="14sp"
-                android:textColor="#444444"
-                android:layout_marginBottom="16dp" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Step 4: Power and Network"
-                android:textStyle="bold"
-                android:textColor="#000000"
-                android:textSize="18sp"
-                android:layout_marginBottom="4dp"/>
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Power on the controller. The status LED will pulse BLUE during Wi-Fi pairing and turn SOLID GREEN when connected to the Firebase cloud. If RED, check your router connection."
-                android:textSize="14sp"
-                android:textColor="#444444"
-                android:layout_marginBottom="16dp" />
+                android:nestedScrollingEnabled="false" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

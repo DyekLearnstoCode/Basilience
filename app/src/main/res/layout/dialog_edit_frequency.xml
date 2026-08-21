@@ -15,12 +15,10 @@
         android:textSize="13sp" />
 
     <com.google.android.material.textfield.TextInputLayout
-        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+        style="@style/InputFieldStyle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Frequency (Days)"
-        app:boxStrokeColor="@color/primary"
-        app:hintTextColor="@color/primary">
+        android:hint="Frequency (Days)">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etFrequency"

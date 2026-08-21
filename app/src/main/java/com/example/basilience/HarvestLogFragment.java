@@ -256,6 +256,8 @@ public class HarvestLogFragment extends Fragment {
 
         TextInputEditText etWeight = dialogView.findViewById(R.id.etWeight);
         TextInputEditText etNotes = dialogView.findViewById(R.id.etNotes);
+        com.google.android.material.textfield.TextInputLayout layoutWeight = dialogView.findViewById(R.id.layoutWeight);
+        TextView tvHarvestDate = dialogView.findViewById(R.id.tvHarvestDate);
         Button btnSave = dialogView.findViewById(R.id.btnSaveHarvest);
         Button btnCancel = dialogView.findViewById(R.id.btnCancel);
         Button btnReadSensor = dialogView.findViewById(R.id.btnReadSensor);
@@ -274,6 +276,12 @@ public class HarvestLogFragment extends Fragment {
             etNotes.setText(harvest.getNotes());
             btnSave.setText("Update");
             currentHarvestSource = harvest.getSource();
+            // Editing never changes the original recorded date.
+            if (tvHarvestDate != null) {
+                tvHarvestDate.setText("Harvest Date: " + DateUtils.formatDate(harvest.getHarvestDate()));
+            }
+        } else if (tvHarvestDate != null) {
+            tvHarvestDate.setText("Harvest Date: " + DateUtils.formatDate(Timestamp.now()));
         }
 
         AlertDialog dialog = NotificationHelper.showCustomViewDialog(requireContext(), dialogTitle, dialogView);
@@ -284,10 +292,11 @@ public class HarvestLogFragment extends Fragment {
 
         btnSave.setOnClickListener(v -> {
             if (isHarvestSubmitting) return;
+            if (layoutWeight != null) layoutWeight.setError(null);
 
             String weightStr = etWeight.getText().toString().trim();
             if (weightStr.isEmpty()) {
-                etWeight.setError("Required");
+                if (layoutWeight != null) layoutWeight.setError("Required");
                 return;
             }
 
@@ -295,11 +304,11 @@ public class HarvestLogFragment extends Fragment {
             try {
                 weight = Double.parseDouble(weightStr);
             } catch (NumberFormatException error) {
-                etWeight.setError("Enter a valid numeric weight");
+                if (layoutWeight != null) layoutWeight.setError("Enter a valid numeric weight");
                 return;
             }
             if (!Double.isFinite(weight) || weight <= 0.0) {
-                etWeight.setError("Weight must be greater than zero");
+                if (layoutWeight != null) layoutWeight.setError("Weight must be greater than zero");
                 return;
             }
             String notes = etNotes.getText().toString().trim();
@@ -332,7 +341,8 @@ public class HarvestLogFragment extends Fragment {
                             .addOnFailureListener(e -> {
                                 if (!isAdded()) return;
                                 dismissLoading();
-                                NotificationHelper.showError(requireContext(), "Error: " + e.getMessage());
+                                Log.e(TAG, "Failed to delete harvest entry for cycleId=" + cycleId, e);
+                                NotificationHelper.showError(requireContext(), "Unable to delete this harvest entry. Please try again.");
                             });
                 });
     }
@@ -394,6 +404,7 @@ public class HarvestLogFragment extends Fragment {
         // Update Labels and Dates based on status
         if (isCompleted) {
             tvNextHarvestLabel.setText("Completed Date");
+            tvExpectedDate.setTextColor(getResources().getColor(R.color.text_dark));
             if (cycle.getEndDate() != null) {
                 tvExpectedDate.setText(DateUtils.formatDate(cycle.getEndDate()));
             } else {
@@ -401,7 +412,15 @@ public class HarvestLogFragment extends Fragment {
             }
             if (tvFrequency != null) tvFrequency.setVisibility(View.GONE);
         } else {
-            tvNextHarvestLabel.setText("Next Harvest");
+            // Same readiness check checkHarvestReadinessAndShowDialog uses when the
+            // FAB is tapped - evaluated here too so the summary can passively show
+            // whether harvest entry is currently allowed, without changing when it
+            // actually is.
+            boolean harvestReady = cycle.getNextHarvestDate() == null
+                    || Timestamp.now().compareTo(cycle.getNextHarvestDate()) >= 0;
+            tvNextHarvestLabel.setText(harvestReady ? "Ready to Harvest" : "Next Harvest");
+            tvExpectedDate.setTextColor(getResources().getColor(
+                    harvestReady ? R.color.state_success : R.color.text_dark));
             if (tvFrequency != null) {
                 tvFrequency.setVisibility(View.VISIBLE);
                 // Date and frequency now occupy separate visual roles, so no
@@ -523,7 +542,8 @@ public class HarvestLogFragment extends Fragment {
                 if (error == null) {
                     showExportSuccessDialog(result);
                 } else {
-                    showExportFailedDialog(error.getMessage());
+                    Log.e(TAG, "Failed to generate PDF report for cycleId=" + cycleId, error);
+                    showExportFailedDialog("We couldn't generate the PDF report. Please try again.");
                 }
             });
         }, "basilience-report-export").start();
@@ -622,7 +642,8 @@ public class HarvestLogFragment extends Fragment {
                             dismissLoading();
                             btnUpdate.setEnabled(true);
                             if (btnCancel != null) btnCancel.setEnabled(true);
-                            NotificationHelper.showError(requireContext(), "Update failed: " + e.getMessage());
+                            Log.e(TAG, "Failed to update harvest frequency for cycleId=" + cycleId, e);
+                            NotificationHelper.showError(requireContext(), "Unable to save the harvest frequency. Please try again.");
                         });
             });
         }
@@ -653,7 +674,8 @@ public class HarvestLogFragment extends Fragment {
                         if (!isAdded()) return;
                         dismissLoading();
                         if (btnCompleteCycle != null) btnCompleteCycle.setEnabled(true);
-                        NotificationHelper.showError(requireContext(), "Failed to complete cycle: " + e.getMessage());
+                        Log.e(TAG, "Failed to complete cycle for cycleId=" + cycleId, e);
+                        NotificationHelper.showError(requireContext(), "Unable to complete this cycle. Please try again.");
                     });
                 });
     }
@@ -688,7 +710,8 @@ public class HarvestLogFragment extends Fragment {
                     if (!isAdded()) return;
                     dismissLoading();
                     saveButton.setEnabled(true);
-                    NotificationHelper.showError(requireContext(), "Error: " + e.getMessage());
+                    Log.e(TAG, "Failed to save harvest for cycleId=" + cycleId, e);
+                    NotificationHelper.showError(requireContext(), "Unable to save this harvest entry. Please try again.");
                 });
     }
 
@@ -719,7 +742,8 @@ public class HarvestLogFragment extends Fragment {
                     if (!isAdded()) return;
                     dismissLoading();
                     saveButton.setEnabled(true);
-                    NotificationHelper.showError(requireContext(), "Error: " + e.getMessage());
+                    Log.e(TAG, "Failed to update harvest for cycleId=" + cycleId, e);
+                    NotificationHelper.showError(requireContext(), "Unable to save your changes. Please try again.");
                 });
     }
 

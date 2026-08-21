@@ -46,13 +46,27 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
+                android:layout_marginBottom="4dp"
                 android:fontFamily="sans-serif-black"
                 android:gravity="center"
                 android:letterSpacing="-0.02"
                 android:text="@string/dashboard"
-                android:textColor="#212121"
+                android:textColor="@color/state_primary_text"
                 android:textSize="28sp" />
+
+            <!-- DEVICE STATUS (reuses DeviceConnectionManager's existing state;
+                 hidden when no device is selected) -->
+            <TextView
+                android:id="@+id/tvDashboardDeviceStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:gravity="center"
+                android:text="Checking Status..."
+                android:textColor="@color/device_status_reconnecting"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
 
             <!-- PARAMETERS MONITORING -->
             <LinearLayout
@@ -83,8 +97,7 @@
                     android:layout_marginStart="12dp"
                     android:layout_weight="1"
                     android:text="@string/parameters_monitoring"
-                    android:textColor="#212121"
-                    android:textSize="17sp" />
+                    style="@style/Basilience.CardOptionLabel" />
 
                 <!-- CIRCLE BUTTON -->
                 <FrameLayout
@@ -133,8 +146,7 @@
                     android:layout_marginStart="12dp"
                     android:layout_weight="1"
                     android:text="@string/feature2"
-                    android:textColor="#212121"
-                    android:textSize="17sp" />
+                    style="@style/Basilience.CardOptionLabel" />
 
                 <!-- CIRCLE BUTTON -->
                 <FrameLayout
@@ -183,8 +195,7 @@
                     android:layout_marginStart="12dp"
                     android:layout_weight="1"
                     android:text="@string/feature4"
-                    android:textColor="#212121"
-                    android:textSize="17sp" />
+                    style="@style/Basilience.CardOptionLabel" />
 
                 <!-- CIRCLE BUTTON -->
                 <FrameLayout

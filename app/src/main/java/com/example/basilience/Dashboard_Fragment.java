@@ -7,10 +7,12 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.NavController;
 import androidx.navigation.Navigation;
@@ -63,6 +65,21 @@ public class Dashboard_Fragment extends Fragment {
                     }
                 }
         );
+
+        // Device status (reuses the same DeviceConnectionManager state Monitoring shows)
+        SharedPreferences statusPrefs = requireContext().getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
+        TextView tvDeviceStatus = view.findViewById(R.id.tvDashboardDeviceStatus);
+        if (tvDeviceStatus != null && statusPrefs.getString("selected_device_id", null) != null) {
+            tvDeviceStatus.setVisibility(View.VISIBLE);
+            DeviceConnectionManager.getInstance().getConnectivityState().observe(
+                    getViewLifecycleOwner(), state -> {
+                        DeviceConnectivityState displayState = state == null
+                                ? DeviceConnectivityState.RECONNECTING : state;
+                        tvDeviceStatus.setText("● " + displayState.getLabel().toUpperCase(java.util.Locale.ROOT));
+                        tvDeviceStatus.setTextColor(ContextCompat.getColor(
+                                requireContext(), displayState.getColorRes()));
+                    });
+        }
 
         // Parameters Monitoring
         LinearLayout cardParameters = view.findViewById(R.id.cardParameters);

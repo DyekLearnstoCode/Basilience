@@ -7,6 +7,7 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -70,6 +71,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     // ===== MAIN =====
     private TextView tvPH, tvEC, tvTemp, tvHumidity;
     private TextView tvWaterTemp, tvWaterLevel;
+    private TextView tvPHStatus, tvECStatus, tvTempStatus, tvHumidityStatus;
+    private TextView tvWaterTempStatus, tvWaterLevelStatus;
     private boolean phAlertActive;
     private boolean ecAlertActive;
     private boolean airTemperatureAlertActive;
@@ -113,6 +116,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private MaterialButton btnRetryWifiConfiguration;
     private SensorRepository sensorRepository;
     private final MutableLiveData<SensorData> sensorLiveData = new MutableLiveData<>();
+    private final MutableLiveData<Boolean> sensorReadErrorLiveData = new MutableLiveData<>();
+    private TextView tvSensorDataNotice;
     private Long previousLastSeenValue = null;
     private boolean isCurrentlyOnline = false;
     private DeviceConnectivityState connectivityState = DeviceConnectivityState.RECONNECTING;
@@ -206,6 +211,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
         tvConnectionStatus = view.findViewById(R.id.tvConnectionStatus);
         tvConnectionDetail = view.findViewById(R.id.tvConnectionDetail);
+        tvSensorDataNotice = view.findViewById(R.id.tvSensorDataNotice);
         btnRetryWifiConfiguration = view.findViewById(R.id.btnRetryWifiConfiguration);
         connectivityExecutor = Executors.newSingleThreadExecutor();
         if (btnRetryWifiConfiguration != null) {
@@ -245,6 +251,12 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             }
         });
 
+        sensorReadErrorLiveData.observe(getViewLifecycleOwner(), hasError -> {
+            if (tvSensorDataNotice != null) {
+                tvSensorDataNotice.setVisibility(Boolean.TRUE.equals(hasError) ? View.VISIBLE : View.GONE);
+            }
+        });
+
         SharedPreferences localPrefs = requireContext().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
         String role = localPrefs.getString("user_role", "FARMER");
         boolean isAdmin = "ADMIN".equalsIgnoreCase(role);
@@ -274,7 +286,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                                             hideActuatorLoading();
                                             isActuatorBusy = false;
                                             updateActuatorControls();
-                                            Toast.makeText(getContext(), "Request failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                                            Log.e("Monitoring", "Refill request failed", e);
+                                            Toast.makeText(getContext(), "Unable to send the refill request. Please try again.", Toast.LENGTH_SHORT).show();
                                         });
                             });
                 } else {
@@ -309,7 +322,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                                             hideActuatorLoading();
                                             isActuatorBusy = false;
                                             updateActuatorControls();
-                                            Toast.makeText(getContext(), "Request failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                                            Log.e("Monitoring", "Reset safety request failed", e);
+                                            Toast.makeText(getContext(), "Unable to send the reset request. Please try again.", Toast.LENGTH_SHORT).show();
                                         });
                             });
                 } else {
@@ -332,31 +346,45 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
         if (cardPH != null) {
             tvPH = cardPH.findViewById(R.id.tvValue);
+            tvPHStatus = cardPH.findViewById(R.id.tvStatus);
             TextView label = cardPH.findViewById(R.id.tvLabel);
             if (label != null) label.setText("pH");
+            ImageView icon = cardPH.findViewById(R.id.imgIcon);
+            if (icon != null) icon.setImageResource(R.drawable.ic_ph);
         }
         if (cardEC != null) {
             tvEC = cardEC.findViewById(R.id.tvValue);
+            tvECStatus = cardEC.findViewById(R.id.tvStatus);
             TextView label = cardEC.findViewById(R.id.tvLabel);
             if (label != null) label.setText("EC");
+            ImageView icon = cardEC.findViewById(R.id.imgIcon);
+            if (icon != null) icon.setImageResource(R.drawable.ic_ec);
         }
         if (cardTemp != null) {
             tvTemp = cardTemp.findViewById(R.id.tvValue);
+            tvTempStatus = cardTemp.findViewById(R.id.tvStatus);
             TextView label = cardTemp.findViewById(R.id.tvLabel);
             if (label != null) label.setText("Air Temp");
+            ImageView icon = cardTemp.findViewById(R.id.imgIcon);
+            if (icon != null) icon.setImageResource(R.drawable.ic_temp);
         }
         if (cardHumidity != null) {
             tvHumidity = cardHumidity.findViewById(R.id.tvValue);
+            tvHumidityStatus = cardHumidity.findViewById(R.id.tvStatus);
             TextView label = cardHumidity.findViewById(R.id.tvLabel);
             if (label != null) label.setText("Humidity");
+            ImageView icon = cardHumidity.findViewById(R.id.imgIcon);
+            if (icon != null) icon.setImageResource(R.drawable.ic_humidity);
         }
         if (cardWaterTemp != null) {
             tvWaterTemp = cardWaterTemp.findViewById(R.id.tvValue);
+            tvWaterTempStatus = cardWaterTemp.findViewById(R.id.tvStatus);
             TextView label = cardWaterTemp.findViewById(R.id.tvLabel);
             if (label != null) label.setText("Water Temp");
         }
         if (cardWaterLevel != null) {
             tvWaterLevel = cardWaterLevel.findViewById(R.id.tvValue);
+            tvWaterLevelStatus = cardWaterLevel.findViewById(R.id.tvStatus);
             TextView label = cardWaterLevel.findViewById(R.id.tvLabel);
             if (label != null) label.setText("Water Level");
         }
@@ -374,7 +402,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
 
         dbHelper.setSelectedDeviceId(deviceId);
-        sensorRepository.startListening(deviceId, sensorLiveData);
+        sensorRepository.startListening(deviceId, sensorLiveData, sensorReadErrorLiveData);
         if (!isCurrentlyOnline) confirmSetupApReachability(deviceId);
 
         View v = getView();
@@ -701,9 +729,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             updateTask.addOnCompleteListener(task -> {
                 if (!isAdded() || generation != actuatorCommandGeneration || actuatorCommandFinished) return;
                 if (!task.isSuccessful()) {
-                    String reason = task.getException() != null ? task.getException().getMessage() : "Unknown error";
+                    Log.e("Monitoring", "Actuator command failed for " + actuator.dbKey, task.getException());
                     finishActuatorCommand(generation, actuator, previousManualIntent,
-                            "Command Failed", "The actuator command could not be sent. " + reason,
+                            "Command Failed", "The actuator command could not be sent. Please try again.",
                             false);
                 } else {
                     // Command written — show Validating immediately and start polling
@@ -1038,33 +1066,33 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             int stateColorRes;
             switch (actuator.state) {
                 case 0:
-                    status.setText("OFF");
+                    status.setText("Off");
                     stateColorRes = R.color.actuator_off;
                     break;
                 case 1:
-                    status.setText("COMMAND RECEIVED" + actuatorSourceSuffix(actuator));
+                    status.setText("Command Sent" + actuatorSourceSuffix(actuator));
                     stateColorRes = R.color.actuator_pending;
                     break;
                 case 2:
-                    status.setText("VALIDATING" + actuatorSourceSuffix(actuator));
+                    status.setText("Validating" + actuatorSourceSuffix(actuator));
                     stateColorRes = R.color.actuator_pending;
                     break;
                 case 3:
-                    status.setText("REJECTED" + actuatorSourceSuffix(actuator));
+                    status.setText("Rejected" + actuatorSourceSuffix(actuator));
                     stateColorRes = R.color.actuator_rejected;
                     break;
                 case 4:
-                    status.setText("ACTIVATING" + actuatorSourceSuffix(actuator));
+                    status.setText("Starting" + actuatorSourceSuffix(actuator));
                     stateColorRes = R.color.actuator_pending;
                     break;
                 case 5:
-                    status.setText("RUNNING" + runningActuatorSuffix(actuator));
+                    status.setText("Running" + runningActuatorSuffix(actuator));
                     stateColorRes = "manual".equalsIgnoreCase(actuator.physicalSource)
                             || "android".equalsIgnoreCase(actuator.physicalSource)
                             ? R.color.actuator_manual : R.color.actuator_auto;
                     break;
                 case 6:
-                    status.setText("STOPPING" + actuatorSourceSuffix(actuator));
+                    status.setText("Stopping" + actuatorSourceSuffix(actuator));
                     stateColorRes = R.color.actuator_pending;
                     break;
                 default:
@@ -1081,9 +1109,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     }
 
     private String actuatorSourceSuffix(Actuator actuator) {
-        if ("automatic".equalsIgnoreCase(actuator.physicalSource)) return " · AUTO";
-        if ("manual".equalsIgnoreCase(actuator.physicalSource)) return " · MANUAL";
-        if ("android".equalsIgnoreCase(actuator.physicalSource)) return " · ANDROID";
+        if ("automatic".equalsIgnoreCase(actuator.physicalSource)) return " · Auto";
+        if ("manual".equalsIgnoreCase(actuator.physicalSource)) return " · Manual";
+        if ("android".equalsIgnoreCase(actuator.physicalSource)) return " · App";
         return "";
     }
 
@@ -1094,7 +1122,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 && ("cold".equalsIgnoreCase(actuator.strategy)
                     || "normal".equalsIgnoreCase(actuator.strategy)
                     || "hot".equalsIgnoreCase(actuator.strategy))) {
-            suffix += " · " + actuator.strategy.toUpperCase(java.util.Locale.ROOT);
+            String strategyLabel = actuator.strategy.substring(0, 1).toUpperCase(java.util.Locale.ROOT)
+                    + actuator.strategy.substring(1).toLowerCase(java.util.Locale.ROOT);
+            suffix += " · " + strategyLabel;
         }
         return suffix;
     }
@@ -1163,7 +1193,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (tvPH != null) tvPH.setText(formatSensor(
                 data != null ? data.ph : null, 0.0, 14.0, 2, "", null));
         if (tvEC != null) tvEC.setText(formatSensor(
-                data != null ? data.ec : null, 0.0, Double.MAX_VALUE, 2, "", null));
+                data != null ? data.ec : null, 0.0, Double.MAX_VALUE, 2, " mS/cm", null));
         if (tvTemp != null) tvTemp.setText(formatSensor(
                 data != null ? data.airTemperature : null, -40.0, 80.0, 1, "°C", null));
         if (tvHumidity != null) tvHumidity.setText(formatSensor(
@@ -1173,37 +1203,57 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (tvWaterLevel != null) tvWaterLevel.setText(formatSensor(
                 data != null ? data.waterLevel : null, 0.0, 100.0, 1, "%", null));
 
-        applyParameterStateColor(tvPH, phAlertActive);
-        applyParameterStateColor(tvEC, ecAlertActive);
-        applyParameterStateColor(tvTemp, airTemperatureAlertActive);
-        applyParameterStateColor(tvHumidity, false);
-        applyParameterStateColor(tvWaterTemp, waterTemperatureAlertActive);
-        applyParameterStateColor(tvWaterLevel, waterLevelAlertActive);
+        applyParameterStateColor(tvPH, tvPHStatus, phAlertActive);
+        applyParameterStateColor(tvEC, tvECStatus, ecAlertActive);
+        applyParameterStateColor(tvTemp, tvTempStatus, airTemperatureAlertActive);
+        applyParameterStateColor(tvHumidity, tvHumidityStatus, false);
+        applyParameterStateColor(tvWaterTemp, tvWaterTempStatus, waterTemperatureAlertActive);
+        applyParameterStateColor(tvWaterLevel, tvWaterLevelStatus, waterLevelAlertActive);
     }
 
     private boolean isAlertActive(DataSnapshot alerts, String key) {
         return Boolean.TRUE.equals(alerts.child(key).getValue(Boolean.class));
     }
 
-    private void applyParameterStateColor(TextView valueView, boolean alertActive) {
+    /** Applies the same Normal/Warning/No Data state to both the value's color and a text status label. */
+    private void applyParameterStateColor(TextView valueView, TextView statusView, boolean alertActive) {
         if (valueView == null) return;
         final int colorRes;
+        final String statusText;
         if ("--".contentEquals(valueView.getText())) {
             colorRes = R.color.state_no_data;
+            statusText = "No Data";
         } else if (alertActive) {
             colorRes = R.color.state_critical;
+            statusText = "Warning";
         } else {
             colorRes = R.color.state_success;
+            statusText = "Normal";
         }
-        valueView.setTextColor(ContextCompat.getColor(requireContext(), colorRes));
+        int color = ContextCompat.getColor(requireContext(), colorRes);
+        valueView.setTextColor(color);
+        if (statusView != null) {
+            statusView.setText(statusText);
+            statusView.setTextColor(color);
+        }
     }
 
-    private String formatSensor(Double value, double minimum, double maximum,
+    /**
+     * Formats a sensor reading with its unit visually subordinate to the number
+     * (unit shrunk to ~55% size), matching the convention already used for
+     * report metric strips (see SystemReportsFragment#formatMetric).
+     */
+    private CharSequence formatSensor(Double value, double minimum, double maximum,
                                 int decimalPlaces, String suffix, Double invalidSentinel) {
         if (value == null || value.isNaN() || value.isInfinite()) return "--";
         if (invalidSentinel != null && Math.abs(value - invalidSentinel) < 0.0001) return "--";
         if (value < minimum || value > maximum) return "--";
-        return String.format(java.util.Locale.US, "%." + decimalPlaces + "f%s", value, suffix);
+        String number = String.format(java.util.Locale.US, "%." + decimalPlaces + "f", value);
+        if (suffix == null || suffix.isEmpty()) return number;
+        android.text.SpannableString styled = new android.text.SpannableString(number + suffix);
+        styled.setSpan(new android.text.style.RelativeSizeSpan(0.55f), number.length(), styled.length(),
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return styled;
     }
 
     private void updateConnectionUI() {

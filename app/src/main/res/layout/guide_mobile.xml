@@ -26,6 +26,7 @@
         android:layout_marginTop="@dimen/container_overlap_margin"
         android:background="@drawable/top_rounded_white"
         android:elevation="5dp"
+        android:fillViewport="true"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <LinearLayout
@@ -35,80 +36,29 @@
             android:paddingTop="@dimen/container_top_padding"
             android:paddingStart="@dimen/container_side_padding"
             android:paddingEnd="@dimen/container_side_padding"
-            android:paddingBottom="@dimen/container_side_padding">
+            android:paddingBottom="@dimen/ds_space_xl">
 
             <TextView
+                style="@style/Basilience.PageTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Mobile Application Operations"
-                android:textSize="22sp"
-                android:textStyle="bold"
-                android:textColor="#2E7D32"
-                android:layout_marginBottom="16dp" />
+                android:gravity="center"
+                android:text="Mobile App Guide" />
 
             <TextView
+                style="@style/Basilience.PageSubtitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="1. Real-Time Dashboard"
-                android:textStyle="bold"
-                android:textColor="#000000"
-                android:textSize="18sp"
-                android:layout_marginBottom="4dp"/>
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="The main dashboard provides a summary of all active parameters. Green indicates values are within optimal ranges, while Red indicates attention is needed."
-                android:textSize="14sp"
-                android:textColor="#444444"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginTop="@dimen/ds_space_xs"
+                android:layout_marginBottom="@dimen/ds_space_md"
+                android:gravity="center"
+                android:text="A walkthrough of every screen in Basilience" />
 
-            <TextView
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recyclerGuideSections"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="2. Manual vs. Auto Mode"
-                android:textStyle="bold"
-                android:textColor="#000000"
-                android:textSize="18sp"
-                android:layout_marginBottom="4dp"/>
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Navigate to 'Parameters' to toggle Manual Mode. This allows you to individually control pumps, fans, and lights. Ensure you switch back to Auto Mode for system-managed cultivation."
-                android:textSize="14sp"
-                android:textColor="#444444"
-                android:layout_marginBottom="16dp" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="3. Cycle Management"
-                android:textStyle="bold"
-                android:textColor="#000000"
-                android:textSize="18sp"
-                android:layout_marginBottom="4dp"/>
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Log every harvest in the 'Cycles' section. This data is critical for the AI to calculate your production efficiency and next harvest dates."
-                android:textSize="14sp"
-                android:textColor="#444444"
-                android:layout_marginBottom="16dp" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="4. Analytics and Reports"
-                android:textStyle="bold"
-                android:textColor="#000000"
-                android:textSize="18sp"
-                android:layout_marginBottom="4dp"/>
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Admins can export PDF and CSV reports of historical sensor data to track trends and optimize nutrient formulas."
-                android:textSize="14sp"
-                android:textColor="#444444"
-                android:layout_marginBottom="16dp" />
+                android:nestedScrollingEnabled="false" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

@@ -26,8 +26,7 @@
                 android:id="@+id/imgIcon"
                 android:layout_width="18dp"
                 android:layout_height="18dp"
-                android:layout_marginEnd="6dp"
-                android:src="@drawable/ic_ph"/>
+                android:layout_marginEnd="6dp"/>
 
             <TextView
                 android:id="@+id/tvLabel"
@@ -48,6 +47,17 @@
             android:textStyle="bold"
             android:textColor="@color/state_primary_text"
             android:layout_marginTop="8dp"/>
+
+        <!-- STATE (Normal / Warning / No Data) - text, not color alone -->
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="--"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:textColor="@color/state_no_data"
+            android:layout_marginTop="2dp"/>
 
     </LinearLayout>
 

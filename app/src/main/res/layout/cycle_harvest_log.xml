@@ -83,6 +83,7 @@
 
                 <TextView
                     android:id="@+id/tvStatus"
+                    style="@style/Basilience.StatusBadge"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="10dp"
@@ -90,9 +91,7 @@
                     android:paddingHorizontal="10dp"
                     android:paddingVertical="4dp"
                     android:text="ACTIVE"
-                    android:textColor="@android:color/white"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
+                    android:textColor="@android:color/white" />
 
                 <View
                     android:layout_width="0dp"

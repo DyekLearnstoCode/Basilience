@@ -42,14 +42,12 @@
 
             <!-- TITLE -->
             <TextView
+                style="@style/Basilience.PageTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
                 android:gravity="center"
-                android:text="@string/feature1"
-                android:textColor="@android:color/black"
-                android:textSize="22sp"
-                android:textStyle="bold" />
+                android:text="@string/feature1" />
 
             <TextView
                 android:id="@+id/tvConnectionStatus"
@@ -80,6 +78,17 @@
                 android:layout_gravity="center_horizontal"
                 android:layout_marginBottom="12dp"
                 android:text="Retry Wi-Fi Configuration"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvSensorDataNotice"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:gravity="center"
+                android:text="Unable to load live sensor readings. Showing last known data."
+                android:textColor="@color/state_no_data"
+                android:textSize="13sp"
                 android:visibility="gone" />
 
             <!-- ===== GRID ROW 1 ===== -->
@@ -247,12 +256,10 @@
         android:visibility="gone">
 
         <com.google.android.material.card.MaterialCardView
+            style="@style/Basilience.LoadingOverlayCard"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_centerInParent="true"
-            app:cardCornerRadius="20dp"
-            app:cardElevation="12dp"
-            app:cardBackgroundColor="@color/white">
+            android:layout_centerInParent="true">
 
             <LinearLayout
                 android:layout_width="220dp"

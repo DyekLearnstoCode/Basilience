@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -25,6 +26,7 @@ import java.util.List;
 
 public class DeviceFragment extends Fragment {
 
+    private static final String TAG = "DeviceFragment";
     private static final String PREFS_NAME = "basilience_prefs";
     private static final String KEY_IS_LOGGED_IN = "is_logged_in";
 
@@ -124,7 +126,8 @@ public class DeviceFragment extends Fragment {
                             deviceMutationInProgress = false;
                             btnClaimDevice.setEnabled(true);
                             if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
-                            NotificationHelper.showError(requireContext(), e.getMessage());
+                            Log.e(TAG, "Failed to claim device", e);
+                            NotificationHelper.showError(requireContext(), "Unable to claim this device. Please check the token and try again.");
                         });
             } else {
                 Toast.makeText(getActivity(), "Please enter a device token code", Toast.LENGTH_SHORT).show();
@@ -167,7 +170,8 @@ public class DeviceFragment extends Fragment {
                     if (tvLoadingDevices != null) {
                         tvLoadingDevices.setText("Error loading devices");
                     }
-                    Toast.makeText(getActivity(), "Error loading devices: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    Log.e(TAG, "Failed to load devices", e);
+                    Toast.makeText(getActivity(), "Unable to load your devices. Please try again.", Toast.LENGTH_SHORT).show();
                 });
     }
     private void unclaimDevice(Device device) {
@@ -192,7 +196,8 @@ public class DeviceFragment extends Fragment {
                     if (!isAdded()) return;
                     deviceMutationInProgress = false;
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
-                            NotificationHelper.showError(requireContext(), "Failed to unclaim: " + e.getMessage());
+                            Log.e(TAG, "Failed to unclaim device", e);
+                            NotificationHelper.showError(requireContext(), "Unable to unclaim this device. Please try again.");
                 });
     }
 

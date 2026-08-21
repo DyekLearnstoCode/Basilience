@@ -106,6 +106,31 @@
         <item name="android:padding">16dp</item>
     </style>
 
+    <!-- Shared "loading overlay" card shape - was copy-pasted identically
+         (20dp radius / 12dp elevation / white) across auth_login, auth_register,
+         parameters_monitoring, settings_wifi_config and reports_fogging. -->
+    <style name="Basilience.LoadingOverlayCard" parent="Widget.MaterialComponents.CardView">
+        <item name="cardCornerRadius">20dp</item>
+        <item name="cardElevation">12dp</item>
+        <item name="cardBackgroundColor">@color/white</item>
+    </style>
+
+    <!-- Card-option row label ("Account Information", "Parameters Monitoring",
+         etc.) on Dashboard/Settings/Reports selector cards - the same 17sp/
+         state_primary_text combo repeated across those three screens. -->
+    <style name="Basilience.CardOptionLabel" parent="">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textColor">@color/state_primary_text</item>
+    </style>
+
+    <!-- Small bold label above a detail value (Personnel Details, Account
+         Settings field labels). -->
+    <style name="Basilience.FieldLabel" parent="">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/primary</item>
+    </style>
+
     <!-- 4. Dialog Themes -->
     <style name="HarvestDialogTheme" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
         <item name="colorSurface">@color/snow</item>

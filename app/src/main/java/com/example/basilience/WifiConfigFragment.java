@@ -21,6 +21,7 @@ import androidx.navigation.NavController;
 import androidx.navigation.Navigation;
 
 import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
@@ -34,6 +35,7 @@ public class WifiConfigFragment extends Fragment {
     private static final long RECONNECT_CONFIRMATION_TIMEOUT_MS = 45000L;
 
     private TextInputEditText etSsid, etPassword;
+    private TextInputLayout layoutSsid;
     private TextView tvWifiStatus;
     private Button btnSaveWifi, btnCancelWifi;
     private ImageView btnBack;
@@ -82,6 +84,7 @@ public class WifiConfigFragment extends Fragment {
         networkExecutor = Executors.newSingleThreadExecutor();
 
         etSsid = view.findViewById(R.id.etSsid);
+        layoutSsid = view.findViewById(R.id.layoutSsid);
         etPassword = view.findViewById(R.id.etPassword);
         tvWifiStatus = view.findViewById(R.id.tvWifiStatus);
         btnSaveWifi = view.findViewById(R.id.btnSaveWifi);
@@ -137,14 +140,15 @@ public class WifiConfigFragment extends Fragment {
         String ssid = etSsid.getText() != null ? etSsid.getText().toString().trim() : "";
         String password = etPassword.getText() != null ? etPassword.getText().toString().trim() : "";
 
+        if (layoutSsid != null) layoutSsid.setError(null);
         if (ssid.isEmpty()) {
-            etSsid.setError("SSID cannot be empty");
+            if (layoutSsid != null) layoutSsid.setError("Network name cannot be empty");
             return;
         }
 
         NotificationHelper.showConfirmation(requireContext(),
                 "Change Wi-Fi Credentials?",
-                "Connect this phone to the ESP32 'Basilience-Setup' Wi-Fi network, then Basilience will send the credentials directly to the ESP32 over the local setup page. Firebase is not required for this step.",
+                "Connect this phone to the 'Basilience-Setup' Wi-Fi network, then Basilience will send the credentials directly to the device over its local setup page. An internet connection is not required for this step.",
                 "Send Locally", "Cancel", () -> sendWifiCommandLocal(ssid, password));
     }
 
@@ -177,8 +181,9 @@ public class WifiConfigFragment extends Fragment {
                     } else {
                         provisioningAttemptStartLastSeen = null;
                         hideLoading();
-                        NotificationHelper.showError(requireContext(), "Provisioning Failed",
-                                "The ESP32 rejected the Wi-Fi configuration (HTTP " + responseCode + ").");
+                        Log.w(TAG, "Device rejected Wi-Fi configuration, HTTP " + responseCode);
+                        NotificationHelper.showError(requireContext(), "Wi-Fi Setup Failed",
+                                "The device rejected the Wi-Fi configuration. Please check the network name and password and try again.");
                     }
                 });
 
@@ -347,7 +352,7 @@ public class WifiConfigFragment extends Fragment {
         final boolean showDetectionLoading = initialApCheck;
         if (showDetectionLoading) {
             initialApCheck = false;
-            showLoading("Detecting Provisioning Mode...", "Checking 192.168.4.1/status on the local Wi-Fi network...");
+            showLoading("Checking Device Setup Mode...", "Checking the local Wi-Fi network...");
         }
         Context appContext = requireContext().getApplicationContext();
         networkExecutor.execute(() -> {
@@ -374,7 +379,7 @@ public class WifiConfigFragment extends Fragment {
                 if (showDetectionLoading) {
                     hideLoading();
                     if (!reachable && !isCurrentlyOnline) {
-                        NotificationHelper.showError(requireContext(), "Unable to reach ESP32",
+                        NotificationHelper.showError(requireContext(), "Unable to Reach Device",
                                 "Make sure your phone is connected to Basilience-Setup.");
                     }
                 }

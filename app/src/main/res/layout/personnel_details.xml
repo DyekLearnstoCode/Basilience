@@ -55,15 +55,15 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Personnel Name" android:textColor="@color/primary" android:textSize="13sp" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Personnel Name" style="@style/Basilience.FieldLabel" />
                     <TextView android:id="@+id/tvPersonnelName" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="14dp" android:text="—" android:textColor="@color/black" android:textSize="16sp" />
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Position" android:textColor="@color/primary" android:textSize="13sp" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Position" style="@style/Basilience.FieldLabel" />
                     <TextView android:id="@+id/tvPersonnelRole" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="14dp" android:text="—" android:textColor="@color/black" android:textSize="16sp" />
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Email" android:textColor="@color/primary" android:textSize="13sp" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Email" style="@style/Basilience.FieldLabel" />
                     <TextView android:id="@+id/tvPersonnelEmail" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="14dp" android:text="—" android:textColor="@color/black" android:textSize="16sp" />
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Phone Number" android:textColor="@color/primary" android:textSize="13sp" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Phone Number" style="@style/Basilience.FieldLabel" />
                     <TextView android:id="@+id/tvPersonnelPhone" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="14dp" android:text="—" android:textColor="@color/black" android:textSize="16sp" />
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Date Added" android:textColor="@color/primary" android:textSize="13sp" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Date Added" style="@style/Basilience.FieldLabel" />
                     <TextView android:id="@+id/tvPersonnelDateAdded" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="20dp" android:text="—" android:textColor="@color/black" android:textSize="16sp" />
 
                     <com.google.android.material.button.MaterialButton

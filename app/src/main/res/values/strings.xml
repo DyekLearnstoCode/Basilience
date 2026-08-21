@@ -47,6 +47,7 @@
     <string name="loading_syncing">Syncing data&#8230;</string>
     <string name="loading_deleting">Deleting&#8230;</string>
     <string name="loading_please_wait">Please wait a moment</string>
+    <string name="loading_cycles">Loading growth cycles&#8230;</string>
 
     <!-- Error States -->
     <string name="error_slow_internet">Connection is slow, please wait&#8230;</string>

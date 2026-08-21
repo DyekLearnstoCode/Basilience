@@ -2,6 +2,7 @@ package com.example.basilience;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
@@ -10,6 +11,7 @@ import com.google.android.material.textfield.TextInputEditText;
 
 public class Auth_Register_Activity extends AppCompatActivity {
 
+    private static final String TAG = "Auth_Register_Activity";
     private TextInputEditText etName, etEmail, etPassword, etConfirmPassword;
     private MaterialButton btnSignup;
     private TextView tvLogin;
@@ -38,6 +40,13 @@ public class Auth_Register_Activity extends AppCompatActivity {
 
         btnSignup.setOnClickListener(v -> registerUser());
         tvLogin.setOnClickListener(v -> finish());
+        etConfirmPassword.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                registerUser();
+                return true;
+            }
+            return false;
+        });
     }
 
     private void showLoading(boolean show, String message) {
@@ -87,7 +96,7 @@ public class Auth_Register_Activity extends AppCompatActivity {
                     String uid = helper.getCurrentUid();
                     if (uid == null) {
                         showLoading(false, null);
-                        NotificationHelper.showError(this, "Registration failed: uid is null");
+                        NotificationHelper.showError(this, "Unable to complete registration. Please try again.");
                         return;
                     }
 
@@ -107,9 +116,10 @@ public class Auth_Register_Activity extends AppCompatActivity {
                                     public void onFailure(String errorMessage) {
                                         if (isFinishing() || isDestroyed()) return;
                                         showLoading(false, null);
+                                        Log.e(TAG, "Failed to send verification email: " + errorMessage);
                                         NotificationHelper.showError(
                                                 Auth_Register_Activity.this,
-                                                "Failed to send verification email: " + errorMessage
+                                                "Your account was created, but we couldn't send a verification email. Please try signing in to resend it."
                                         );
                                         helper.logout();
                                         gotoLogin();
@@ -119,9 +129,10 @@ public class Auth_Register_Activity extends AppCompatActivity {
                             .addOnFailureListener(e -> {
                                 if (isFinishing() || isDestroyed()) return;
                                 showLoading(false, null);
+                                Log.e(TAG, "Failed to save user profile", e);
                                 NotificationHelper.showError(
                                         Auth_Register_Activity.this,
-                                        "Failed to save user profile: " + e.getMessage()
+                                        "Unable to save your profile. Please try again."
                                 );
                                 helper.logout();
                                 gotoLogin();

@@ -50,6 +50,7 @@
                 android:textColor="@android:color/black"/>
 
             <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/layoutName"
                 style="@style/InputFieldStyle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -60,7 +61,7 @@
                     android:id="@+id/etName"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textColor="#000000" />
+                    android:textColor="@color/black" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <TextView
@@ -73,6 +74,7 @@
                 android:gravity="center" />
 
             <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/layoutEmail"
                 style="@style/InputFieldStyle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -84,10 +86,11 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:inputType="textEmailAddress"
-                    android:textColor="#000000" />
+                    android:textColor="@color/black" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/layoutPhone"
                 style="@style/InputFieldStyle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -100,10 +103,12 @@
                     android:layout_height="wrap_content"
                     android:inputType="phone"
                     android:digits="0123456789"
-                    android:maxLength="11" />
+                    android:maxLength="11"
+                    android:textColor="@color/black" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/layoutPassword"
                 style="@style/InputFieldStyle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -117,10 +122,11 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:inputType="textPassword"
-                    android:textColor="#000000" />
+                    android:textColor="@color/black" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/layoutConfirm"
                 style="@style/InputFieldStyle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -134,7 +140,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:inputType="textPassword"
-                    android:textColor="#000000" />
+                    android:textColor="@color/black" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <com.google.android.material.button.MaterialButton
@@ -142,10 +148,7 @@
                 style="@style/BasilienceButton.Primary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/personnel_save"
-                android:backgroundTint="@color/primary"
-                android:textColor="@android:color/white"
-                app:cornerRadius="12dp"/>
+                android:text="@string/personnel_save"/>
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

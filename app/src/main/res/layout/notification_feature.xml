@@ -39,17 +39,22 @@
             android:paddingEnd="@dimen/container_side_padding"
             android:paddingBottom="@dimen/container_side_padding">
 
-            <!-- TITLE -->
+            <!-- TITLE: Notifications is a bottom-nav tab root (peer to Home/
+                 Dashboard and the Reports selector), not a screen pushed from
+                 one of them, so it matches their 28sp tier rather than
+                 Basilience.PageTitle (used by drilled-into content screens
+                 like Monitoring/Cycle/Harvest). -->
             <TextView
                 android:id="@+id/tvTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-black"
+                android:letterSpacing="-0.02"
                 android:text="Notifications"
-                android:textSize="22sp"
-                android:textStyle="bold"
+                android:textSize="28sp"
                 android:textAlignment="center"
                 android:layout_marginBottom="12dp"
-                android:textColor="@android:color/black" />
+                android:textColor="@color/state_primary_text" />
 
             <!-- FILTER CHIPS: ALL / UNREAD / READ -->
             <LinearLayout
@@ -74,10 +79,7 @@
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
                     android:text="All"
-                    android:textSize="12sp"
-                    android:textColor="@color/white"
-                    android:background="@drawable/bg_chip_selected"
-                    app:backgroundTint="@null" />
+                    android:textColor="@color/white" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnFilterUnread"
@@ -95,10 +97,7 @@
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
                     android:text="Unread"
-                    android:textSize="12sp"
-                    android:textColor="@color/black"
-                    android:background="@drawable/bg_chip"
-                    app:backgroundTint="@null" />
+                    android:textColor="@color/black" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnFilterRead"
@@ -115,10 +114,7 @@
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
                     android:text="Read"
-                    android:textSize="12sp"
-                    android:textColor="@color/black"
-                    android:background="@drawable/bg_chip"
-                    app:backgroundTint="@null" />
+                    android:textColor="@color/black" />
             </LinearLayout>
 
             <!-- SCROLL CONTENT -->

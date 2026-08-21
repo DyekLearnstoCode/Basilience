@@ -3,7 +3,9 @@ package com.example.basilience;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -21,10 +23,12 @@ import java.util.List;
 
 public class Cycle_Details_Fragment extends Fragment {
 
+    private static final String TAG = "Cycle_Details_Fragment";
     private final List<Cycle> cycles = new ArrayList<>();
     private CycleAdapter adapter;
     private Database_Helper dbHelper;
     private ListenerRegistration cycleListener;
+    private TextView tvCyclesState;
 
     public Cycle_Details_Fragment() {
         super(R.layout.cycle_main);
@@ -45,6 +49,9 @@ public class Cycle_Details_Fragment extends Fragment {
 
         RecyclerView rv = view.findViewById(R.id.recyclerCycles);
         rv.setLayoutManager(new LinearLayoutManager(requireContext()));
+
+        tvCyclesState = view.findViewById(R.id.tvCyclesState);
+        if (tvCyclesState != null) tvCyclesState.setVisibility(View.VISIBLE);
 
         adapter = new CycleAdapter(cycles, (cycle, pos) -> {
             Bundle args = new Bundle();
@@ -103,7 +110,14 @@ public class Cycle_Details_Fragment extends Fragment {
             cycleListener = dbHelper.listenToCycles((snapshot, e) -> {
                 if (!isAdded()) return;
                 if (e != null) {
-                    NotificationHelper.showError(getContext(), "Error loading cycles");
+                    Log.e(TAG, "Failed to load cycles for deviceId=" + deviceId, e);
+                    if (cycles.isEmpty() && tvCyclesState != null) {
+                        tvCyclesState.setText("Unable to load growth cycles. Please try again.");
+                        tvCyclesState.setTextColor(androidx.core.content.ContextCompat.getColor(
+                                requireContext(), R.color.state_critical));
+                        tvCyclesState.setVisibility(View.VISIBLE);
+                    }
+                    NotificationHelper.showError(getContext(), "Unable to load growth cycles. Please try again.");
                     return;
                 }
 
@@ -147,6 +161,16 @@ public class Cycle_Details_Fragment extends Fragment {
                         }
                     }
                     adapter.notifyDataSetChanged();
+                    if (tvCyclesState != null) {
+                        if (cycles.isEmpty()) {
+                            tvCyclesState.setText("No growth cycles yet. Add a new cycle to get started.");
+                            tvCyclesState.setTextColor(androidx.core.content.ContextCompat.getColor(
+                                    requireContext(), R.color.state_no_data));
+                            tvCyclesState.setVisibility(View.VISIBLE);
+                        } else {
+                            tvCyclesState.setVisibility(View.GONE);
+                        }
+                    }
                 }
             });
         } else {

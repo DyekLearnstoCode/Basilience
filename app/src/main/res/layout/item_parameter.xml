@@ -4,7 +4,8 @@
     android:orientation="horizontal"
     android:padding="12dp"
     android:layout_marginBottom="10dp"
-    android:background="@drawable/input_card">
+    android:background="@drawable/input_card"
+    android:backgroundTint="@color/background_light">
 
     <TextView
         android:id="@+id/tvLabel"
@@ -14,11 +15,28 @@
         android:text="Parameter"
         android:textColor="@color/black"/>
 
-    <TextView
-        android:id="@+id/tvValue"
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="--"
-        android:textStyle="bold"
-        android:textColor="@color/black"/>
+        android:orientation="vertical"
+        android:gravity="end">
+
+        <TextView
+            android:id="@+id/tvValue"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="--"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="@color/state_primary_text"/>
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="--"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:textColor="@color/state_no_data"/>
+    </LinearLayout>
 </LinearLayout>

@@ -41,7 +41,7 @@
                 android:layout_marginBottom="24dp"
                 android:gravity="center"
                 android:text="About Basilience"
-                android:textColor="#212121"
+                android:textColor="@color/state_primary_text"
                 android:textSize="28sp"
                 android:fontFamily="sans-serif-black"
                 android:letterSpacing="-0.02"

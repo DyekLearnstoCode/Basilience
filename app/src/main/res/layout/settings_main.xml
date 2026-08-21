@@ -47,7 +47,7 @@
                 android:gravity="center"
                 android:letterSpacing="-0.02"
                 android:text="Settings"
-                android:textColor="#212121"
+                android:textColor="@color/state_primary_text"
                 android:textSize="28sp" />
 
             <LinearLayout
@@ -78,8 +78,7 @@
                         android:layout_marginStart="12dp"
                         android:layout_weight="1"
                         android:text="Account Information"
-                        android:textColor="#212121"
-                        android:textSize="17sp" />
+                        style="@style/Basilience.CardOptionLabel" />
 
                     <FrameLayout
                         android:id="@+id/btnAccount"
@@ -123,8 +122,7 @@
                         android:layout_marginStart="12dp"
                         android:layout_weight="1"
                         android:text="About Basilience"
-                        android:textColor="#212121"
-                        android:textSize="17sp" />
+                        style="@style/Basilience.CardOptionLabel" />
 
                     <FrameLayout
                         android:id="@+id/btnAbout"
@@ -170,8 +168,7 @@
                         android:layout_marginStart="12dp"
                         android:layout_weight="1"
                         android:text="Developer Options"
-                        android:textColor="#212121"
-                        android:textSize="17sp" />
+                        style="@style/Basilience.CardOptionLabel" />
 
                     <FrameLayout
                         android:id="@+id/btnDevOptions"
@@ -215,8 +212,7 @@
                         android:layout_marginStart="12dp"
                         android:layout_weight="1"
                         android:text="Terms and Agreements"
-                        android:textColor="#212121"
-                        android:textSize="17sp" />
+                        style="@style/Basilience.CardOptionLabel" />
 
                     <FrameLayout
                         android:id="@+id/btnTerms"

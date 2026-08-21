@@ -44,8 +44,7 @@
                 android:textSize="28sp"
                 android:fontFamily="sans-serif-black"
                 android:letterSpacing="-0.02"
-                
-                android:textColor="#212121"
+                android:textColor="@color/state_primary_text"
                 android:gravity="center"
                 android:layout_marginBottom="20dp" />
 
@@ -82,7 +81,7 @@
                     android:layout_marginStart="14dp"
                     android:text="Parameter Reports"
                     android:textSize="18sp"
-                    android:textColor="#212121"/>
+                    android:textColor="@color/onPrimary"/>
 
                 <FrameLayout
                     android:id="@+id/btnParameter"
@@ -129,7 +128,7 @@
                     android:layout_marginStart="14dp"
                     android:text="Fogging Reports"
                     android:textSize="18sp"
-                    android:textColor="#212121"/>
+                    android:textColor="@color/onPrimary"/>
 
                 <FrameLayout
                     android:id="@+id/btnFoggingReports"

@@ -1,0 +1,170 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="@dimen/ds_space_lg"
+    android:paddingBottom="@dimen/ds_space_lg">
+
+    <!-- TITLE ROW: section title + optional role badge -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/tvSectionTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            style="@style/Basilience.SectionTitle"
+            android:text="Section title" />
+
+        <TextView
+            android:id="@+id/tvRoleLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            style="@style/Basilience.StatusBadge"
+            android:background="@drawable/ds_status_pill_neutral"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:textColor="@color/nav_inactive"
+            android:textSize="11sp"
+            android:text="Admin Only"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- OPTIONAL SHORT DESCRIPTION -->
+    <TextView
+        android:id="@+id/tvSectionDescription"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        style="@style/Basilience.BodyMuted"
+        android:text="Description"
+        android:visibility="gone" />
+
+    <!-- INSTRUCTIONAL IMAGE (real asset) OR PLACEHOLDER - hidden entirely for
+         reference-style sections that have no associated screenshot/photo. -->
+    <FrameLayout
+        android:id="@+id/imageArea"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/ds_space_md">
+
+        <ImageView
+            android:id="@+id/ivSectionImage"
+            android:layout_width="match_parent"
+            android:layout_height="180dp"
+            android:scaleType="centerCrop"
+            android:background="@color/ds_surface_neutral"
+            android:visibility="gone"
+            android:contentDescription="@null" />
+
+        <LinearLayout
+            android:id="@+id/layoutImagePlaceholder"
+            android:layout_width="match_parent"
+            android:layout_height="140dp"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="@dimen/ds_space_md"
+            android:background="@drawable/guide_image_placeholder_bg">
+
+            <ImageView
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:alpha="0.55"
+                android:src="@android:drawable/ic_menu_report_image"
+                app:tint="@color/nav_inactive"
+                android:contentDescription="@null" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:fontFamily="sans-serif-medium"
+                android:text="IMAGE REQUIRED"
+                android:textColor="@color/nav_inactive"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/tvImagePlaceholderCaption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:gravity="center"
+                android:textColor="@color/nav_inactive"
+                android:textSize="12sp"
+                android:text="Caption of what this image should show" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- NUMBERED STEPS (populated at bind time) -->
+    <LinearLayout
+        android:id="@+id/stepsContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="@dimen/ds_space_md" />
+
+    <!-- TIP: informational only, never used for warnings -->
+    <LinearLayout
+        android:id="@+id/layoutTip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="@dimen/ds_space_sm"
+        android:background="@drawable/ds_surface_interpretation_bg"
+        android:padding="@dimen/ds_space_sm"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            style="@style/Basilience.SectionLabel"
+            android:textColor="@color/primary"
+            android:text="TIP  " />
+
+        <TextView
+            android:id="@+id/tvTip"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            style="@style/Basilience.BodyMuted"
+            android:text="Tip text" />
+    </LinearLayout>
+
+    <!-- WARNING / IMPORTANT: semantic warning styling, never used for ordinary tips -->
+    <LinearLayout
+        android:id="@+id/layoutWarning"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="@dimen/ds_space_sm"
+        android:background="@color/state_warning_bg"
+        android:padding="@dimen/ds_space_sm"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            style="@style/Basilience.SectionLabel"
+            android:textColor="@color/state_warning"
+            android:text="IMPORTANT  " />
+
+        <TextView
+            android:id="@+id/tvWarning"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            style="@style/Basilience.BodyMuted"
+            android:textColor="@color/text_dark"
+            android:text="Warning text" />
+    </LinearLayout>
+
+    <View
+        style="@style/Basilience.Divider"
+        android:layout_marginTop="@dimen/ds_space_lg" />
+
+</LinearLayout>

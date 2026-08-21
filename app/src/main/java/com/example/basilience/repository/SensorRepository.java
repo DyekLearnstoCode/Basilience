@@ -18,6 +18,16 @@ public class SensorRepository {
     private ValueEventListener sensorsListener;
 
     public void startListening(String deviceId, MutableLiveData<SensorData> liveData) {
+        startListening(deviceId, liveData, null);
+    }
+
+    /**
+     * @param readErrorLiveData optional; posted true if the sensors listener is cancelled
+     *                          (e.g. permission denied) and false once a read succeeds again,
+     *                          so the UI can show/hide an "unable to load sensor data" notice.
+     */
+    public void startListening(String deviceId, MutableLiveData<SensorData> liveData,
+                                MutableLiveData<Boolean> readErrorLiveData) {
 
         stopListening();
 
@@ -30,6 +40,10 @@ public class SensorRepository {
         sensorsListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
+
+                if (readErrorLiveData != null) {
+                    readErrorLiveData.postValue(false);
+                }
 
                 if (!snapshot.exists()) {
                     Log.d("SensorRepository", "Sensors node does not exist.");
@@ -49,6 +63,9 @@ public class SensorRepository {
                 Log.e("SensorRepository",
                         "Firebase Error",
                         error.toException());
+                if (readErrorLiveData != null) {
+                    readErrorLiveData.postValue(true);
+                }
             }
         };
 

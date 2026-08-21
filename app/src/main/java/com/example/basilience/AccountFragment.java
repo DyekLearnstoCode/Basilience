@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -25,6 +26,7 @@ import java.util.Map;
 
 public class AccountFragment extends Fragment {
 
+    private static final String TAG = "AccountFragment";
     private static final String PREFS_NAME = "basilience_prefs";
     private static final String KEY_IS_LOGGED_IN = "is_logged_in";
 
@@ -97,7 +99,8 @@ public class AccountFragment extends Fragment {
         }).addOnFailureListener(e -> {
             if (!isAdded()) return;
             showLoading(false, null);
-            NotificationHelper.showError(requireContext(), "Failed to load profile: " + e.getMessage());
+            Log.e(TAG, "Failed to load profile", e);
+            NotificationHelper.showError(requireContext(), "Unable to load your profile right now. Please try again.");
         });
     }
 
@@ -170,7 +173,8 @@ public class AccountFragment extends Fragment {
                     if (!isAdded()) return;
                     showLoading(false, null);
                     btnSaveProfile.setEnabled(true);
-                    NotificationHelper.showError(requireContext(), "Update failed: " + e.getMessage());
+                    Log.e(TAG, "Failed to update profile", e);
+                    NotificationHelper.showError(requireContext(), "Unable to save your changes. Please try again.");
                 });
     }
 
@@ -220,7 +224,10 @@ public class AccountFragment extends Fragment {
                                 showLoading(false, null);
                                 String message = e instanceof FirebaseAuthInvalidCredentialsException
                                         ? "The old password is incorrect."
-                                        : "Password change failed: " + e.getMessage();
+                                        : "Unable to change your password. Please try again.";
+                                if (!(e instanceof FirebaseAuthInvalidCredentialsException)) {
+                                    Log.e(TAG, "Failed to change password", e);
+                                }
                                 NotificationHelper.showError(requireContext(), message);
                             });
                 });

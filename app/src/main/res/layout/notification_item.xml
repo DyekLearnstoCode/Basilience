@@ -69,7 +69,7 @@
                         android:layout_weight="1"
                         android:layout_height="wrap_content"
                         android:text="TITLE"
-                        android:textColor="#2E7D32"
+                        android:textColor="@color/state_success"
                         android:textSize="12sp"
                         android:textStyle="bold"
                         android:textAllCaps="true"

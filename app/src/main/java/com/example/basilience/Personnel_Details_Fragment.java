@@ -1,6 +1,7 @@
 package com.example.basilience;
 
 import android.os.Bundle;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.EditText;
@@ -34,6 +35,8 @@ import java.util.Map;
 import java.util.TimeZone;
 
 public class Personnel_Details_Fragment extends Fragment {
+
+    private static final String TAG = "Personnel_Details_Fragment";
 
     private TextInputEditText etName, etRole, etEmail, etPhone;
     private TextView tvName, tvRole, tvEmail, tvPhone, tvDateAdded, tvLoadingTitle;
@@ -133,7 +136,8 @@ public class Personnel_Details_Fragment extends Fragment {
                 .addOnFailureListener(e -> {
                     if (!isAdded()) return;
                     showLoading(false, null);
-                    NotificationHelper.showError(requireContext(), "Failed: " + e.getMessage());
+                    Log.e(TAG, "Failed to load personnel record", e);
+                    NotificationHelper.showError(requireContext(), "Unable to load this personnel record. Please try again.");
                 });
     }
 
@@ -151,14 +155,14 @@ public class Personnel_Details_Fragment extends Fragment {
 
     private void populateEditFields() {
         etName.setText(savedName);
-        etRole.setText(savedRole);
+        etRole.setText(RoleConstants.displayName(savedRole));
         etEmail.setText(savedEmail);
         etPhone.setText(savedPhone);
     }
 
     private void renderSavedValues() {
         tvName.setText(display(savedName));
-        tvRole.setText(display(savedRole));
+        tvRole.setText(RoleConstants.displayName(savedRole));
         tvEmail.setText(display(savedEmail));
         tvPhone.setText(display(savedPhone));
         tvDateAdded.setText(formatDate(createdAt));
@@ -179,8 +183,9 @@ public class Personnel_Details_Fragment extends Fragment {
                     }
                 })
                 .addOnFailureListener(e -> {
+                    Log.e(TAG, "Failed to load assigned devices", e);
                     if (isAdded()) NotificationHelper.showError(requireContext(),
-                            "Unable to load assignments: " + e.getMessage());
+                            "Unable to load assigned devices. Please try again.");
                 });
     }
 
@@ -220,7 +225,8 @@ public class Personnel_Details_Fragment extends Fragment {
                             .addOnFailureListener(e -> {
                                 if (!isAdded()) return;
                                 showLoading(false, null);
-                                NotificationHelper.showError(requireContext(), "Failed: " + e.getMessage());
+                                Log.e(TAG, "Failed to remove device assignment", e);
+                                NotificationHelper.showError(requireContext(), "Unable to remove this device assignment. Please try again.");
                             });
                 }));
 
@@ -267,16 +273,19 @@ public class Personnel_Details_Fragment extends Fragment {
                             .addOnFailureListener(e -> {
                                 if (!isAdded()) return;
                                 showLoading(false, null);
-                                NotificationHelper.showError(requireContext(), "Error: " + e.getMessage());
+                                Log.e(TAG, "Failed to assign device", e);
+                                NotificationHelper.showError(requireContext(), "Unable to assign this device. Please try again.");
                             });
                 });
             }).addOnFailureListener(e -> {
+                Log.e(TAG, "Failed to load existing assignments", e);
                 if (isAdded()) NotificationHelper.showError(requireContext(),
-                        "Unable to load existing assignments: " + e.getMessage());
+                        "Unable to load existing assignments. Please try again.");
             });
         }).addOnFailureListener(e -> {
+            Log.e(TAG, "Failed to load claimed devices", e);
             if (isAdded()) NotificationHelper.showError(requireContext(),
-                    "Unable to load devices: " + e.getMessage());
+                    "Unable to load your devices. Please try again.");
         });
     }
 
@@ -324,7 +333,8 @@ public class Personnel_Details_Fragment extends Fragment {
                     if (!isAdded()) return;
                     showLoading(false, null);
                     btnSave.setEnabled(true);
-                    NotificationHelper.showError(requireContext(), "Failed: " + e.getMessage());
+                    Log.e(TAG, "Failed to save personnel edits", e);
+                    NotificationHelper.showError(requireContext(), "Unable to save your changes. Please try again.");
                 });
     }
 
@@ -377,7 +387,10 @@ public class Personnel_Details_Fragment extends Fragment {
                                 showLoading(false, null);
                                 String message = e instanceof FirebaseAuthInvalidCredentialsException
                                         ? "The Admin password is incorrect."
-                                        : "Password change failed: " + e.getMessage();
+                                        : "Unable to change this personnel's password. Please try again.";
+                                if (!(e instanceof FirebaseAuthInvalidCredentialsException)) {
+                                    Log.e(TAG, "Failed to change personnel password", e);
+                                }
                                 NotificationHelper.showError(requireContext(), message);
                             });
                 });
@@ -400,7 +413,8 @@ public class Personnel_Details_Fragment extends Fragment {
                     if (!isAdded()) return;
                     showLoading(false, null);
                     btnDelete.setEnabled(true);
-                    NotificationHelper.showError(requireContext(), "Failed: " + e.getMessage());
+                    Log.e(TAG, "Failed to delete personnel", e);
+                    NotificationHelper.showError(requireContext(), "Unable to remove this personnel. Please try again.");
                 });
     }
 

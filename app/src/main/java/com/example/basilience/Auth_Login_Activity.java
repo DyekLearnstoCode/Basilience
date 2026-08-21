@@ -111,6 +111,13 @@ public class Auth_Login_Activity extends AppCompatActivity {
         requestNotificationPermissionAtStartup();
 
         btnlogin.setOnClickListener(v -> doLogin());
+        txtpassword.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                doLogin();
+                return true;
+            }
+            return false;
+        });
         tvSignup.setVisibility(android.view.View.VISIBLE);
         tvSignup.setOnClickListener(v -> startActivity(new Intent(this, Auth_Register_Activity.class)));
         tvForgotPassword.setOnClickListener(v -> startActivity(new Intent(this, Auth_ForgotPass_Activity.class)));
@@ -264,7 +271,7 @@ public class Auth_Login_Activity extends AppCompatActivity {
 
                     if (user == null || uid == null) {
                         showLoading(false, null);
-                        NotificationHelper.showError(this, "LOGIN FAILED: uid is null");
+                        NotificationHelper.showError(this, "Unable to sign you in. Please try again.");
                         return;
                     }
 

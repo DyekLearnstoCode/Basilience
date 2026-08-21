@@ -720,12 +720,10 @@
         android:visibility="gone">
 
         <com.google.android.material.card.MaterialCardView
+            style="@style/Basilience.LoadingOverlayCard"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_centerInParent="true"
-            app:cardCornerRadius="20dp"
-            app:cardElevation="12dp"
-            app:cardBackgroundColor="@color/white">
+            android:layout_centerInParent="true">
 
             <LinearLayout
                 android:layout_width="220dp"

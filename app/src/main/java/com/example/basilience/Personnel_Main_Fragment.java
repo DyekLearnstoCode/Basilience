@@ -1,6 +1,7 @@
 package com.example.basilience;
 
 import android.os.Bundle;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.Button;
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Personnel_Main_Fragment extends Fragment {
+    private static final String TAG = "Personnel_Main_Fragment";
     private NotificationHelper.LoadingHandle loadingHandle;
 
     private RecyclerView recyclerView;
@@ -125,6 +127,7 @@ public class Personnel_Main_Fragment extends Fragment {
                     if (recyclerView != null) {
                         if (list.isEmpty()) {
                             tvLoadingPersonnel.setText("No personnel added yet.");
+                            tvLoadingPersonnel.setTextColor(android.graphics.Color.parseColor("#888888"));
                             tvLoadingPersonnel.setVisibility(View.VISIBLE);
                         } else {
                             recyclerView.setVisibility(View.VISIBLE);
@@ -135,9 +138,13 @@ public class Personnel_Main_Fragment extends Fragment {
                     if (!isAdded()) return;
                     if (tvLoadingPersonnel != null) {
                         tvLoadingPersonnel.setText("Failed to load personnel");
+                        tvLoadingPersonnel.setTextColor(androidx.core.content.ContextCompat.getColor(
+                                requireContext(), R.color.state_critical));
+                        tvLoadingPersonnel.setVisibility(View.VISIBLE);
                     }
+                    Log.e(TAG, "Failed to load farmers", e);
                     NotificationHelper.showError(requireContext(),
-                            "Failed to load farmers: " + e.getMessage());
+                            "Unable to load personnel right now. Please try again.");
                 });
     }
 

@@ -72,15 +72,10 @@
                     android:padding="16dp">
 
                     <com.google.android.material.textfield.TextInputLayout
+                        style="@style/InputFieldStyle"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="Enter Device Token Code"
-                        android:textColorHint="#808080"
-                        app:hintTextColor="#808080"
-                        android:backgroundTint="@color/black"
-                        app:boxStrokeColor="@android:color/black"
-                        app:boxStrokeWidthFocused="2dp"
-                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                        android:hint="Enter Device Token Code">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/etClaimToken"
@@ -97,10 +92,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="Claim Device"
-                        android:layout_marginTop="12dp"
-                        android:backgroundTint="@color/primary"
-                        android:textColor="@android:color/white"
-                        app:cornerRadius="12dp" />
+                        android:layout_marginTop="12dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

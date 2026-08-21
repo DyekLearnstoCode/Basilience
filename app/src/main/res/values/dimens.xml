@@ -6,7 +6,6 @@
     <dimen name="back_button_size">40dp</dimen>
     <dimen name="back_button_margin">12dp</dimen>
     <dimen name="container_top_padding">24dp</dimen>
-    <dimen name="report_content_top_padding">32dp</dimen>
     <dimen name="container_side_padding">20dp</dimen>
     <dimen name="container_overlap_margin">-24dp</dimen>
     <dimen name="card_elevation_completed">1dp</dimen>
@@ -15,17 +14,9 @@
     <dimen name="button_corner_radius">12dp</dimen>
     <dimen name="button_horizontal_padding">20dp</dimen>
 
-    <!-- Reports UI modernization: one shared card/spacing rhythm across
-         Parameter, Fogging and Harvest reports. -->
-    <dimen name="report_card_radius">18dp</dimen>
-    <dimen name="report_card_padding">18dp</dimen>
-    <dimen name="report_section_spacing">24dp</dimen>
-    <dimen name="report_chart_height">260dp</dimen>
-    <dimen name="report_metric_value_size">26sp</dimen>
-
-    <!-- Basilience Design System pilot (Parameter Report). Additive only -
-         report_* dimens above stay untouched since Fogging and Harvest
-         reports still use them until this direction is ported to them. -->
+    <!-- Basilience Design System (ds_*): shared card/spacing/typography rhythm
+         across Parameter, Fogging and Harvest reports. Fogging and Harvest
+         reports have already been migrated to these tokens. -->
 
     <!-- Typography scale - one shared size per hierarchy level, reused
          across styles instead of hardcoding sp values per element. -->

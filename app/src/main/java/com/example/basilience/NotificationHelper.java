@@ -366,9 +366,9 @@ public class NotificationHelper {
         icon.setImageResource(R.drawable.ic_warning_24);
         titleView.setText("Parameter Alert");
         messageView.setText(message);
-        primary.setText("VIEW PARAMETERS");
+        primary.setText("View Parameters");
         secondary.setVisibility(View.VISIBLE);
-        secondary.setText("DISMISS");
+        secondary.setText("Dismiss");
 
         AlertDialog dialog = new AlertDialog.Builder(context).setView(view).create();
         dialog.setCancelable(false);
@@ -459,9 +459,9 @@ public class NotificationHelper {
             dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
         }
 
-        btnPrimary.setText("CONTINUE");
+        btnPrimary.setText("Continue");
         btnSecondary.setVisibility(View.VISIBLE);
-        btnSecondary.setText("WAIT");
+        btnSecondary.setText("Wait");
         
         btnSecondary.setOnClickListener(v -> dialog.dismiss());
         btnPrimary.setOnClickListener(v -> {

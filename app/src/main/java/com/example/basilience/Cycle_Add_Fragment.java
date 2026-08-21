@@ -4,6 +4,7 @@ import android.app.DatePickerDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -14,16 +15,18 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.Navigation;
 
+import com.google.android.material.textfield.TextInputLayout;
 import com.google.firebase.Timestamp;
 import com.google.firebase.auth.FirebaseAuth;
 
 import java.util.Calendar;
-import java.util.Locale;
 
 public class Cycle_Add_Fragment extends Fragment {
 
+    private static final String TAG = "Cycle_Add_Fragment";
     private TextView tvCycleNumber;
     private EditText etStartDate, etHarvestFrequency;
+    private TextInputLayout layoutHarvestFrequency;
     private Button btnSave;
     private Database_Helper dbHelper;
     private View layoutLoading;
@@ -54,6 +57,7 @@ public class Cycle_Add_Fragment extends Fragment {
         tvCycleNumber = view.findViewById(R.id.etCycleNumber);
         etStartDate = view.findViewById(R.id.etStartDate);
         etHarvestFrequency = view.findViewById(R.id.etHarvestFrequency);
+        layoutHarvestFrequency = view.findViewById(R.id.layoutHarvestFrequency);
         btnSave = view.findViewById(R.id.btnSaveCycle);
 
         layoutLoading = view.findViewById(R.id.layoutLoading);
@@ -92,13 +96,12 @@ public class Cycle_Add_Fragment extends Fragment {
         DatePickerDialog dlg = new DatePickerDialog(
                 requireContext(),
                 (picker, year, month, day) -> {
-                    int mm = month + 1;
-                    String display = String.format(Locale.US, "%02d/%02d/%04d", day, mm, year);
-                    etStartDate.setText(display);
-                    
                     Calendar selectedCal = Calendar.getInstance();
                     selectedCal.set(year, month, day, 0, 0, 0);
                     startDateTimestamp = new Timestamp(selectedCal.getTime());
+                    // Same "MMM dd, yyyy" convention the cycle list/harvest screens use,
+                    // so a date never reads differently depending on where it's shown.
+                    etStartDate.setText(DateUtils.formatDate(startDateTimestamp));
                 },
                 cal.get(Calendar.YEAR),
                 cal.get(Calendar.MONTH),
@@ -140,11 +143,13 @@ public class Cycle_Add_Fragment extends Fragment {
         }).addOnFailureListener(e -> {
             if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
             btnSave.setEnabled(true);
-            NotificationHelper.showError(requireContext(), "Verification failed: " + e.getMessage());
+            Log.e(TAG, "Active cycle verification failed", e);
+            NotificationHelper.showError(requireContext(), "Unable to verify existing cycles. Please try again.");
         });
     }
 
     private void proceedWithSaving(View view, String deviceId) {
+        if (layoutHarvestFrequency != null) layoutHarvestFrequency.setError(null);
         String freqStr = etHarvestFrequency.getText().toString().trim();
         int frequency = 5;
         if (!freqStr.isEmpty()) {
@@ -153,14 +158,14 @@ public class Cycle_Add_Fragment extends Fragment {
             } catch (NumberFormatException error) {
                 btnSave.setEnabled(true);
                 if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
-                etHarvestFrequency.setError("Enter a valid number of days");
+                if (layoutHarvestFrequency != null) layoutHarvestFrequency.setError("Enter a valid number of days");
                 return;
             }
         }
         if (frequency <= 0 || frequency > 365) {
             btnSave.setEnabled(true);
             if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
-            etHarvestFrequency.setError("Frequency must be between 1 and 365 days");
+            if (layoutHarvestFrequency != null) layoutHarvestFrequency.setError("Frequency must be between 1 and 365 days");
             return;
         }
 

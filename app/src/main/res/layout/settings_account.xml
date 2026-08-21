@@ -45,7 +45,7 @@
                     android:gravity="center"
                     android:letterSpacing="-0.02"
                     android:text="Account Information"
-                    android:textColor="#212121"
+                    android:textColor="@color/state_primary_text"
                     android:textSize="28sp" />
 
                 <LinearLayout
@@ -58,9 +58,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Full Name"
-                        android:textColor="@color/primary"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
+                        style="@style/Basilience.FieldLabel" />
 
                     <TextView
                         android:id="@+id/tvNameValue"
@@ -75,9 +73,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Email"
-                        android:textColor="@color/primary"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
+                        style="@style/Basilience.FieldLabel" />
 
                     <TextView
                         android:id="@+id/tvEmailValue"
@@ -92,9 +88,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Phone Number"
-                        android:textColor="@color/primary"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
+                        style="@style/Basilience.FieldLabel" />
 
                     <TextView
                         android:id="@+id/tvPhoneValue"

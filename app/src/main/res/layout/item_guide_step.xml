@@ -1,0 +1,29 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:layout_marginBottom="@dimen/ds_space_sm">
+
+    <TextView
+        android:id="@+id/tvStepNumber"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginEnd="@dimen/ds_space_sm"
+        android:background="@drawable/guide_step_number_bg"
+        android:gravity="center"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="@color/onPrimary"
+        android:textSize="12sp"
+        android:text="1" />
+
+    <TextView
+        android:id="@+id/tvStepText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginTop="1dp"
+        style="@style/Basilience.BodyMuted"
+        android:textColor="@color/text_dark"
+        android:text="Step text" />
+
+</LinearLayout>

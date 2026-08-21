@@ -78,10 +78,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Create Personnel"
-                android:layout_marginTop="16dp"
-                android:backgroundTint="@color/primary"
-                android:textColor="@android:color/white"
-                app:cornerRadius="12dp" />
+                android:layout_marginTop="16dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAddExistingPersonnel"
@@ -89,11 +86,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Add Existing Personnel"
-                android:textColor="@color/primary"
-                app:cornerRadius="12dp"
-                app:strokeColor="@color/primary"
-                app:strokeWidth="1dp" />
+                android:text="Add Existing Personnel" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

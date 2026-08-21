@@ -256,7 +256,8 @@ public class NotificationFragment extends Fragment {
             dismissLoading();
             markingAllRead = false;
             updateMarkAllReadState();
-            NotificationHelper.showError(requireContext(), "Unable to mark notifications as read: " + e.getMessage());
+            Log.e(TAG, "Failed to mark all notifications as read", e);
+            NotificationHelper.showError(requireContext(), "Unable to mark notifications as read. Please try again.");
         });
     }
 

@@ -9,6 +9,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.Navigation;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 public class HardwareGuideFragment extends Fragment {
 
@@ -26,5 +28,9 @@ public class HardwareGuideFragment extends Fragment {
             btnBack.setVisibility(View.VISIBLE);
             btnBack.setOnClickListener(v -> Navigation.findNavController(view).popBackStack());
         }
+
+        RecyclerView recyclerView = view.findViewById(R.id.recyclerGuideSections);
+        recyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
+        recyclerView.setAdapter(new GuideSectionAdapter(HardwareGuideContent.sections()));
     }
 }

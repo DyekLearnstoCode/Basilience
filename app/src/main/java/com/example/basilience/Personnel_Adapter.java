@@ -35,10 +35,9 @@ public class Personnel_Adapter extends RecyclerView.Adapter<Personnel_Adapter.Vi
         Personnel p = list.get(pos);
 
         String name = p.getFullName() != null ? p.getFullName() : "";
-        String role = p.getRole() != null ? p.getRole() : "";
 
         h.name.setText(name);
-        h.role.setText(role);
+        h.role.setText(RoleConstants.displayName(p.getRole()));
 
         // Avatar = first letter (safe)
         String firstLetter = name.trim().isEmpty() ? "?" : name.trim().substring(0, 1).toUpperCase();

@@ -795,7 +795,7 @@ public class FoggingReportsFragment extends Fragment {
                     Log.e("FoggingReports", "Error loading logs", e);
                     if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
                     showReportUnavailable();
-                    Toast.makeText(getContext(), "Failed to load fogging report. Check your connection and try again.", Toast.LENGTH_SHORT).show();
+                    NotificationHelper.showError(getContext(), "Unable to load the fogging report. Check your connection and try again.");
                 });
     }
 
@@ -1657,7 +1657,7 @@ public class FoggingReportsFragment extends Fragment {
                 if (!isAdded()) return;
                 if (error != null || result == null) {
                     Log.e("FoggingReports", "Error generating PDF", error);
-                    Toast.makeText(getContext(), "Failed to generate PDF", Toast.LENGTH_SHORT).show();
+                    NotificationHelper.showError(getContext(), "We couldn't generate the PDF report. Please try again.");
                     return;
                 }
                 try {
@@ -1668,7 +1668,7 @@ public class FoggingReportsFragment extends Fragment {
                     startActivity(Intent.createChooser(intent, "Open PDF Report"));
                 } catch (Exception e) {
                     Log.e("FoggingReports", "Error opening PDF", e);
-                    Toast.makeText(getContext(), "Failed to open PDF", Toast.LENGTH_SHORT).show();
+                    NotificationHelper.showError(getContext(), "We couldn't open the PDF report.");
                 }
             });
         }).start();

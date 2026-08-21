@@ -42,8 +42,8 @@
                     android:textSize="28sp"
                 android:fontFamily="sans-serif-black"
                 android:letterSpacing="-0.02"
-                    
-                    android:textColor="#212121"
+
+                    android:textColor="@color/state_primary_text"
                     android:gravity="center"
                     android:layout_marginBottom="16dp"/>
 
@@ -65,10 +65,10 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Current ESP32 Status"
-                        
+                        android:text="Current Device Status"
+
                         android:textSize="18sp"
-                        android:textColor="#212121"
+                        android:textColor="@color/state_primary_text"
                         android:layout_marginBottom="12dp"/>
                     
                     <LinearLayout
@@ -97,22 +97,23 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="New Wi-Fi Credentials"
-                
+
                 android:textSize="18sp"
-                android:textColor="#212121"
+                android:textColor="@color/state_primary_text"
                 android:layout_marginBottom="12dp"/>
 
             <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/layoutSsid"
                 style="@style/InputFieldStyle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp">
-                
+
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/etSsid"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Wi-Fi SSID (Network Name)"
+                    android:hint="Wi-Fi Network Name"
                     android:inputType="textNoSuggestions"
                     android:textColor="@android:color/black"
                     android:textCursorDrawable="@null"/>
@@ -143,9 +144,6 @@
                 android:layout_height="wrap_content"
                 android:text="Save &amp; Reconnect"
                 android:layout_marginTop="8dp"
-                android:backgroundTint="@color/primary"
-                android:textColor="@color/onPrimary"
-                app:cornerRadius="12dp"
                 android:layout_marginBottom="12dp"/>
 
             <com.google.android.material.button.MaterialButton
@@ -153,9 +151,7 @@
                 style="@style/BasilienceButton.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Cancel"
-                app:cornerRadius="12dp"
-                />
+                android:text="Cancel" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
@@ -172,12 +168,10 @@
         android:visibility="gone">
         
         <com.google.android.material.card.MaterialCardView
+            style="@style/Basilience.LoadingOverlayCard"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_centerInParent="true"
-            app:cardCornerRadius="20dp"
-            app:cardElevation="12dp"
-            app:cardBackgroundColor="@color/white">
+            android:layout_centerInParent="true">
 
             <LinearLayout
                 android:layout_width="220dp"

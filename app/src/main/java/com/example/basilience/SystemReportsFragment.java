@@ -648,9 +648,7 @@ public class SystemReportsFragment extends Fragment {
                     currentFilter = null;
                     currentReadings = new ArrayList<>();
                     showEmptyReportState("Unable to load report data.");
-                    if (getContext() != null) {
-                        Toast.makeText(getContext(), "Error loading chart data", Toast.LENGTH_SHORT).show();
-                    }
+                    NotificationHelper.showError(getContext(), "Unable to load report data. Please try again.");
                 });
     }
 
@@ -1263,7 +1261,7 @@ public class SystemReportsFragment extends Fragment {
             startActivity(Intent.createChooser(intent, "Open PDF Report"));
         } catch (IOException e) {
             Log.e("PDF_EXPORT_ERROR", "Error generating PDF", e);
-            Toast.makeText(getContext(), "Failed to generate PDF", Toast.LENGTH_SHORT).show();
+            NotificationHelper.showError(getContext(), "We couldn't generate the PDF report. Please try again.");
         }
     }
 
@@ -1329,7 +1327,7 @@ public class SystemReportsFragment extends Fragment {
             }
         } catch (IOException e) {
             Log.e("CSV_EXPORT_ERROR", "Error writing CSV file", e);
-            Toast.makeText(getContext(), "Failed to generate CSV file", Toast.LENGTH_SHORT).show();
+            NotificationHelper.showError(getContext(), "We couldn't generate the CSV file. Please try again.");
         }
     }
 

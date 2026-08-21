@@ -150,17 +150,17 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             contentHolder.tvTimestamp.setText(timeStr);
 
             String title = "INFORMATION";
-            int color = 0xFF757575; // Gray
+            int color = ContextCompat.getColor(contentHolder.itemView.getContext(), R.color.state_no_data);
             int iconRes = R.drawable.nav_notif_icon;
 
             if (NotificationItem.TYPE_PARAMETER.equals(item.type)) {
                 title = "PARAMETER ALERT";
                 iconRes = R.drawable.ic_error_red;
-                color = 0xFFD32F2F;
+                color = ContextCompat.getColor(contentHolder.itemView.getContext(), R.color.state_critical);
             } else if (NotificationItem.TYPE_HARVEST.equals(item.type)) {
                 title = "HARVEST READY";
                 iconRes = R.drawable.ic_harvest_green;
-                color = 0xFF2E7D32;
+                color = ContextCompat.getColor(contentHolder.itemView.getContext(), R.color.state_success);
             } else if (NotificationItem.TYPE_HARDWARE.equals(item.type)) {
                 title = "HARDWARE ISSUE";
                 iconRes = R.drawable.ic_hardware_orange;
@@ -168,11 +168,11 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             } else if (NotificationItem.TYPE_CONNECTIVITY_OFFLINE.equals(item.type)) {
                 title = "DEVICE UNREACHABLE";
                 iconRes = R.drawable.ic_error_red;
-                color = 0xFFD32F2F;
+                color = ContextCompat.getColor(contentHolder.itemView.getContext(), R.color.state_critical);
             } else if (NotificationItem.TYPE_CONNECTIVITY_RECOVERY.equals(item.type)) {
                 title = "DEVICE BACK ONLINE";
                 iconRes = R.drawable.ic_hardware_orange;
-                color = 0xFF2E7D32;
+                color = ContextCompat.getColor(contentHolder.itemView.getContext(), R.color.state_success);
             }
 
             contentHolder.tvTitle.setText(title);
@@ -192,7 +192,8 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             } else {
                 if (contentHolder.vUnreadDot != null) contentHolder.vUnreadDot.setVisibility(View.VISIBLE);
                 contentHolder.tvMessage.setTypeface(null, Typeface.BOLD);
-                contentHolder.tvMessage.setTextColor(0xFF000000);
+                contentHolder.tvMessage.setTextColor(ContextCompat.getColor(
+                        contentHolder.itemView.getContext(), R.color.black));
             }
 
             contentHolder.itemView.setOnClickListener(v -> {
