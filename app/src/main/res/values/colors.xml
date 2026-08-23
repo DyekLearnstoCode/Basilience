@@ -89,4 +89,11 @@
     <color name="ds_hero_bg">#F2F8F5</color>
     <color name="ds_interpretation_bg">#F8FBFA</color>
     <color name="ds_surface_neutral">#FAFAFA</color>
+    <!-- Notification filter chips: fixed Basilience surface colours so the
+         chips never fall back to a Material/framework default. -->
+    <color name="chip_filter_selected">#2E7D6B</color>
+    <color name="chip_filter_unselected">#D7E7E1</color>
+    <color name="chip_filter_text_selected">#FFFFFFFF</color>
+    <color name="chip_filter_text_unselected">#0F3B2E</color>
+    <color name="chip_filter_ripple">#332E7D6B</color>
 </resources>

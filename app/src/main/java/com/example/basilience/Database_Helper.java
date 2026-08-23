@@ -533,12 +533,26 @@ public class Database_Helper {
                 .addSnapshotListener(listener);
     }
 
-    public Task<QuerySnapshot> getActiveCycle(String deviceId) {
+    /**
+     * Reads every cycle for a device so the caller can decide which one (if any)
+     * is active via {@link CycleStatus}.
+     *
+     * This deliberately does not filter on status server-side. The cycles.status
+     * field override in firestore.indexes.json declares COLLECTION_GROUP scopes
+     * only - which is what the Cloud Functions collection-group query needs, but
+     * it replaces Firestore's default single-field indexing and so leaves no
+     * COLLECTION-scoped index for a per-device status filter. Ordering by
+     * cycleNumber uses the same index the cycles listener already relies on.
+     */
+    public Task<QuerySnapshot> getCycles(String deviceId) {
+        if (deviceId == null || deviceId.isEmpty()) {
+            return Tasks.forException(new Exception("No device selected"));
+        }
+
         return db.collection("devices")
                 .document(deviceId)
                 .collection("cycles")
-                .whereEqualTo("status", "ACTIVE")
-                .limit(1)
+                .orderBy("cycleNumber")
                 .get();
     }
 

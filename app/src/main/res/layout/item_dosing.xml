@@ -28,7 +28,7 @@
             android:id="@+id/btnDose"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="DOSE"/>
+            android:text="Dose"/>
     </LinearLayout>
 
 </com.google.android.material.card.MaterialCardView>

@@ -9,7 +9,6 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -88,6 +87,10 @@ public class NotificationFragment extends Fragment {
         if (btnFilterUnread != null) btnFilterUnread.setOnClickListener(v -> setFilter(FilterType.UNREAD));
         if (btnFilterRead != null) btnFilterRead.setOnClickListener(v -> setFilter(FilterType.READ));
 
+        // Selection is now carried by view state rather than a second XML
+        // style, so the starting filter has to be reflected explicitly.
+        updateFilterUI();
+
         View btnBack = view.findViewById(R.id.btnBack);
         if (btnBack != null) btnBack.setVisibility(View.GONE);
 
@@ -100,23 +103,25 @@ public class NotificationFragment extends Fragment {
         applyFilterAndRender();
     }
 
+    /**
+     * Reflects the active filter in the chip row.
+     *
+     * The chips are MaterialButtons, which manage their own background drawable
+     * and ignore setBackgroundResource() - that call silently did nothing, which
+     * is why the chips showed the Material default colour instead of Basilience
+     * green. Selection is now carried by the view's selected state and resolved
+     * by the colour state lists in NotificationFilterChip, so the container and
+     * label colours can never drift apart.
+     *
+     * Which notifications are shown is decided entirely by currentFilter in
+     * applyFilterAndRender(); this method is presentation only.
+     */
     private void updateFilterUI() {
         if (getContext() == null) return;
-        int white = ContextCompat.getColor(requireContext(), R.color.white);
-        int black = ContextCompat.getColor(requireContext(), R.color.black);
 
-        if (btnFilterAll != null) {
-            btnFilterAll.setBackgroundResource(currentFilter == FilterType.ALL ? R.drawable.bg_chip_selected : R.drawable.bg_chip);
-            btnFilterAll.setTextColor(currentFilter == FilterType.ALL ? white : black);
-        }
-        if (btnFilterUnread != null) {
-            btnFilterUnread.setBackgroundResource(currentFilter == FilterType.UNREAD ? R.drawable.bg_chip_selected : R.drawable.bg_chip);
-            btnFilterUnread.setTextColor(currentFilter == FilterType.UNREAD ? white : black);
-        }
-        if (btnFilterRead != null) {
-            btnFilterRead.setBackgroundResource(currentFilter == FilterType.READ ? R.drawable.bg_chip_selected : R.drawable.bg_chip);
-            btnFilterRead.setTextColor(currentFilter == FilterType.READ ? white : black);
-        }
+        if (btnFilterAll != null) btnFilterAll.setSelected(currentFilter == FilterType.ALL);
+        if (btnFilterUnread != null) btnFilterUnread.setSelected(currentFilter == FilterType.UNREAD);
+        if (btnFilterRead != null) btnFilterRead.setSelected(currentFilter == FilterType.READ);
     }
 
     private void loadNotifications() {

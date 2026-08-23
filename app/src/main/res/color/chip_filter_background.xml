@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Deterministic Basilience colours for the notification filter chips.
+
+  These chips are MaterialButtons, and MaterialButton manages its own
+  background drawable - it ignores android:background and
+  setBackgroundResource(), which is why the chips previously fell back to the
+  Material default container colour. Selection state is expressed through
+  backgroundTint instead, driven by android:state_selected.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/chip_filter_selected" android:state_selected="true" />
+    <item android:color="@color/chip_filter_unselected" />
+</selector>

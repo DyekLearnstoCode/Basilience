@@ -125,7 +125,7 @@ final class HardwareGuideContent {
                 .steps(Arrays.asList(
                         "The Water Level sensor watches the reservoir's fill level.",
                         "Circulation Pump keeps the nutrient solution moving so readings stay representative and nutrients stay mixed.",
-                        "Water Pump (Valve) handles refilling; an Admin can also trigger a refill manually from Monitoring's \"Trigger Refill\" action."))
+                        "Water Pump (Valve) handles refilling; an Admin can also start a refill manually from Monitoring's \"Start Reservoir Refill\" action."))
                 .build());
 
         list.add(GuideSection.builder("Automatic vs. Manual Control")
@@ -162,7 +162,7 @@ final class HardwareGuideContent {
                         "A sensor shows No Data: check that probe's physical connection and that it's submerged/positioned correctly.",
                         "Wi-Fi won't connect during setup: make sure your phone is connected to the \"Basilience-Setup\" network before entering your home network's name and password.",
                         "An actuator's status looks unexpected: check whether Manual Mode is on — if it is, the actuator waits for a command from you instead of the automatic system.",
-                        "Water level reads low: check the reservoir and refill it, or use \"Trigger Refill\" if your account is an Admin.",
+                        "Water level reads low: check the reservoir and refill it, or use \"Start Reservoir Refill\" if your account is an Admin.",
                         "App can't load data even though the device looks fine: check your phone's own internet connection first."))
                 .build());
 

@@ -16,6 +16,7 @@ import androidx.fragment.app.Fragment;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
 import com.google.firebase.auth.EmailAuthProvider;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException;
@@ -184,10 +185,13 @@ public class AccountFragment extends Fragment {
         TextInputEditText current = content.findViewById(R.id.etCurrentPassword);
         TextInputEditText next = content.findViewById(R.id.etNewPassword);
         TextInputEditText confirm = content.findViewById(R.id.etConfirmNewPassword);
+        TextInputLayout newLayout = content.findViewById(R.id.layoutNewPassword);
+        TextInputLayout confirmLayout = content.findViewById(R.id.layoutConfirmNewPassword);
+        if (newLayout != null) newLayout.setHelperText(PasswordPolicy.REQUIREMENTS);
 
         NotificationHelper.showCustomViewDialog(requireContext(), "Change Password",
                 "Confirm your current password before choosing a new one.", content,
-                "Change Password", "Cancel", (dialog, ignored) -> {
+                "Save New Password", "Cancel", (dialog, ignored) -> {
                     String oldPassword = value(current);
                     String newPassword = value(next);
                     String confirmation = value(confirm);
@@ -195,12 +199,18 @@ public class AccountFragment extends Fragment {
                         current.setError("Old password is required");
                         return;
                     }
-                    if (newPassword.length() < 6) {
-                        next.setError("Use at least 6 characters");
+                    if (newLayout != null) newLayout.setError(null);
+                    if (confirmLayout != null) confirmLayout.setError(null);
+
+                    String passwordError = PasswordPolicy.validate(newPassword);
+                    if (passwordError != null) {
+                        if (newLayout != null) newLayout.setError(passwordError);
+                        else next.setError(passwordError);
                         return;
                     }
                     if (!newPassword.equals(confirmation)) {
-                        confirm.setError("Passwords do not match");
+                        if (confirmLayout != null) confirmLayout.setError("Passwords do not match");
+                        else confirm.setError("Passwords do not match");
                         return;
                     }
 

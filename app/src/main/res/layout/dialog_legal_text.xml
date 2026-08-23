@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Read-only presentation for Terms and Conditions / Privacy Policy.
+  Scrollable and height-capped so a long document stays usable inside a
+  dialog, which is how these are shown before an account exists.
+-->
+<androidx.core.widget.NestedScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:maxHeight="420dp"
+    android:fillViewport="true">
+
+    <TextView
+        android:id="@+id/tvLegalBody"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:paddingBottom="8dp"
+        android:textColor="#333333"
+        android:textSize="14sp"
+        android:lineSpacingExtra="4dp"
+        android:textIsSelectable="true" />
+
+</androidx.core.widget.NestedScrollView>

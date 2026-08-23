@@ -20,7 +20,6 @@ public class SettingsFragment extends Fragment {
     private static final String KEY_DEVELOPER_MODE_ENABLED = "developer_mode_enabled";
 
     private View devOptionsContainer;
-    private View btnDevOptions;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -42,26 +41,26 @@ public class SettingsFragment extends Fragment {
             });
         }
 
+        // Each settings row navigates from anywhere on the card. The circular
+        // arrow inside the row is decoration only (see settings_main.xml), so
+        // the tap can never be handled twice.
+
         // Account Information
-        View btnAccount = view.findViewById(R.id.btnAccount);
-        btnAccount.setOnClickListener(v -> navController.navigate(R.id.action_settings_to_accountFragment));
+        bindSettingsRow(view, R.id.rowAccount, navController, R.id.action_settings_to_accountFragment);
 
         // About Basilience
-        View btnAbout = view.findViewById(R.id.btnAbout);
-        btnAbout.setOnClickListener(v -> navController.navigate(R.id.action_settings_to_aboutFragment));
+        bindSettingsRow(view, R.id.rowAbout, navController, R.id.action_settings_to_aboutFragment);
 
         // Terms and Agreements
-        View btnTerms = view.findViewById(R.id.btnTerms);
-        btnTerms.setOnClickListener(v -> navController.navigate(R.id.action_settings_to_tosFragment));
+        bindSettingsRow(view, R.id.rowTerms, navController, R.id.action_settings_to_tosFragment);
 
+        // Privacy Policy - sits with Terms; both render from LegalContent.
+        bindSettingsRow(view, R.id.rowPrivacy, navController, R.id.action_settings_to_privacyPolicyFragment);
 
-
-        // Developer Options
+        // Developer Options - the row is also the visibility container, so the
+        // admin/dev-mode gating below is unchanged.
         devOptionsContainer = view.findViewById(R.id.devOptionsContainer);
-        btnDevOptions = view.findViewById(R.id.btnDevOptions);
-        if (btnDevOptions != null) {
-            btnDevOptions.setOnClickListener(v -> navController.navigate(R.id.action_settings_to_devOptionsFragment));
-        }
+        bindSettingsRow(view, R.id.devOptionsContainer, navController, R.id.action_settings_to_devOptionsFragment);
         updateDeveloperOptionsVisibility();
 
         // Logout
@@ -69,6 +68,13 @@ public class SettingsFragment extends Fragment {
         if (btnLogout != null) {
             btnLogout.setOnClickListener(v -> performLogout());
         }
+    }
+
+    /** Attaches navigation to the whole settings row rather than just its arrow. */
+    private void bindSettingsRow(View root, int rowId, NavController navController, int actionId) {
+        View row = root.findViewById(rowId);
+        if (row == null) return;
+        row.setOnClickListener(v -> navController.navigate(actionId));
     }
 
     @Override

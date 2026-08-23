@@ -20,6 +20,9 @@ public class ToSFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
+        android.widget.TextView tvBody = view.findViewById(R.id.tvTermsBody);
+        if (tvBody != null) tvBody.setText(LegalContent.TERMS_BODY);
+
         View btnBack = view.findViewById(R.id.btnBack);
         if (btnBack != null) {
             btnBack.setVisibility(View.VISIBLE);

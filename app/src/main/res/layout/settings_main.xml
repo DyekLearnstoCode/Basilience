@@ -57,8 +57,12 @@
 
                 <!-- ACCOUNT INFO -->
                 <LinearLayout
+                    android:id="@+id/rowAccount"
                     android:layout_width="match_parent"
                     android:layout_height="90dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
                     android:layout_marginBottom="12dp"
                     android:background="@drawable/card_option"
                     android:gravity="center_vertical"
@@ -85,8 +89,10 @@
                         android:layout_width="50dp"
                         android:layout_height="50dp"
                         android:background="@drawable/circle_button"
-                        android:clickable="true"
-                        android:focusable="true"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:duplicateParentState="true"
+                        android:importantForAccessibility="no"
                         android:gravity="center">
 
                         <ImageView
@@ -101,8 +107,12 @@
 
                 <!-- ABOUT -->
                 <LinearLayout
+                    android:id="@+id/rowAbout"
                     android:layout_width="match_parent"
                     android:layout_height="90dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
                     android:layout_marginBottom="12dp"
                     android:background="@drawable/card_option"
                     android:gravity="center_vertical"
@@ -129,8 +139,10 @@
                         android:layout_width="50dp"
                         android:layout_height="50dp"
                         android:background="@drawable/circle_button"
-                        android:clickable="true"
-                        android:focusable="true"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:duplicateParentState="true"
+                        android:importantForAccessibility="no"
                         android:gravity="center">
 
                         <ImageView
@@ -148,6 +160,9 @@
                     android:id="@+id/devOptionsContainer"
                     android:layout_width="match_parent"
                     android:layout_height="90dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
                     android:layout_marginBottom="12dp"
                     android:background="@drawable/card_option"
                     android:gravity="center_vertical"
@@ -175,8 +190,10 @@
                         android:layout_width="50dp"
                         android:layout_height="50dp"
                         android:background="@drawable/circle_button"
-                        android:clickable="true"
-                        android:focusable="true"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:duplicateParentState="true"
+                        android:importantForAccessibility="no"
                         android:gravity="center">
 
                         <ImageView
@@ -191,8 +208,12 @@
 
                 <!-- TERMS -->
                 <LinearLayout
+                    android:id="@+id/rowTerms"
                     android:layout_width="match_parent"
                     android:layout_height="90dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
                     android:layout_marginBottom="12dp"
                     android:background="@drawable/card_option"
                     android:gravity="center_vertical"
@@ -219,8 +240,60 @@
                         android:layout_width="50dp"
                         android:layout_height="50dp"
                         android:background="@drawable/circle_button"
-                        android:clickable="true"
-                        android:focusable="true"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:duplicateParentState="true"
+                        android:importantForAccessibility="no"
+                        android:gravity="center">
+
+                        <ImageView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center"
+                            android:src="@drawable/enter_arrow" />
+
+                    </FrameLayout>
+
+                </LinearLayout>
+
+                <!-- PRIVACY POLICY -->
+                <LinearLayout
+                    android:id="@+id/rowPrivacy"
+                    android:layout_width="match_parent"
+                    android:layout_height="90dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    android:layout_marginBottom="12dp"
+                    android:background="@drawable/card_option"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="12dp">
+
+                    <ImageView
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:padding="0dp"
+                        android:scaleType="fitCenter"
+                        android:src="@drawable/ic_info" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:layout_weight="1"
+                        android:text="Privacy Policy"
+                        style="@style/Basilience.CardOptionLabel" />
+
+                    <FrameLayout
+                        android:id="@+id/btnPrivacy"
+                        android:layout_width="50dp"
+                        android:layout_height="50dp"
+                        android:background="@drawable/circle_button"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:duplicateParentState="true"
+                        android:importantForAccessibility="no"
                         android:gravity="center">
 
                         <ImageView

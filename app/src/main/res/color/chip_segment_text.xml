@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Selected segment sits on the dark primary pill and keeps white text; the
+  unselected segments sit on the light track and take the dark text token.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/onPrimary" android:state_selected="true" />
+    <item android:color="@color/text_dark" />
+</selector>

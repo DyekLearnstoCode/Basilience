@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Reports period segmented control.
+
+  The segments are MaterialButtons, which manage their own background drawable
+  and ignore android:background / setBackgroundColor() / setBackgroundResource().
+  The intended design - transparent unselected segments on the track, a solid
+  primary pill for the active one - therefore never reached the screen. It is
+  expressed here through backgroundTint, which MaterialButton does honour.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/primary" android:state_selected="true" />
+    <item android:color="@android:color/transparent" />
+</selector>

@@ -248,12 +248,6 @@ final class MobileGuideContent {
                         "Physical Sensor Test — Tap \"Start Sensor Test\" to ask the device to report live physical sensor readings (pH, EC, Air Temperature, Humidity, Water Temperature, Water Level, and Water Level Distance) into a diagnostic grid. When to use: to confirm real sensor hardware is wired correctly and producing valid readings, separate from any Mock Sensors values. Expected result: each tile changes from \"NO VALID READING\" to a live number once the device confirms the test is active. Impact: changes real device state — automatic cultivation control pauses while the test runs, and test-driven alerts are suppressed. Tap \"Stop Sensor Test\" (or simply leave the screen) to resume normal automatic operation."))
                 .build());
 
-        list.add(GuideSection.builder("Developer Options — Notification Testing")
-                .adminOnly(true)
-                .steps(Arrays.asList(
-                        "Test Offline Alert — Requests a sample \"device unreachable\" notification. When to use: to confirm notification delivery is working without waiting for an actual outage. Expected result: a test notification arrives the same way a real one would. Impact: sends a test notification only — the device's actual online/offline status is not changed."))
-                .build());
-
         list.add(GuideSection.builder("Developer Options — Data & Simulation Testing")
                 .adminOnly(true)
                 .description("Mock Sensors replace the values used by the device's real automatic control with values you type in — useful for demonstrations or testing automation without needing real plant conditions.")

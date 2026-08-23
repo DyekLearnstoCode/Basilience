@@ -132,8 +132,8 @@ public class Cycle_Add_Fragment extends Fragment {
         btnSave.setEnabled(false);
 
         // Single Active Cycle Rule check
-        dbHelper.getActiveCycle(deviceId).addOnSuccessListener(queryDocumentSnapshots -> {
-            if (!queryDocumentSnapshots.isEmpty()) {
+        dbHelper.getCycles(deviceId).addOnSuccessListener(queryDocumentSnapshots -> {
+            if (CycleStatus.hasActive(queryDocumentSnapshots)) {
                 if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
                 btnSave.setEnabled(true);
                 NotificationHelper.showWarning(requireContext(), "Active Cycle Exists", "A device can only have one ACTIVE cycle. Please complete the current cycle before starting a new one.");

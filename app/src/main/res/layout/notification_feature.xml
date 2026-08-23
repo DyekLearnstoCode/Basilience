@@ -66,7 +66,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnFilterAll"
-                    style="@style/FilterChipSelected"
+                    style="@style/NotificationFilterChip"
                     android:layout_width="0dp"
                     android:layout_height="40dp"
                     android:layout_weight="1"
@@ -78,12 +78,11 @@
                     android:insetBottom="0dp"
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
-                    android:text="All"
-                    android:textColor="@color/white" />
+                    android:text="All" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnFilterUnread"
-                    style="@style/FilterChip"
+                    style="@style/NotificationFilterChip"
                     android:layout_width="0dp"
                     android:layout_height="40dp"
                     android:layout_weight="1"
@@ -96,12 +95,11 @@
                     android:insetBottom="0dp"
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
-                    android:text="Unread"
-                    android:textColor="@color/black" />
+                    android:text="Unread" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnFilterRead"
-                    style="@style/FilterChip"
+                    style="@style/NotificationFilterChip"
                     android:layout_width="0dp"
                     android:layout_height="40dp"
                     android:layout_weight="1"
@@ -113,8 +111,7 @@
                     android:insetBottom="0dp"
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
-                    android:text="Read"
-                    android:textColor="@color/black" />
+                    android:text="Read" />
             </LinearLayout>
 
             <!-- SCROLL CONTENT -->

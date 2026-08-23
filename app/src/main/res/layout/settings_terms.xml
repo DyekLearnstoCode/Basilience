@@ -38,7 +38,10 @@
             android:paddingEnd="@dimen/container_side_padding"
             android:paddingBottom="@dimen/container_side_padding">
 
+            <!-- Title and body are both set at runtime so this one screen can
+                 present either legal document from LegalContent. -->
             <TextView
+                android:id="@+id/tvLegalTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="20dp"
@@ -50,10 +53,12 @@
                 android:letterSpacing="-0.02"
                  />
 
+            <!-- Body text is set from LegalContent.TERMS_BODY so the Settings
+                 screen and the pre-registration dialog show the same document. -->
             <TextView
+                android:id="@+id/tvTermsBody"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="1. Acceptance of Terms\nBy accessing and using Basilience, you agree to be bound by these Terms and Conditions.\n\n2. Use of Service\nYou agree to use the service only for lawful purposes and in a way that does not infringe the rights of others.\n\n3. Privacy Policy\nYour use of the service is also governed by our Privacy Policy, which is incorporated into these terms by reference.\n\n4. Data Collection\nWe collect sensor data and user information to provide and improve our services. We do not sell your personal data to third parties.\n\n5. Limitation of Liability\nBasilience is provided 'as is'. We are not liable for any damages arising from the use or inability to use the service."
                 android:textColor="#333333"
                 android:lineSpacingExtra="4dp"
                 android:textSize="16sp" />

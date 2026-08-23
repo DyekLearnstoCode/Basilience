@@ -79,15 +79,21 @@ public class Cycle_Details_Fragment extends Fragment {
                         return;
                     }
                     btnAddCycle.setEnabled(false);
-                    dbHelper.getActiveCycle(deviceId).addOnCompleteListener(task -> {
+                    dbHelper.getCycles(deviceId).addOnCompleteListener(task -> {
                         btnAddCycle.setEnabled(true);
                         if (!isAdded()) return;
                         if (!task.isSuccessful()) {
+                            // ERROR: the cycles could not be read at all.
+                            Log.e(TAG, "Active cycle verification failed for deviceId=" + deviceId,
+                                    task.getException());
                             NotificationHelper.showError(requireContext(), "Unable to verify the current growth cycle.");
-                        } else if (!task.getResult().isEmpty()) {
+                        } else if (CycleStatus.hasActive(task.getResult())) {
+                            // INVALID: a second active cycle is not allowed.
                             NotificationHelper.showWarning(requireContext(), "Active Cycle Exists",
                                     "Complete the current active cycle before adding another cycle.");
                         } else {
+                            // VALID: no active cycle - including none at all - so a
+                            // new cycle may be started.
                             Bundle args = new Bundle();
                             args.putInt("cycleNo", cycles.size() + 1);
                             navController.navigate(R.id.action_cycleDetailsFragment_to_cycleaddFragment, args);

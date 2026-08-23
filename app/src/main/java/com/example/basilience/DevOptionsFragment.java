@@ -119,7 +119,6 @@ public class DevOptionsFragment extends Fragment {
         etWaterLevel = view.findViewById(R.id.etWaterLevel);
         btnPush = view.findViewById(R.id.btnPush);
         btnInjectLogs = view.findViewById(R.id.btnInjectLogs);
-        View btnTestOfflineNotification = view.findViewById(R.id.btnTestOfflineNotification);
 
         // Physical sensor test components
         btnSensorTest = view.findViewById(R.id.btnSensorTest);
@@ -131,37 +130,6 @@ public class DevOptionsFragment extends Fragment {
         tvDiagnosticWaterTemperature = view.findViewById(R.id.tvDiagnosticWaterTemperature);
         tvDiagnosticWaterLevel = view.findViewById(R.id.tvDiagnosticWaterLevel);
         tvDiagnosticWaterLevelDistance = view.findViewById(R.id.tvDiagnosticWaterLevelDistance);
-
-        if (btnTestOfflineNotification != null) {
-            btnTestOfflineNotification.setOnClickListener(v -> {
-                Database_Helper h = new Database_Helper();
-                String devId = h.getSelectedDeviceId();
-                if (devId == null && getContext() != null) {
-                    android.content.SharedPreferences p = getContext().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
-                    devId = p.getString("selected_device_id", null);
-                    if (devId != null) h.setSelectedDeviceId(devId);
-                }
-
-                if (devId != null) {
-                    DatabaseReference testRef = h.getDeviceReference()
-                            .child("debug")
-                            .child("testNotifications")
-                            .child("offline")
-                            .push();
-                    Map<String, Object> request = new HashMap<>();
-                    request.put("requestedAt", com.google.firebase.database.ServerValue.TIMESTAMP);
-                    testRef.setValue(request)
-                            .addOnSuccessListener(unused -> Toast.makeText(getContext(),
-                                    "Test notification requested; device presence was not changed.",
-                                    Toast.LENGTH_SHORT).show())
-                            .addOnFailureListener(error -> Toast.makeText(getContext(),
-                                    "Unable to request test notification.",
-                                    Toast.LENGTH_SHORT).show());
-                } else {
-                    Toast.makeText(getContext(), "No selected device", Toast.LENGTH_SHORT).show();
-                }
-            });
-        }
 
         // Refill thresholds components
         etMinWaterLevel = view.findViewById(R.id.etMinWaterLevel);
@@ -206,7 +174,7 @@ public class DevOptionsFragment extends Fragment {
                 NotificationHelper.showConfirmation(requireContext(),
                         "Enable Mock Sensors?",
                         "Mock values will replace physical sensor readings used by automatic control until Mock Sensors are disabled.",
-                        "ENABLE", "CANCEL", () -> {
+                        "Enable", "Cancel", () -> {
                             suppressMockSwitchCallback = true;
                             switchMockEnable.setChecked(true);
                             suppressMockSwitchCallback = false;
@@ -266,39 +234,33 @@ public class DevOptionsFragment extends Fragment {
         checkSetupApReachability();
     }
 
+    /**
+     * Switches the visible Developer Options tab.
+     *
+     * The chips are MaterialButtons, which manage their own background drawable
+     * and ignore setBackgroundResource() - those calls silently did nothing,
+     * which is why the tabs showed the Material default colour. Selection is
+     * now carried by the view's selected state and resolved by the colour state
+     * lists on DeveloperFilterChip.
+     *
+     * Which tab is shown is unchanged: the same filter names select the same
+     * containers as before.
+     */
     private void updateFilterSelection(String selectedFilter) {
-        btnFilterSensorTest.setBackgroundResource(R.drawable.bg_chip);
-        btnFilterMock.setBackgroundResource(R.drawable.bg_chip);
-        btnFilterRefill.setBackgroundResource(R.drawable.bg_chip);
-        btnFilterWifi.setBackgroundResource(R.drawable.bg_chip);
+        boolean sensor = "Sensor".equalsIgnoreCase(selectedFilter);
+        boolean refill = "Refill".equalsIgnoreCase(selectedFilter);
+        boolean wifi = "Wifi".equalsIgnoreCase(selectedFilter);
+        boolean mock = !sensor && !refill && !wifi;
 
-        btnFilterSensorTest.setTextColor(Color.BLACK);
-        btnFilterMock.setTextColor(Color.BLACK);
-        btnFilterRefill.setTextColor(Color.BLACK);
-        btnFilterWifi.setTextColor(Color.BLACK);
+        btnFilterSensorTest.setSelected(sensor);
+        btnFilterMock.setSelected(mock);
+        btnFilterRefill.setSelected(refill);
+        btnFilterWifi.setSelected(wifi);
 
-        containerSensorTest.setVisibility(View.GONE);
-        containerMockData.setVisibility(View.GONE);
-        containerRefillLevels.setVisibility(View.GONE);
-        containerWifiConfig.setVisibility(View.GONE);
-
-        if ("Sensor".equalsIgnoreCase(selectedFilter)) {
-            btnFilterSensorTest.setBackgroundResource(R.drawable.bg_chip_selected);
-            btnFilterSensorTest.setTextColor(Color.WHITE);
-            containerSensorTest.setVisibility(View.VISIBLE);
-        } else if ("Refill".equalsIgnoreCase(selectedFilter)) {
-            btnFilterRefill.setBackgroundResource(R.drawable.bg_chip_selected);
-            btnFilterRefill.setTextColor(Color.WHITE);
-            containerRefillLevels.setVisibility(View.VISIBLE);
-        } else if ("Wifi".equalsIgnoreCase(selectedFilter)) {
-            btnFilterWifi.setBackgroundResource(R.drawable.bg_chip_selected);
-            btnFilterWifi.setTextColor(Color.WHITE);
-            containerWifiConfig.setVisibility(View.VISIBLE);
-        } else {
-            btnFilterMock.setBackgroundResource(R.drawable.bg_chip_selected);
-            btnFilterMock.setTextColor(Color.WHITE);
-            containerMockData.setVisibility(View.VISIBLE);
-        }
+        containerSensorTest.setVisibility(sensor ? View.VISIBLE : View.GONE);
+        containerMockData.setVisibility(mock ? View.VISIBLE : View.GONE);
+        containerRefillLevels.setVisibility(refill ? View.VISIBLE : View.GONE);
+        containerWifiConfig.setVisibility(wifi ? View.VISIBLE : View.GONE);
     }
 
     private void handleSensorTestButton() {
@@ -310,7 +272,7 @@ public class DevOptionsFragment extends Fragment {
         NotificationHelper.showConfirmation(requireContext(),
                 "Start Sensor Test?",
                 "Automatic cultivation control will pause while physical sensors are tested. Notifications caused by test readings will be suppressed.",
-                "START TEST", "CANCEL", () -> setSensorTestCommand(true));
+                "Start Test", "Cancel", () -> setSensorTestCommand(true));
     }
 
     private void setSensorTestCommand(boolean enabled) {
@@ -371,7 +333,7 @@ public class DevOptionsFragment extends Fragment {
                 (pendingStart ? "STARTING SENSOR TEST" : "SENSOR TEST INACTIVE"));
         tvSensorTestIndicator.setTextColor(ContextCompat.getColor(requireContext(),
                 sensorTestActive || pendingStart ? R.color.sensor_test_active : R.color.state_off));
-        btnSensorTest.setText(sensorTestActive || sensorTestRequested ? "STOP SENSOR TEST" : "START SENSOR TEST");
+        btnSensorTest.setText(sensorTestActive || sensorTestRequested ? "Stop Sensor Test" : "Start Sensor Test");
         btnSensorTest.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
                 ContextCompat.getColor(requireContext(),
                         sensorTestActive || sensorTestRequested

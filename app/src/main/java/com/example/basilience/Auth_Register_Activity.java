@@ -8,11 +8,22 @@ import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.checkbox.MaterialCheckBox;
+import com.google.android.material.textfield.TextInputLayout;
+
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.method.LinkMovementMethod;
+import android.text.style.ClickableSpan;
+import android.text.style.StyleSpan;
 
 public class Auth_Register_Activity extends AppCompatActivity {
 
     private static final String TAG = "Auth_Register_Activity";
     private TextInputEditText etName, etEmail, etPassword, etConfirmPassword;
+    private TextInputLayout layoutPassword, layoutConfirmPassword;
+    private MaterialCheckBox cbLegalConsent;
+    private TextView tvConsentText, tvConsentError;
     private MaterialButton btnSignup;
     private TextView tvLogin;
     private View layoutLoading;
@@ -33,6 +44,17 @@ public class Auth_Register_Activity extends AppCompatActivity {
         etEmail = findViewById(R.id.etEmail);
         etPassword = findViewById(R.id.etPassword);
         etConfirmPassword = findViewById(R.id.etConfirmPassword);
+        layoutPassword = findViewById(R.id.layoutPassword);
+        layoutConfirmPassword = findViewById(R.id.layoutConfirmPassword);
+
+        // Requirements are visible before the user submits, from the same
+        // shared policy that validates the field.
+        if (layoutPassword != null) layoutPassword.setHelperText(PasswordPolicy.REQUIREMENTS);
+
+        cbLegalConsent = findViewById(R.id.cbLegalConsent);
+        tvConsentText = findViewById(R.id.tvConsentText);
+        tvConsentError = findViewById(R.id.tvConsentError);
+        setupLegalConsent();
         btnSignup = findViewById(R.id.btnSignup);
         tvLogin = findViewById(R.id.tvLogin);
         layoutLoading = findViewById(R.id.layoutLoading);
@@ -57,6 +79,76 @@ public class Auth_Register_Activity extends AppCompatActivity {
         if (btnSignup != null) btnSignup.setEnabled(!show);
     }
 
+    /**
+     * Builds the consent line with "Terms and Conditions" and "Privacy Policy"
+     * as individually tappable spans. Both open a read-only dialog, so either
+     * document can be read without an account and without leaving the form
+     * half-filled.
+     */
+    private void setupLegalConsent() {
+        if (tvConsentText == null) return;
+
+        final String full = "I have read and agree to the Terms and Conditions and Privacy Policy.";
+        final String termsLabel = "Terms and Conditions";
+        final String privacyLabel = "Privacy Policy";
+
+        SpannableString text = new SpannableString(full);
+        applyDocumentSpan(text, full, termsLabel, LegalContent.TERMS_TITLE, LegalContent.TERMS_BODY);
+        applyDocumentSpan(text, full, privacyLabel, LegalContent.PRIVACY_TITLE, LegalContent.PRIVACY_BODY);
+
+        tvConsentText.setText(text);
+        tvConsentText.setMovementMethod(LinkMovementMethod.getInstance());
+
+        // Tapping the sentence itself (outside the two links) toggles the box,
+        // so the whole line behaves like the label of the checkbox.
+        tvConsentText.setOnClickListener(v -> {
+            if (cbLegalConsent != null) cbLegalConsent.setChecked(!cbLegalConsent.isChecked());
+        });
+
+        if (cbLegalConsent != null) {
+            cbLegalConsent.setOnCheckedChangeListener((button, isChecked) -> {
+                if (isChecked) clearConsentError();
+            });
+        }
+    }
+
+    private void applyDocumentSpan(SpannableString text, String full, String label,
+                                   String dialogTitle, String dialogBody) {
+        int start = full.indexOf(label);
+        if (start < 0) return;
+        int end = start + label.length();
+
+        text.setSpan(new ClickableSpan() {
+            @Override
+            public void onClick(android.view.View widget) {
+                LegalContent.showReadOnly(Auth_Register_Activity.this, dialogTitle, dialogBody);
+            }
+        }, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new StyleSpan(android.graphics.Typeface.BOLD), start, end,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    private void showConsentError(String message) {
+        if (tvConsentError == null) {
+            NotificationHelper.showError(this, message);
+            return;
+        }
+        tvConsentError.setText(message);
+        tvConsentError.setVisibility(View.VISIBLE);
+    }
+
+    private void clearConsentError() {
+        if (tvConsentError != null) tvConsentError.setVisibility(View.GONE);
+    }
+
+    private void clearPasswordErrors() {
+        if (layoutPassword != null) layoutPassword.setError(null);
+        if (layoutConfirmPassword != null) layoutConfirmPassword.setError(null);
+        // setError() hides helper text while an error is showing; restoring it
+        // keeps the requirements on screen once the error clears.
+        if (layoutPassword != null) layoutPassword.setHelperText(PasswordPolicy.REQUIREMENTS);
+    }
+
     private void registerUser() {
         String name = String.valueOf(etName.getText()).trim();
         String email = String.valueOf(etEmail.getText()).trim();
@@ -75,14 +167,28 @@ public class Auth_Register_Activity extends AppCompatActivity {
             return;
         }
 
-        // 3. Password minimum length validation
-        if (password.length() < 6) {
-            NotificationHelper.showError(this, "Password must be at least 6 characters");
+        // 3. Terms and Privacy Policy must be accepted before an account exists
+        if (cbLegalConsent != null && !cbLegalConsent.isChecked()) {
+            showConsentError("Please read and accept the Terms and Conditions and Privacy Policy to continue.");
+            cbLegalConsent.requestFocus();
             return;
         }
 
+        // 4. Shared strong-password policy (PasswordPolicy)
+        clearPasswordErrors();
+        String passwordError = PasswordPolicy.validate(password);
+        if (passwordError != null) {
+            if (layoutPassword != null) layoutPassword.setError(passwordError);
+            else NotificationHelper.showError(this, passwordError);
+            etPassword.requestFocus();
+            return;
+        }
+
+        // Mismatch is reported separately, on the field it belongs to.
         if (!password.equals(confirmPassword)) {
-            NotificationHelper.showError(this, "Passwords do not match");
+            if (layoutConfirmPassword != null) layoutConfirmPassword.setError("Passwords do not match");
+            else NotificationHelper.showError(this, "Passwords do not match");
+            etConfirmPassword.requestFocus();
             return;
         }
 

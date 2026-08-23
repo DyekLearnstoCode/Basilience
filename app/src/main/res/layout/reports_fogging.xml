@@ -164,8 +164,7 @@
                         android:layout_weight="1"
                         android:text="Entire"
                         android:layout_marginEnd="2dp"
-                        android:padding="0dp"
-                        app:backgroundTint="@null" />
+                        android:padding="0dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnToday"
@@ -175,8 +174,7 @@
                         android:layout_weight="1"
                         android:text="Today"
                         android:layout_marginEnd="2dp"
-                        android:padding="0dp"
-                        app:backgroundTint="@null" />
+                        android:padding="0dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnWeek"
@@ -186,8 +184,7 @@
                         android:layout_weight="1"
                         android:text="7D"
                         android:layout_marginEnd="2dp"
-                        android:padding="0dp"
-                        app:backgroundTint="@null" />
+                        android:padding="0dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnMonth"
@@ -197,8 +194,7 @@
                         android:layout_weight="1"
                         android:text="30D"
                         android:layout_marginEnd="2dp"
-                        android:padding="0dp"
-                        app:backgroundTint="@null" />
+                        android:padding="0dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnCustom"
@@ -207,8 +203,7 @@
                         android:layout_height="match_parent"
                         android:layout_weight="1"
                         android:text="Custom"
-                        android:padding="0dp"
-                        app:backgroundTint="@null" />
+                        android:padding="0dp" />
                 </LinearLayout>
 
                 <TextView

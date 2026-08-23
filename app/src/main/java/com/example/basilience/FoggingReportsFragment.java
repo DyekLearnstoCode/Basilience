@@ -520,32 +520,26 @@ public class FoggingReportsFragment extends Fragment {
     }
 
     private void refreshFilterChipHighlight() {
-        // Segmented control: unselected segments carry no fill of their own
-        // (the surrounding track supplies the container edge); only the
-        // active segment gets the solid pill.
-        int mutedColor = ContextCompat.getColor(requireContext(), R.color.nav_inactive);
-        btnEntireCycle.setBackgroundColor(Color.TRANSPARENT);
-        btnToday.setBackgroundColor(Color.TRANSPARENT);
-        btnWeek.setBackgroundColor(Color.TRANSPARENT);
-        btnMonth.setBackgroundColor(Color.TRANSPARENT);
-        btnCustom.setBackgroundColor(Color.TRANSPARENT);
+        // V2 segmented control: unselected segments carry no fill of their own
+        // (the track surface around them supplies that), only the active
+        // segment gets the solid pill.
+        //
+        // These are MaterialButtons, which manage their own background drawable
+        // and ignore setBackgroundColor()/setBackgroundResource() - those calls
+        // silently did nothing, leaving every segment on the Material default
+        // container colour with text that did not belong on it. Selection now
+        // rides on the view's selected state and is resolved by the
+        // chip_segment_* colour state lists.
+        boolean today = "Today".equals(currentSelectedFilter);
+        boolean week = "7 Days".equals(currentSelectedFilter);
+        boolean month = "30 Days".equals(currentSelectedFilter);
+        boolean custom = "Custom".equals(currentSelectedFilter);
 
-        btnEntireCycle.setTextColor(mutedColor);
-        btnToday.setTextColor(mutedColor);
-        btnWeek.setTextColor(mutedColor);
-        btnMonth.setTextColor(mutedColor);
-        btnCustom.setTextColor(mutedColor);
-
-        MaterialButton activeBtn;
-        switch (currentSelectedFilter) {
-            case "Today": activeBtn = btnToday; break;
-            case "7 Days": activeBtn = btnWeek; break;
-            case "30 Days": activeBtn = btnMonth; break;
-            case "Custom": activeBtn = btnCustom; break;
-            default: activeBtn = btnEntireCycle; break;
-        }
-        activeBtn.setBackgroundResource(R.drawable.ds_chip_bg_selected);
-        activeBtn.setTextColor(Color.WHITE);
+        btnToday.setSelected(today);
+        btnWeek.setSelected(week);
+        btnMonth.setSelected(month);
+        btnCustom.setSelected(custom);
+        btnEntireCycle.setSelected(!today && !week && !month && !custom);
     }
 
     // ------------------------------------------------------------------

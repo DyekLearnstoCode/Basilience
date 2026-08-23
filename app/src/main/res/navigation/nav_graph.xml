@@ -84,6 +84,13 @@
             app:popEnterAnim="@anim/slide_in_left"
             app:popExitAnim="@anim/slide_out_right" />
         <action
+            android:id="@+id/action_settings_to_privacyPolicyFragment"
+            app:destination="@id/privacyPolicyFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+        <action
             android:id="@+id/action_settings_to_wifiConfigFragment"
             app:destination="@id/wifiConfigFragment"
             app:enterAnim="@anim/slide_in_right"
@@ -273,6 +280,12 @@
         android:id="@+id/tosFragment"
         android:name="com.example.basilience.ToSFragment"
         android:label="Terms of Service"
+        tools:layout="@layout/settings_terms" />
+
+    <fragment
+        android:id="@+id/privacyPolicyFragment"
+        android:name="com.example.basilience.PrivacyPolicyFragment"
+        android:label="Privacy Policy"
         tools:layout="@layout/settings_terms" />
 
     <fragment

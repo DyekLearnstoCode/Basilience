@@ -61,6 +61,11 @@ public class Personnel_Add_Fragment extends Fragment {
         etPhone.setFilters(new InputFilter[]{
                 new InputFilter.LengthFilter(11)
         });
+
+        if (layoutPassword != null) {
+            layoutPassword.setHelperTextEnabled(true);
+            layoutPassword.setHelperText(PasswordPolicy.REQUIREMENTS);
+        }
     }
 
     private void saveFarmer() {
@@ -94,8 +99,10 @@ public class Personnel_Add_Fragment extends Fragment {
         }
         phone = normalizedPhone;
 
-        if (password.length() < 6) {
-            if (layoutPassword != null) layoutPassword.setError("Password must be at least 6 characters");
+        String passwordError = PasswordPolicy.validate(password);
+        if (passwordError != null) {
+            if (layoutPassword != null) layoutPassword.setError(passwordError);
+            etPassword.requestFocus();
             return;
         }
 
@@ -133,7 +140,12 @@ public class Personnel_Add_Fragment extends Fragment {
         if (layoutName != null) layoutName.setError(null);
         if (layoutEmail != null) layoutEmail.setError(null);
         if (layoutPhone != null) layoutPhone.setError(null);
-        if (layoutPassword != null) layoutPassword.setError(null);
+        if (layoutPassword != null) {
+            layoutPassword.setError(null);
+            // setError() suppresses helper text, so the requirements are put
+            // back each time the errors are cleared.
+            layoutPassword.setHelperText(PasswordPolicy.REQUIREMENTS);
+        }
         if (layoutConfirm != null) layoutConfirm.setError(null);
     }
 

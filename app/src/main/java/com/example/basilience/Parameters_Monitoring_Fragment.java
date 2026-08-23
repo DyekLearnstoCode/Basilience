@@ -79,6 +79,16 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private boolean waterTemperatureAlertActive;
     private boolean waterLevelAlertActive;
 
+    // Directional firmware alert flags, kept alongside the combined flags above
+    // (which drive reading colour only) so a manual action can tell which way
+    // the parameter is actually off target.
+    private final ManualOverrideAdvisor.AlertFlags overrideFlags = new ManualOverrideAdvisor.AlertFlags();
+    private boolean alertsLoaded = false;
+    /** Configured cooling ceiling from settings/highWaterTemp; null when not configured. */
+    private Double configuredHighWaterTemp = null;
+    private DatabaseReference highWaterTempRef;
+    private ValueEventListener highWaterTempListener;
+
     // ===== ACTUATORS =====
     class Actuator {
         String name;
@@ -271,10 +281,26 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             btnTriggerRefill.setOnClickListener(v -> {
                 if (isActuatorBusy) return;
                 if (isCurrentlyOnline) {
+                    // The existing "are you sure" prompt stays as the baseline
+                    // guard. When the reservoir does not actually need water -
+                    // or when Basilience cannot tell - the prompt says so
+                    // instead, using the same advisor as the actuator toggles.
+                    ManualOverrideAdvisor.Advice refillAdvice = ManualOverrideAdvisor.evaluate(
+                            ManualOverrideAdvisor.Condition.WATER_LEVEL_FILL,
+                            sensorLiveData.getValue(),
+                            alertsLoaded ? overrideFlags : null, configuredHighWaterTemp);
+
+                    String refillTitle = refillAdvice == ManualOverrideAdvisor.Advice.PROCEED
+                            ? "Start Reservoir Refill"
+                            : ManualOverrideAdvisor.CONFIRM_TITLE;
+                    String refillMessage = refillAdvice == ManualOverrideAdvisor.Advice.PROCEED
+                            ? "Are you sure you want to start an automated reservoir refill operation?"
+                            : ManualOverrideAdvisor.messageFor(
+                                    ManualOverrideAdvisor.Condition.WATER_LEVEL_FILL, refillAdvice);
+
                     NotificationHelper.showConfirmation(requireContext(),
-                            "Trigger Refill Operation",
-                            "Are you sure you want to trigger an automated reservoir refill operation?",
-                            "Yes", "No", () -> {
+                            refillTitle, refillMessage,
+                            "Continue", "Cancel", () -> {
                                 isActuatorBusy = true;
                                 updateActuatorControls();
                                 showActuatorLoading("Sending request...", "");
@@ -425,6 +451,27 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         // rules actually grant Android read access to, and so a failure on one
         // path (see onCancelled below) cannot wipe state owned by another path.
 
+        // Read-only view of the one configured value the alert flags cannot
+        // supply: waterTempOutOfRange carries no direction, so active cooling
+        // needs the same ceiling the reports screen already reads. Nothing here
+        // writes to settings.
+        highWaterTempRef = deviceRef.child("settings").child("highWaterTemp");
+        highWaterTempListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!isAdded()) return;
+                Object value = snapshot.getValue();
+                configuredHighWaterTemp = value instanceof Number ? ((Number) value).doubleValue() : null;
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("RTDB", "highWaterTemp listener cancelled: " + error.getMessage());
+                configuredHighWaterTemp = null;
+            }
+        };
+        highWaterTempRef.addValueEventListener(highWaterTempListener);
+
         alertsRef = deviceRef.child("alerts");
         alertsListener = new ValueEventListener() {
             @Override
@@ -433,6 +480,12 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
                 // Reuse firmware-published alert truth for presentation only.
                 // No Android-side threshold or warning range is introduced.
+                overrideFlags.phLow = isAlertActive(snapshot, "phLow");
+                overrideFlags.phHigh = isAlertActive(snapshot, "phHigh");
+                overrideFlags.ecLow = isAlertActive(snapshot, "ecLow");
+                overrideFlags.lowWater = isAlertActive(snapshot, "lowWater");
+                alertsLoaded = true;
+
                 phAlertActive = isAlertActive(snapshot, "phLow")
                         || isAlertActive(snapshot, "phHigh")
                         || isAlertActive(snapshot, "phOutOfRange");
@@ -697,6 +750,64 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 }
             }
 
+            // Turning an actuator OFF never needs threshold confirmation - it
+            // goes straight through the existing request path. Turning one ON
+            // is checked against the parameter it controls first.
+            if (checked) {
+                ManualOverrideAdvisor.Condition condition = conditionFor(actuator);
+                ManualOverrideAdvisor.Advice advice = ManualOverrideAdvisor.evaluate(
+                        condition, sensorLiveData.getValue(),
+                        alertsLoaded ? overrideFlags : null, configuredHighWaterTemp);
+
+                if (advice != ManualOverrideAdvisor.Advice.PROCEED) {
+                    // The switch must not sit visually ON while the user is
+                    // still deciding, so it goes back to confirmed device state
+                    // before the dialog appears. Nothing is locked and no
+                    // request exists yet - Cancel simply leaves it as it was.
+                    toggle.setOnCheckedChangeListener(null);
+                    toggle.setChecked(actuator.physicalRunning);
+                    setupActuatorUI(card, actuator);
+
+                    NotificationHelper.showConfirmation(requireContext(),
+                            ManualOverrideAdvisor.CONFIRM_TITLE,
+                            ManualOverrideAdvisor.messageFor(condition, advice),
+                            "Continue", "Cancel",
+                            () -> sendActuatorCommand(card, actuator, true));
+                    return;
+                }
+            }
+
+            sendActuatorCommand(card, actuator, checked);
+        });
+    }
+
+    /**
+     * Maps an actuator to the condition that governs whether switching it on
+     * by hand is called for right now.
+     *
+     * Only mappings backed by a real controlling condition in this codebase
+     * appear here. Grow Lights are exempt by design, and the fans, fogger and
+     * circulation pump have no single verified directional condition available
+     * to Android - all of them fall through to NONE and never prompt.
+     */
+    private ManualOverrideAdvisor.Condition conditionFor(Actuator actuator) {
+        if (actuator == phUp) return ManualOverrideAdvisor.Condition.PH_RAISE;
+        if (actuator == phDown) return ManualOverrideAdvisor.Condition.PH_LOWER;
+        if (actuator == nutrients || actuator == bloomPump) return ManualOverrideAdvisor.Condition.EC_RAISE;
+        if (actuator == peltier) return ManualOverrideAdvisor.Condition.WATER_COOL;
+        if (actuator == waterPumpValve) return ManualOverrideAdvisor.Condition.WATER_LEVEL_FILL;
+        return ManualOverrideAdvisor.Condition.NONE;
+    }
+
+    /**
+     * Sends the manual actuator request. Unchanged from the original inline
+     * body of the toggle listener - extracted only so the confirmation above
+     * can defer it without duplicating the request path.
+     */
+    private void sendActuatorCommand(View card, Actuator actuator, boolean checked) {
+            SwitchMaterial toggle = card.findViewById(R.id.switchActuator);
+            if (toggle == null) return;
+
             final boolean previousManualIntent = actuator.manualIntent;
             final int commandBaselineState = actuator.state;
             final boolean commandBaselineRunning = actuator.physicalRunning;
@@ -740,7 +851,6 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                             commandBaselineState, commandBaselineRunning, commandBaselineSource);
                 }
             });
-        });
     }
 
     /** Show the full-screen loading overlay with a title and optional subtitle */
@@ -1353,6 +1463,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
         if (actuatorStatusRef != null && actuatorStatusListener != null) {
             actuatorStatusRef.removeEventListener(actuatorStatusListener);
+        }
+        if (highWaterTempRef != null && highWaterTempListener != null) {
+            highWaterTempRef.removeEventListener(highWaterTempListener);
         }
         super.onDestroyView();
     }

@@ -71,7 +71,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnFilterSensorTest"
-                    style="@style/FilterChipSelected"
+                    style="@style/DeveloperFilterChip"
                     android:layout_width="0dp"
                     android:layout_height="42dp"
                     android:layout_weight="1"
@@ -83,14 +83,11 @@
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
                     android:text="Sensor Test"
-                    android:textSize="10sp"
-                    android:textColor="@color/white"
-                    android:background="@drawable/bg_chip_selected"
-                    app:backgroundTint="@null" />
+                    android:textSize="10sp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnFilterMock"
-                    style="@style/FilterChip"
+                    style="@style/DeveloperFilterChip"
                     android:layout_width="0dp"
                     android:layout_height="42dp"
                     android:layout_weight="1"
@@ -104,14 +101,11 @@
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
                     android:text="Mock Data"
-                    android:textSize="10sp"
-                    android:textColor="@color/black"
-                    android:background="@drawable/bg_chip"
-                    app:backgroundTint="@null" />
+                    android:textSize="10sp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnFilterRefill"
-                    style="@style/FilterChip"
+                    style="@style/DeveloperFilterChip"
                     android:layout_width="0dp"
                     android:layout_height="42dp"
                     android:layout_weight="1"
@@ -125,14 +119,11 @@
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
                     android:text="Water Refill"
-                    android:textSize="10sp"
-                    android:textColor="@color/black"
-                    android:background="@drawable/bg_chip"
-                    app:backgroundTint="@null" />
+                    android:textSize="10sp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnFilterWifi"
-                    style="@style/FilterChip"
+                    style="@style/DeveloperFilterChip"
                     android:layout_width="0dp"
                     android:layout_height="42dp"
                     android:layout_weight="1"
@@ -145,10 +136,7 @@
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
                     android:text="Wi-Fi Config"
-                    android:textSize="10sp"
-                    android:textColor="@color/black"
-                    android:background="@drawable/bg_chip"
-                    app:backgroundTint="@null" />
+                    android:textSize="10sp" />
             </LinearLayout>
 
             <!-- 1. PHYSICAL SENSOR TEST CONTAINER -->
@@ -300,7 +288,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="52dp"
                             android:layout_marginTop="16dp"
-                            android:text="START SENSOR TEST"
+                            android:text="Start Sensor Test"
                             android:textStyle="bold"
                             app:cornerRadius="12dp" />
                     </LinearLayout>
@@ -347,14 +335,6 @@
                                 android:textColor="#212121"
                                 android:textSize="18sp"/>
 
-                            <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnTestOfflineNotification"
-                    style="@style/BasilienceButton.Secondary"
-                                android:layout_width="wrap_content"
-                                android:layout_height="36dp"
-                                android:text="Test Offline Alert"
-                                android:textSize="11sp"
-                                app:cornerRadius="18dp" />
                         </LinearLayout>
 
                         <!-- Enable Mocking Toggle Row -->

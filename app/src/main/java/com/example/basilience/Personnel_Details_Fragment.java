@@ -88,10 +88,6 @@ public class Personnel_Details_Fragment extends Fragment {
         layoutLoading = view.findViewById(R.id.layoutLoading);
         tvLoadingTitle = view.findViewById(R.id.tvLoadingTitle);
 
-        btnSave.setVisibility(View.GONE);
-        setEditable(false);
-
-
 
         personnelId = getArguments() != null ? getArguments().getString("personnelId") : null;
         if (personnelId == null || personnelId.isEmpty()) {
@@ -143,12 +139,20 @@ public class Personnel_Details_Fragment extends Fragment {
 
     private void showEditMode() {
         populateEditFields();
+        // Entering edit mode has to unlock the inputs as well as swap the
+        // panels: the edit panel was previously shown with its fields still
+        // disabled from setup, so nothing in it could be typed into and the
+        // Save button stayed hidden.
+        setEditable(true);
+        btnSave.setVisibility(View.VISIBLE);
         layoutViewMode.setVisibility(View.GONE);
         layoutEditMode.setVisibility(View.VISIBLE);
+        etName.requestFocus();
     }
 
     private void showViewMode() {
         populateEditFields();
+        setEditable(false);
         layoutEditMode.setVisibility(View.GONE);
         layoutViewMode.setVisibility(View.VISIBLE);
     }
@@ -346,10 +350,13 @@ public class Personnel_Details_Fragment extends Fragment {
         TextInputEditText adminPassword = content.findViewById(R.id.etCurrentPassword);
         TextInputEditText newPassword = content.findViewById(R.id.etNewPassword);
         TextInputEditText confirm = content.findViewById(R.id.etConfirmNewPassword);
+        TextInputLayout newLayout = content.findViewById(R.id.layoutNewPassword);
+        TextInputLayout confirmLayout = content.findViewById(R.id.layoutConfirmNewPassword);
+        if (newLayout != null) newLayout.setHelperText(PasswordPolicy.REQUIREMENTS);
 
         NotificationHelper.showCustomViewDialog(requireContext(), "Change Personnel Password",
                 "Confirm your Admin password, then set a new password for this Personnel account.",
-                content, "Change Password", "Cancel", (dialog, ignored) -> {
+                content, "Save New Password", "Cancel", (dialog, ignored) -> {
                     String adminSecret = value(adminPassword);
                     String next = value(newPassword);
                     String confirmation = value(confirm);
@@ -357,12 +364,18 @@ public class Personnel_Details_Fragment extends Fragment {
                         adminPassword.setError("Admin password is required");
                         return;
                     }
-                    if (next.length() < 6) {
-                        newPassword.setError("Use at least 6 characters");
+                    if (newLayout != null) newLayout.setError(null);
+                    if (confirmLayout != null) confirmLayout.setError(null);
+
+                    String passwordError = PasswordPolicy.validate(next);
+                    if (passwordError != null) {
+                        if (newLayout != null) newLayout.setError(passwordError);
+                        else newPassword.setError(passwordError);
                         return;
                     }
                     if (!next.equals(confirmation)) {
-                        confirm.setError("Passwords do not match");
+                        if (confirmLayout != null) confirmLayout.setError("Passwords do not match");
+                        else confirm.setError("Passwords do not match");
                         return;
                     }
 
@@ -425,9 +438,18 @@ public class Personnel_Details_Fragment extends Fragment {
         if (show) layoutLoading.bringToFront();
     }
 
+    /**
+     * Unlocks only the fields this screen actually saves.
+     *
+     * saveChanges() writes fullName and phone, so those are the two editable
+     * fields. Email is the Login ID and must stay in sync with Firebase Auth,
+     * and Position is a role assignment rather than profile text - both are
+     * shown read-only for context. Passwords are never edited here; they go
+     * through the separate Change Password dialog.
+     */
     private void setEditable(boolean enabled) {
-        EditText[] fields = { etName, etRole, etPhone };
-        for (EditText field : fields) {
+        EditText[] editableFields = { etName, etPhone };
+        for (EditText field : editableFields) {
             field.setEnabled(enabled);
             field.setFocusable(enabled);
             field.setFocusableInTouchMode(enabled);

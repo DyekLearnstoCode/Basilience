@@ -381,32 +381,26 @@ public class SystemReportsFragment extends Fragment {
     }
 
     private void refreshFilterChipHighlight() {
-        // V2 segmented control: unselected segments carry no fill/border of
-        // their own (the track surface around them supplies that), only the
-        // active segment gets the solid pill.
-        int mutedColor = ContextCompat.getColor(requireContext(), R.color.nav_inactive);
-        btnEntireCycle.setBackgroundColor(Color.TRANSPARENT);
-        btnToday.setBackgroundColor(Color.TRANSPARENT);
-        btnWeek.setBackgroundColor(Color.TRANSPARENT);
-        btnMonth.setBackgroundColor(Color.TRANSPARENT);
-        btnCustom.setBackgroundColor(Color.TRANSPARENT);
+        // V2 segmented control: unselected segments carry no fill of their own
+        // (the track surface around them supplies that), only the active
+        // segment gets the solid pill.
+        //
+        // These are MaterialButtons, which manage their own background drawable
+        // and ignore setBackgroundColor()/setBackgroundResource() - those calls
+        // silently did nothing, leaving every segment on the Material default
+        // container colour with text that did not belong on it. Selection now
+        // rides on the view's selected state and is resolved by the
+        // chip_segment_* colour state lists.
+        boolean today = "Today".equals(currentSelectedFilter);
+        boolean week = "7 Days".equals(currentSelectedFilter);
+        boolean month = "30 Days".equals(currentSelectedFilter);
+        boolean custom = "Custom".equals(currentSelectedFilter);
 
-        btnEntireCycle.setTextColor(mutedColor);
-        btnToday.setTextColor(mutedColor);
-        btnWeek.setTextColor(mutedColor);
-        btnMonth.setTextColor(mutedColor);
-        btnCustom.setTextColor(mutedColor);
-
-        MaterialButton activeBtn;
-        switch (currentSelectedFilter) {
-            case "Today": activeBtn = btnToday; break;
-            case "7 Days": activeBtn = btnWeek; break;
-            case "30 Days": activeBtn = btnMonth; break;
-            case "Custom": activeBtn = btnCustom; break;
-            default: activeBtn = btnEntireCycle; break;
-        }
-        activeBtn.setBackgroundResource(R.drawable.ds_chip_bg_selected);
-        activeBtn.setTextColor(Color.WHITE);
+        btnToday.setSelected(today);
+        btnWeek.setSelected(week);
+        btnMonth.setSelected(month);
+        btnCustom.setSelected(custom);
+        btnEntireCycle.setSelected(!today && !week && !month && !custom);
     }
 
     // ------------------------------------------------------------------
@@ -792,8 +786,9 @@ public class SystemReportsFragment extends Fragment {
 
         String unit = getUnitForParameter(canonicalParameter);
         YAxis axisLeft = lineChart.getAxisLeft();
-        axisLeft.resetAxisMinimum();
-        axisLeft.resetAxisMaximum();
+        // Widen the value axis when needed so configured threshold indicators
+        // stay visible for every period and for every reading source.
+        applyAxisRangeIncludingIndicators(canonicalParameter, axisLeft, low, high);
         axisLeft.setTextColor(mutedAxisColor);
         axisLeft.setTextSize(11f);
         axisLeft.setGridColor(hairlineColor);
@@ -837,35 +832,106 @@ public class SystemReportsFragment extends Fragment {
         renderInsight(insight);
     }
 
-    private void applyTargetLimitLines(String canonicalParameter, YAxis axisLeft) {
-        axisLeft.removeAllLimitLines();
-        int lineColor = Color.parseColor("#E53935");
+    /**
+     * The configured threshold indicators for a parameter, in the order they
+     * should be drawn. This is the single source of truth for both the dashed
+     * limit lines and the axis range that has to keep them on screen, so the
+     * two can never disagree.
+     *
+     * Only genuinely configured values appear here. Parameters whose control
+     * logic has one real bound (see the hysteresis notes below) contribute one
+     * indicator - a lower bound is never invented so that every parameter can
+     * show a matching pair.
+     */
+    private List<ThresholdIndicator> configuredIndicatorsFor(String canonicalParameter) {
+        List<ThresholdIndicator> indicators = new ArrayList<>();
         if (canonicalParameter.equalsIgnoreCase("pH")) {
-            if (minPhThreshold != null) addLimitLine(axisLeft, minPhThreshold.floatValue(), "Min", lineColor);
-            if (maxPhThreshold != null) addLimitLine(axisLeft, maxPhThreshold.floatValue(), "Max", lineColor);
+            if (minPhThreshold != null) indicators.add(new ThresholdIndicator(minPhThreshold.floatValue(), "Min"));
+            if (maxPhThreshold != null) indicators.add(new ThresholdIndicator(maxPhThreshold.floatValue(), "Max"));
         } else if (canonicalParameter.equalsIgnoreCase("EC")) {
-            if (minEcThreshold != null) addLimitLine(axisLeft, minEcThreshold.floatValue(), "Min", lineColor);
+            if (minEcThreshold != null) indicators.add(new ThresholdIndicator(minEcThreshold.floatValue(), "Min"));
             // Max was previously missing here even though maxEcThreshold is
             // the real upper bound of EC's acceptable range everywhere else
             // in this screen (getTargetRangeText/isWithinTarget) - added for
             // consistency, not a new value.
-            if (maxEcThreshold != null) addLimitLine(axisLeft, maxEcThreshold.floatValue(), "Max", lineColor);
+            if (maxEcThreshold != null) indicators.add(new ThresholdIndicator(maxEcThreshold.floatValue(), "Max"));
         } else if (canonicalParameter.equalsIgnoreCase("Air Temperature")) {
             // airTempReleaseThreshold is hysteresis (when the fan turns back
             // off), not a user-facing lower bound - only the real configured
             // ceiling is shown, matching isWithinTarget()'s own one-sided
             // compliance check for this parameter.
-            if (highAirTempThreshold != null) addLimitLine(axisLeft, highAirTempThreshold.floatValue(), "Max", lineColor);
+            if (highAirTempThreshold != null) indicators.add(new ThresholdIndicator(highAirTempThreshold.floatValue(), "Max"));
         } else if (canonicalParameter.equalsIgnoreCase("Humidity")) {
             // humidityReleaseThreshold is hysteresis, not a lower bound - see
             // Air Temperature above.
-            if (highHumidityThreshold != null) addLimitLine(axisLeft, highHumidityThreshold.floatValue(), "Max", lineColor);
+            if (highHumidityThreshold != null) indicators.add(new ThresholdIndicator(highHumidityThreshold.floatValue(), "Max"));
         } else if (canonicalParameter.equalsIgnoreCase("Water Temperature")) {
             // coolerOffTempThreshold is hysteresis, not a lower bound - see
             // Air Temperature above.
-            if (highWaterTempThreshold != null) addLimitLine(axisLeft, highWaterTempThreshold.floatValue(), "Limit", lineColor);
+            if (highWaterTempThreshold != null) indicators.add(new ThresholdIndicator(highWaterTempThreshold.floatValue(), "Limit"));
         } else if (canonicalParameter.equalsIgnoreCase("Water Level")) {
-            if (refillStartThreshold != null) addLimitLine(axisLeft, refillStartThreshold.floatValue(), "Refill", lineColor);
+            if (refillStartThreshold != null) indicators.add(new ThresholdIndicator(refillStartThreshold.floatValue(), "Refill"));
+        }
+        return indicators;
+    }
+
+    private void applyTargetLimitLines(String canonicalParameter, YAxis axisLeft) {
+        axisLeft.removeAllLimitLines();
+        int lineColor = Color.parseColor("#E53935");
+        for (ThresholdIndicator indicator : configuredIndicatorsFor(canonicalParameter)) {
+            addLimitLine(axisLeft, indicator.value, indicator.label, lineColor);
+        }
+    }
+
+    /**
+     * Keeps every configured threshold indicator inside the value axis.
+     *
+     * MPAndroidChart scales the value axis to the plotted data only and clips
+     * limit lines that fall outside it, so an indicator would silently vanish
+     * whenever the readings for the selected period happened not to approach
+     * it. That is why the same parameter could show its Max on a 7-day view
+     * (wider spread) but nothing on Today, and why injected mock readings -
+     * which sit in a deliberately narrow band well inside the configured
+     * limits - appeared to "lose" their target range entirely. The thresholds
+     * were always loaded; they were simply off-axis.
+     *
+     * The axis is only ever widened, never narrowed: the full data range still
+     * determines the minimum extent, exactly as before.
+     */
+    private void applyAxisRangeIncludingIndicators(String canonicalParameter, YAxis axisLeft,
+                                                   float dataLow, float dataHigh) {
+        List<ThresholdIndicator> indicators = configuredIndicatorsFor(canonicalParameter);
+        if (indicators.isEmpty()) {
+            // Nothing configured to keep on screen - leave MPAndroidChart's
+            // own data-driven autoscaling completely untouched.
+            axisLeft.resetAxisMinimum();
+            axisLeft.resetAxisMaximum();
+            return;
+        }
+
+        float low = dataLow;
+        float high = dataHigh;
+        for (ThresholdIndicator indicator : indicators) {
+            low = Math.min(low, indicator.value);
+            high = Math.max(high, indicator.value);
+        }
+
+        // Breathing room so a line sitting at the extreme of the range is not
+        // drawn flush against the chart edge, where its label would be cut off.
+        float span = high - low;
+        float margin = span > 0 ? span * 0.08f : Math.max(Math.abs(high) * 0.05f, 0.5f);
+        axisLeft.setAxisMinimum(low - margin);
+        axisLeft.setAxisMaximum(high + margin);
+    }
+
+    /** A single configured threshold line: the value and the label drawn beside it. */
+    private static final class ThresholdIndicator {
+        final float value;
+        final String label;
+
+        ThresholdIndicator(float value, String label) {
+            this.value = value;
+            this.label = label;
         }
     }
 
