@@ -91,6 +91,47 @@
                 android:textSize="13sp"
                 android:visibility="gone" />
 
+            <!-- CULTIVATION PAUSED
+                 Depends only on whether a growth cycle is running - never on
+                 whether the device is reachable. Those are separate states and
+                 can appear together. -->
+            <LinearLayout
+                android:id="@+id/layoutCultivationPaused"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:background="@drawable/card_option"
+                android:orientation="vertical"
+                android:padding="14dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Cultivation Paused"
+                    android:textColor="@color/state_primary_text"
+                    android:textSize="16sp"
+                    android:fontFamily="sans-serif-medium" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:text="No active growth cycle is currently running. Sensor monitoring and safety functions remain available."
+                    android:textColor="@color/nav_inactive"
+                    android:textSize="13sp"
+                    android:lineSpacingExtra="2dp" />
+
+                <TextView
+                    android:id="@+id/tvPausedManualHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:text="Manual controls remain available for maintenance."
+                    android:textColor="@color/nav_inactive"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
             <!-- ===== GRID ROW 1 ===== -->
             <LinearLayout
                 android:layout_width="match_parent"

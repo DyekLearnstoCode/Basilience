@@ -88,15 +88,52 @@ service cloud.firestore {
       // CYCLES sub-collection
       match /cycles/{cycleId} {
         allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
-        // Farmers can't create or delete cycles
-        allow create, delete: if isAdmin() && isAssignedToDevice(deviceId);
-        // Farmers can update cycle totals when logging a harvest
-        allow update: if (isAdmin() && isAssignedToDevice(deviceId)) ||
+        // Starting a cultivation cycle is farm work: an Admin or an assigned
+        // Farmer may create one for a device they are assigned to. Deletion
+        // stays Admin-only - removing cycle history is administration.
+        // createdBy is pinned to the caller so a crafted request cannot
+        // attribute a cycle to someone else. Nothing server-side creates
+        // cycles (Cloud Functions only mirror them), so this breaks no
+        // existing writer.
+        allow create: if isSignedIn() && isAssignedToDevice(deviceId) &&
+                        (isAdmin() || isFarmer()) &&
+                        request.resource.data.createdBy == request.auth.uid;
+        allow delete: if isAdmin() && isAssignedToDevice(deviceId);
+        // Farmers can update cycle totals when logging a harvest, and can
+        // perform the one specific ACTIVE -> COMPLETED transition below.
+        //
+        // 'status' is deliberately NOT in the harvest clause. addHarvestTransaction()
+        // - the only cycle write a Farmer can reach that is not Admin-gated - writes
+        // exactly totalHarvestWeight, totalHarvestCount, lastHarvestDate and
+        // nextHarvestDate. Allowing 'status' there let a crafted request mark a cycle
+        // COMPLETED with no endDate and no completedBy, bypassing the completion
+        // clause entirely. Completion has one route: the clause at the end.
+        //
+        // The completion clause is deliberately narrow rather than a general
+        // edit permission: it requires the cycle to currently be ACTIVE (which
+        // also makes completing an already-completed cycle impossible),
+        // requires the new status to be exactly COMPLETED, and allows only the
+        // three fields completeCycle() actually writes. Cycle identity,
+        // creator, numbering and harvest totals stay untouchable.
+        // The admin clause stays broad, with one narrow integrity condition: a
+        // write may only set completedBy to the caller's own UID. Writes that
+        // do not touch completedBy (harvest totals, frequency edits) are
+        // unaffected, so this needed no restructuring of the clause.
+        allow update: if (isAdmin() && isAssignedToDevice(deviceId) &&
+                         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['completedBy']) ||
+                          request.resource.data.completedBy == request.auth.uid)) ||
                         (isFarmer() && isAssignedToDevice(deviceId) &&
                          (resource.data.nextHarvestDate == null || resource.data.nextHarvestDate <= request.time) &&
                          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                           'harvestFrequency', 'lastHarvestDate', 'status',
+                           'harvestFrequency', 'lastHarvestDate',
                            'totalHarvestWeight', 'totalHarvestCount', 'nextHarvestDate'
+                         ])) ||
+                        (isFarmer() && isAssignedToDevice(deviceId) &&
+                         resource.data.status == 'ACTIVE' &&
+                         request.resource.data.status == 'COMPLETED' &&
+                         request.resource.data.completedBy == request.auth.uid &&
+                         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                           'status', 'endDate', 'nextHarvestDate', 'completedBy'
                          ]));
 
         // HARVEST LOGS sub-collection
@@ -127,10 +164,24 @@ service cloud.firestore {
       // NOTIFICATIONS sub-collection
       match /notifications/{notifId} {
         allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+
+        // Notification CONTENT is shared and immutable; READ STATE belongs to
+        // the individual user and lives in the readBy map keyed by uid.
+        //
+        // Two conditions do the work. The first restricts the write to the
+        // readBy field alone, so title/message/type/timestamp - and the legacy
+        // isRead flag - can never be altered. The second diffs the readBy map
+        // itself and permits exactly one affected key: the caller's own uid.
+        // Any add, change or removal of another user's entry shows up in
+        // affectedKeys and is refused. resource.data.get('readBy', {}) supplies
+        // an empty map for the many documents that predate the field, so a
+        // first-ever mark-as-read is valid.
         allow update: if isSignedIn()
           && (isAdmin() || isAssignedToDevice(deviceId))
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
-          && request.resource.data.isRead is bool;
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
+          && request.resource.data.readBy.diff(resource.data.get('readBy', {}))
+               .affectedKeys().hasOnly([request.auth.uid]);
+
         allow create, delete: if false;
       }
     }

@@ -62,14 +62,13 @@ public class Cycle_Details_Fragment extends Fragment {
 
         rv.setAdapter(adapter);
 
-        // Role-based visibility
+        // Starting a growth cycle is farm work, not administration: an Admin or
+        // a Farmer assigned to this device may do it. Database_Helper and the
+        // Firestore rules enforce the same policy on the write itself.
         SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
-        String role = prefs.getString("user_role", RoleConstants.ROLE_FARMER);
-        
+
         View btnAddCycle = view.findViewById(R.id.btnAddCycle);
-        if (RoleConstants.ROLE_FARMER.equalsIgnoreCase(role)) {
-            if (btnAddCycle != null) btnAddCycle.setVisibility(View.GONE);
-        } else {
+        {
             if (btnAddCycle != null) {
                 btnAddCycle.setVisibility(View.VISIBLE);
                 btnAddCycle.setOnClickListener(v -> {
@@ -105,6 +104,37 @@ public class Cycle_Details_Fragment extends Fragment {
 
         // Fetch Cycles in Real-time
         startListeningToCycles();
+    }
+
+
+    /**
+     * Explains the current cycle situation in the list header.
+     *
+     * Three outcomes rather than the previous two, because "you have never
+     * started a cycle" and "your last cycle finished" need different wording -
+     * and completed cycles still show in the list underneath either way.
+     * When a cycle is running, the header disappears entirely.
+     */
+    private void renderCyclesState(com.google.firebase.firestore.QuerySnapshot snapshot) {
+        if (tvCyclesState == null) return;
+
+        final boolean cycleRunning = CycleStatus.hasActive(snapshot);
+
+        if (cycleRunning) {
+            tvCyclesState.setVisibility(View.GONE);
+            return;
+        }
+
+        // Admins and assigned Farmers can both start a cycle, so this copy no
+        // longer differs by role.
+        final String message = cycles.isEmpty()
+                ? "No Growth Cycles Yet\nCreate your first growth cycle to begin cultivation."
+                : "No Active Growth Cycle\nThe previous cycle has ended. Create a new cycle to begin the next cultivation period.";
+
+        tvCyclesState.setText(message);
+        tvCyclesState.setTextColor(androidx.core.content.ContextCompat.getColor(
+                requireContext(), R.color.state_no_data));
+        tvCyclesState.setVisibility(View.VISIBLE);
     }
 
     private void startListeningToCycles() {
@@ -167,16 +197,7 @@ public class Cycle_Details_Fragment extends Fragment {
                         }
                     }
                     adapter.notifyDataSetChanged();
-                    if (tvCyclesState != null) {
-                        if (cycles.isEmpty()) {
-                            tvCyclesState.setText("No growth cycles yet. Add a new cycle to get started.");
-                            tvCyclesState.setTextColor(androidx.core.content.ContextCompat.getColor(
-                                    requireContext(), R.color.state_no_data));
-                            tvCyclesState.setVisibility(View.VISIBLE);
-                        } else {
-                            tvCyclesState.setVisibility(View.GONE);
-                        }
-                    }
+                    renderCyclesState(snapshot);
                 }
             });
         } else {

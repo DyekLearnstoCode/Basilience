@@ -44,7 +44,7 @@ public class Cycle_Add_Fragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         dbHelper = new Database_Helper();
-        checkAdminAccess(view);
+        checkCycleCreateAccess(view);
 
         View btnBack = view.findViewById(R.id.btnBack);
         if (btnBack != null) {
@@ -76,19 +76,24 @@ public class Cycle_Add_Fragment extends Fragment {
         btnSave.setOnClickListener(v -> saveCycleToDb(view));
     }
 
-    private void checkAdminAccess(View view) {
-        String uid = FirebaseAuth.getInstance().getUid();
-        if (uid != null) {
-            dbHelper.getUserProfile(uid).addOnSuccessListener(documentSnapshot -> {
-                if (documentSnapshot.exists()) {
-                    String role = documentSnapshot.getString("role");
-                    if (!RoleConstants.ROLE_ADMIN.equalsIgnoreCase(role)) {
-                        NotificationHelper.showError(getContext(), "Access Denied: Admins Only");
-                        Navigation.findNavController(view).popBackStack();
-                    }
-                }
-            });
-        }
+    /**
+     * Leaves the screen if this user may not create a cycle on the selected
+     * device. Admins and assigned Farmers may; anyone else is sent back.
+     *
+     * This is an early-exit convenience only - Database_Helper.addCycle() and
+     * the Firestore rules enforce the same policy on the write itself.
+     */
+    private void checkCycleCreateAccess(View view) {
+        SharedPreferences prefs = requireContext()
+                .getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
+        String deviceId = prefs.getString("selected_device_id", null);
+
+        dbHelper.checkCycleOperatorPermission(deviceId).addOnFailureListener(e -> {
+            if (!isAdded()) return;
+            NotificationHelper.showError(getContext(),
+                    "You do not have permission to create a growth cycle for this device.");
+            Navigation.findNavController(view).popBackStack();
+        });
     }
 
     private void showDatePicker() {

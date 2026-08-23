@@ -16,6 +16,8 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.button.MaterialButton;
 import com.google.firebase.Timestamp;
 import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.FieldPath;
+import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestoreException;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.google.firebase.firestore.QueryDocumentSnapshot;
@@ -44,6 +46,9 @@ public class NotificationFragment extends Fragment {
 
     private MaterialButton btnFilterAll, btnFilterUnread, btnFilterRead;
     private boolean markingAllRead;
+    // Resolved per fragment instance rather than cached statically, so read
+    // state follows the signed-in account and cannot leak across a logout.
+    private String currentUid;
     private NotificationHelper.LoadingHandle loadingHandle;
 
     @Override
@@ -58,6 +63,8 @@ public class NotificationFragment extends Fragment {
 
         dbHelper = new Database_Helper();
 
+        currentUid = dbHelper.getCurrentUid();
+
         recyclerView = view.findViewById(R.id.recyclerNotifications);
         tvEmptyState = view.findViewById(R.id.tvEmptyNotifications);
         btnFilterAll = view.findViewById(R.id.btnFilterAll);
@@ -67,18 +74,32 @@ public class NotificationFragment extends Fragment {
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
         
         adapter = new NotificationAdapter(notificationList, item -> {
-            if (!item.isRead && item.docId != null && dbHelper.getSelectedDeviceId() != null) {
-                // Mark notification as read in Firestore
-                item.isRead = true;
-                FirebaseFirestore.getInstance()
-                        .collection("devices")
-                        .document(dbHelper.getSelectedDeviceId())
-                        .collection("notifications")
-                        .document(item.docId)
-                        .update("isRead", true);
-                
-                applyFilterAndRender();
-            }
+            if (item.isReadForCurrentUser || item.docId == null) return;
+            if (dbHelper.getSelectedDeviceId() == null || currentUid == null) return;
+
+            // Optimistic so the row responds immediately (and so an offline tap
+            // still feels right while Firestore queues the write), but reverted
+            // if the server actually rejects it - the previous code ignored the
+            // result entirely and could leave a row showing read forever.
+            item.isReadForCurrentUser = true;
+            applyFilterAndRender();
+
+            FirebaseFirestore.getInstance()
+                    .collection("devices")
+                    .document(dbHelper.getSelectedDeviceId())
+                    .collection("notifications")
+                    .document(item.docId)
+                    // Writes only this user's key; another user's entry is never
+                    // touched. FieldPath avoids any dot-path parsing of the UID.
+                    .update(FieldPath.of("readBy", currentUid), FieldValue.serverTimestamp())
+                    .addOnFailureListener(e -> {
+                        if (!isAdded()) return;
+                        Log.e(TAG, "Failed to mark notification as read", e);
+                        item.isReadForCurrentUser = false;
+                        applyFilterAndRender();
+                        NotificationHelper.showError(requireContext(),
+                                "Unable to mark this notification as read. Please try again.");
+                    });
         }, this::markAllAsRead);
         recyclerView.setAdapter(adapter);
 
@@ -191,7 +212,13 @@ public class NotificationFragment extends Fragment {
                     String message   = doc.getString("message");
                     String type      = doc.getString("type");
                     Long   timestamp = readTimestampMillis(doc);
-                    Boolean isRead   = doc.getBoolean("isRead");
+                    // Per-user read state. The legacy document-wide isRead field is
+                    // deliberately not consulted: it is shared by everyone assigned
+                    // to the device and is what made one user's tap clear the badge
+                    // for the whole farm. A document with no readBy entry for this
+                    // user - including every historical one - is unread.
+                    boolean readForCurrentUser = currentUid != null
+                            && doc.get(FieldPath.of("readBy", currentUid)) != null;
                     // Only present on a notification tied to an actual stored
                     // harvest record (see functions/onHarvestCreated) - absent
                     // for the pre-harvest reminder, which must never show one.
@@ -205,7 +232,7 @@ public class NotificationFragment extends Fragment {
 
                     if (message != null && type != null && timestamp != null) {
                         NotificationAdapter.NotificationItem item = new NotificationAdapter.NotificationItem(
-                                docId, message, timestamp, type, isRead != null && isRead,
+                                docId, message, timestamp, type, readForCurrentUser,
                                 recorderName, recorderUid
                         );
                         item.offlineRecorded = offlineRecorded != null && offlineRecorded;
@@ -233,7 +260,7 @@ public class NotificationFragment extends Fragment {
         }
         List<String> unreadIds = new ArrayList<>();
         for (NotificationAdapter.NotificationItem item : allRawNotifications) {
-            if (!item.isRead && item.docId != null) unreadIds.add(item.docId);
+            if (!item.isReadForCurrentUser && item.docId != null) unreadIds.add(item.docId);
         }
         if (unreadIds.isEmpty()) {
             NotificationHelper.showSuccess(requireContext(), "All notifications are already read.");
@@ -251,7 +278,7 @@ public class NotificationFragment extends Fragment {
         dbHelper.markNotificationsRead(deviceId, unreadIds).addOnSuccessListener(unused -> {
             if (!isAdded()) return;
             dismissLoading();
-            for (NotificationAdapter.NotificationItem item : allRawNotifications) item.isRead = true;
+            for (NotificationAdapter.NotificationItem item : allRawNotifications) item.isReadForCurrentUser = true;
             markingAllRead = false;
             applyFilterAndRender();
             updateMarkAllReadState();
@@ -268,15 +295,15 @@ public class NotificationFragment extends Fragment {
 
     private void updateMarkAllReadState() {
         boolean hasUnread = false;
-        for (NotificationAdapter.NotificationItem item : allRawNotifications) if (!item.isRead) { hasUnread = true; break; }
+        for (NotificationAdapter.NotificationItem item : allRawNotifications) if (!item.isReadForCurrentUser) { hasUnread = true; break; }
         adapter.setMarkAllReadState(hasUnread, markingAllRead);
     }
 
     private void applyFilterAndRender() {
         List<NotificationAdapter.NotificationItem> filtered = new ArrayList<>();
         for (NotificationAdapter.NotificationItem item : allRawNotifications) {
-            if (currentFilter == FilterType.UNREAD && item.isRead) continue;
-            if (currentFilter == FilterType.READ && !item.isRead) continue;
+            if (currentFilter == FilterType.UNREAD && item.isReadForCurrentUser) continue;
+            if (currentFilter == FilterType.READ && !item.isReadForCurrentUser) continue;
             filtered.add(item);
         }
 

@@ -128,6 +128,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private final MutableLiveData<SensorData> sensorLiveData = new MutableLiveData<>();
     private final MutableLiveData<Boolean> sensorReadErrorLiveData = new MutableLiveData<>();
     private TextView tvSensorDataNotice;
+    private View layoutCultivationPaused;
+    private com.google.firebase.firestore.ListenerRegistration cycleListener;
     private Long previousLastSeenValue = null;
     private boolean isCurrentlyOnline = false;
     private DeviceConnectivityState connectivityState = DeviceConnectivityState.RECONNECTING;
@@ -222,6 +224,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         tvConnectionStatus = view.findViewById(R.id.tvConnectionStatus);
         tvConnectionDetail = view.findViewById(R.id.tvConnectionDetail);
         tvSensorDataNotice = view.findViewById(R.id.tvSensorDataNotice);
+        layoutCultivationPaused = view.findViewById(R.id.layoutCultivationPaused);
+        observeCultivationState();
         btnRetryWifiConfiguration = view.findViewById(R.id.btnRetryWifiConfiguration);
         connectivityExecutor = Executors.newSingleThreadExecutor();
         if (btnRetryWifiConfiguration != null) {
@@ -1209,6 +1213,14 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                     stateColorRes = R.color.actuator_off;
                     break;
             }
+            // An unreachable device cannot confirm any of this, so the last
+            // value is kept but clearly marked as no longer verified rather
+            // than presented as live truth.
+            if (!isCurrentlyOnline) {
+                status.setText("Last known: " + status.getText());
+                stateColorRes = R.color.state_no_data;
+            }
+
             int stateColor = ContextCompat.getColor(requireContext(), stateColorRes);
             status.setTextColor(stateColor);
             if (toggle != null) {
@@ -1366,8 +1378,37 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         return styled;
     }
 
+
+    /**
+     * Shows the Cultivation Paused banner when no growth cycle is running.
+     *
+     * Reads the same cycles data as every other screen. Deliberately
+     * independent of device reachability: an active cycle on an offline device
+     * is still an active cycle, and must not be reported as paused.
+     */
+    private void observeCultivationState() {
+        if (layoutCultivationPaused == null) return;
+
+        android.content.SharedPreferences prefs = requireContext()
+                .getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
+        String deviceId = prefs.getString("selected_device_id", null);
+
+        cycleListener = CycleGateState.observe(new Database_Helper(), deviceId,
+                (state, hasAnyCycle) -> {
+                    if (!isAdded() || layoutCultivationPaused == null) return;
+                    // Only a confirmed "no active cycle" shows the banner;
+                    // loading and read errors leave it hidden.
+                    layoutCultivationPaused.setVisibility(
+                            state == CycleGateState.State.NONE ? View.VISIBLE : View.GONE);
+                });
+    }
+
     private void updateConnectionUI() {
         if (tvConnectionStatus == null || !isAdded()) return;
+
+        // Actuator labels carry an offline marker, so they have to be redrawn
+        // when reachability changes.
+        refreshAllActuatorUI();
 
         DeviceConnectivityState displayState = setupApReachable
                 ? DeviceConnectivityState.WIFI_CONFIGURATION_REQUIRED : connectivityState;
@@ -1466,6 +1507,10 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
         if (highWaterTempRef != null && highWaterTempListener != null) {
             highWaterTempRef.removeEventListener(highWaterTempListener);
+        }
+        if (cycleListener != null) {
+            cycleListener.remove();
+            cycleListener = null;
         }
         super.onDestroyView();
     }

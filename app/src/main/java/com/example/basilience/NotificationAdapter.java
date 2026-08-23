@@ -36,7 +36,11 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         public String message;
         public long timestamp;
         public String type = TYPE_INFO;
-        public boolean isRead = false;
+        // Read state belongs to the signed-in user, not to the notification.
+        // Derived from the document's readBy map, never from the legacy shared
+        // isRead field - naming it explicitly so it cannot be wired back to a
+        // document-wide boolean by mistake.
+        public boolean isReadForCurrentUser = false;
         public boolean isHeader = false;
         public String headerText;
         public boolean showMarkAllAction;
@@ -56,17 +60,19 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
 
         public NotificationItem() {}
 
-        public NotificationItem(String docId, String message, long timestamp, String type, boolean isRead) {
-            this(docId, message, timestamp, type, isRead, null, null);
+        public NotificationItem(String docId, String message, long timestamp, String type,
+                                 boolean isReadForCurrentUser) {
+            this(docId, message, timestamp, type, isReadForCurrentUser, null, null);
         }
 
-        public NotificationItem(String docId, String message, long timestamp, String type, boolean isRead,
+        public NotificationItem(String docId, String message, long timestamp, String type,
+                                 boolean isReadForCurrentUser,
                                  String recorderName, String recorderUid) {
             this.docId = docId;
             this.message = message;
             this.timestamp = timestamp;
             this.type = type;
-            this.isRead = isRead;
+            this.isReadForCurrentUser = isReadForCurrentUser;
             this.isHeader = false;
             this.recorderName = recorderName;
             this.recorderUid = recorderUid;
@@ -185,7 +191,7 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             bindRecordedBy(contentHolder, item);
 
             // Read / Unread UI formatting
-            if (item.isRead) {
+            if (item.isReadForCurrentUser) {
                 if (contentHolder.vUnreadDot != null) contentHolder.vUnreadDot.setVisibility(View.GONE);
                 contentHolder.tvMessage.setTypeface(null, Typeface.NORMAL);
                 contentHolder.tvMessage.setTextColor(0xFF666666);

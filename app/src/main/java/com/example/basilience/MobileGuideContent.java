@@ -89,8 +89,7 @@ final class MobileGuideContent {
                 .build());
 
         list.add(GuideSection.builder("Adding a Growth Cycle")
-                .role(ADMIN_ONLY)
-                .description("A new cycle can only be started once the previous one is completed.")
+                .description("Admins and assigned Personnel can create a new growth cycle when no active cycle is running. A new cycle can only be started once the previous one is completed.")
                 .imagePlaceholder("Add Cycle screen with Cycle Number, Start Date, and Harvest Frequency filled in")
                 .steps(Arrays.asList(
                         "From Growth Cycles, tap \"Add New Cycle.\"",
@@ -280,7 +279,7 @@ final class MobileGuideContent {
                         "No Data — a sensor reading hasn't arrived yet or is currently invalid. Not the same as Warning.",
                         "Device Unreachable — Basilience hasn't heard from the device recently enough to consider it online.",
                         "Unable to load data — a screen couldn't refresh from Basilience's servers; check your phone's internet connection and try again.",
-                        "No growth cycles yet — this device has no cycles recorded yet; an Admin can add one.",
+                        "No growth cycles yet — this device has no cycles recorded yet; an Admin or assigned Personnel can add one.",
                         "Harvest not ready — the next scheduled harvest date hasn't arrived yet for this cycle."))
                 .build());
 

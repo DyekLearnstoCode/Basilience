@@ -459,7 +459,10 @@ public class HarvestLogFragment extends Fragment {
         } else if (isActive) {
             statusColor = getResources().getColor(R.color.primary);
             fabAddHarvest.setVisibility(View.VISIBLE);
-            if (btnCompleteCycle != null && isAdmin) {
+            // Completing a cycle is cultivation work: available to an Admin or
+            // an assigned Farmer. Editing harvest frequency and exporting the
+            // PDF above stay Admin-only.
+            if (btnCompleteCycle != null) {
                 btnCompleteCycle.setVisibility(View.VISIBLE);
             }
         }
@@ -656,9 +659,11 @@ public class HarvestLogFragment extends Fragment {
     }
 
     private void showCompleteCycleConfirmation() {
-        NotificationHelper.showDestructiveConfirmation(requireContext(), "Complete Cycle?",
-                "This will:\n- Mark the cycle as COMPLETED\n- Record the completion date\n- Stop further harvest entries",
-                "Complete", () -> {
+        NotificationHelper.showDestructiveConfirmation(requireContext(), "Complete Growth Cycle?",
+                "Completing this cycle will end the current cultivation period and stop "
+                        + "normal cultivation automation after the device receives the updated "
+                        + "cycle status.\n\nNo further harvests can be recorded for this cycle.",
+                "Complete Cycle", () -> {
                     btnCompleteCycle.setEnabled(false);
                     loadingHandle = NotificationHelper.showLoading(requireContext(), "Completing cycle...", () -> {
                         if (!isAdded()) return;

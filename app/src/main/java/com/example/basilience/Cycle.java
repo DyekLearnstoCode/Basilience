@@ -16,6 +16,9 @@ public class Cycle {
     private Timestamp nextHarvestDate;
     private int harvestFrequencyDays;
     private String createdBy;
+    // Set only when the cycle is completed. Historical cycles completed before
+    // this field existed simply leave it null and deserialize normally.
+    private String completedBy;
     private int totalHarvestCount;
     private double totalHarvestWeight;
     private String notes;
@@ -66,6 +69,9 @@ public class Cycle {
 
     public String getCreatedBy() { return createdBy; }
     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
+
+    public String getCompletedBy() { return completedBy; }
+    public void setCompletedBy(String completedBy) { this.completedBy = completedBy; }
 
     public int getTotalHarvestCount() { return totalHarvestCount; }
     public void setTotalHarvestCount(int totalHarvestCount) { this.totalHarvestCount = totalHarvestCount; }

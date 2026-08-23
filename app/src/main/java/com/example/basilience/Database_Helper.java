@@ -511,16 +511,71 @@ public class Database_Helper {
                 .addSnapshotListener(listener);
     }
 
+    /**
+     * Authorises the cultivation-operator actions on a growth cycle: starting
+     * one and completing one.
+     *
+     * Running a cultivation cycle is day-to-day farm work, not account
+     * administration, so an Admin or a Farmer assigned to this specific device
+     * may do both. Assignment is what bounds it: a Farmer can only act on a
+     * device they actually work on, never on someone else's.
+     *
+     * Mirrors the Firestore rules for the same operations - this exists so the
+     * app fails early with a clear message, not as the security boundary.
+     */
+    public Task<Void> checkCycleOperatorPermission(String deviceId) {
+        if (deviceId == null || deviceId.isEmpty()) {
+            return Tasks.forException(new Exception("No device selected"));
+        }
+        if (RoleConstants.ROLE_ADMIN.equalsIgnoreCase(cachedRole)) {
+            return Tasks.forResult(null);
+        }
+
+        String uid = getCurrentUid();
+        if (uid == null) return Tasks.forException(new Exception("User not authenticated"));
+
+        return getUserProfile(uid).onSuccessTask(doc -> {
+            if (doc.exists()) {
+                cachedRole = doc.getString("role");
+                if (RoleConstants.ROLE_ADMIN.equalsIgnoreCase(cachedRole)) {
+                    return Tasks.forResult(null);
+                }
+            }
+
+            // Deterministic assignment id, same convention assignDeviceToPersonnel
+            // writes and the Firestore rule checks.
+            return db.collection("deviceAssignments")
+                    .document(uid + "_" + deviceId)
+                    .get()
+                    .onSuccessTask(assignment -> {
+                        if (assignment.exists()) {
+                            return Tasks.<Void>forResult(null);
+                        }
+                        return Tasks.<Void>forException(new FirebaseFirestoreException(
+                                "Permission Denied: You are not assigned to this device.",
+                                FirebaseFirestoreException.Code.PERMISSION_DENIED));
+                    });
+        });
+    }
+
     public Task<Void> addCycle(Cycle cycle) {
         if (selectedDeviceId == null) return Tasks.forException(new Exception("No device selected"));
 
-        return checkAdminTask().onSuccessTask(aVoid ->
-                db.collection("devices")
-                        .document(selectedDeviceId)
-                        .collection("cycles")
-                        .document(cycle.getCycleId())
-                        .set(cycle)
-        );
+        return checkCycleOperatorPermission(selectedDeviceId).onSuccessTask(aVoid -> {
+            // Record who actually started the cycle. Previously left unset, so a
+            // cycle had no creator at all; now that Farmers can create one it
+            // has to reflect the real user rather than being assumed to be an
+            // Admin.
+            if (cycle.getCreatedBy() == null || cycle.getCreatedBy().isEmpty()) {
+                cycle.setCreatedBy(getCurrentUid());
+            }
+
+            return db.collection("devices")
+                    .document(selectedDeviceId)
+                    .collection("cycles")
+                    .document(cycle.getCycleId())
+                    .set(cycle);
+        });
     }
 
     public ListenerRegistration listenToCycles(EventListener<QuerySnapshot> listener) {
@@ -560,11 +615,18 @@ public class Database_Helper {
         if (selectedDeviceId == null)
             return Tasks.forException(new Exception("Device not selected"));
 
-        return checkAdminTask().onSuccessTask(aVoid -> {
+        // Completing a cycle ends a cultivation period - operator work, same
+        // authority as starting one. The write set below is exactly what the
+        // Firestore completion rule permits.
+        return checkCycleOperatorPermission(selectedDeviceId).onSuccessTask(aVoid -> {
             Map<String, Object> updates = new HashMap<>();
             updates.put("status", "COMPLETED");
             updates.put("endDate", com.google.firebase.Timestamp.now());
             updates.put("nextHarvestDate", null);
+            // Who ended this cultivation period. Mirrors createdBy: the real
+            // authenticated user, never an assumed role. The Firestore rule
+            // requires this to equal the caller's own UID.
+            updates.put("completedBy", getCurrentUid());
 
             return db.collection("devices").document(selectedDeviceId)
                     .collection("cycles").document(cycleId)
@@ -1153,10 +1215,20 @@ public class Database_Helper {
 
     public Task<Void> markNotificationsRead(String deviceId, List<String> notificationIds) {
         if (deviceId == null || deviceId.isEmpty() || notificationIds == null || notificationIds.isEmpty()) return Tasks.forResult(null);
+        String uid = getCurrentUid();
+        if (uid == null) return Tasks.forException(new Exception("User not authenticated"));
+
         com.google.firebase.firestore.WriteBatch batch = db.batch();
         for (String notificationId : notificationIds) {
             if (notificationId != null && !notificationId.isEmpty()) {
-                batch.update(db.collection("devices").document(deviceId).collection("notifications").document(notificationId), "isRead", true);
+                // One key per document - readBy.<uid> - so another user's entry
+                // is never touched. The legacy document-wide isRead field is
+                // deliberately left alone: writing it was what let one person
+                // clear the unread badge for everyone on the device.
+                batch.update(
+                        db.collection("devices").document(deviceId)
+                                .collection("notifications").document(notificationId),
+                        FieldPath.of("readBy", uid), FieldValue.serverTimestamp());
             }
         }
         return batch.commit();

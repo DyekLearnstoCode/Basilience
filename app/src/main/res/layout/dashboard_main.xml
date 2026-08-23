@@ -68,6 +68,48 @@
                 android:textStyle="bold"
                 android:visibility="gone" />
 
+            <!-- NO ACTIVE GROWTH CYCLE
+                 Hidden until the cycles have actually been read, so the app
+                 never flashes this while still loading or after a read error. -->
+            <LinearLayout
+                android:id="@+id/cardNoActiveCycle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:background="@drawable/card_option"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/tvNoCycleTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="No Active Growth Cycle"
+                    android:textColor="@color/state_primary_text"
+                    android:textSize="17sp"
+                    android:fontFamily="sans-serif-medium" />
+
+                <TextView
+                    android:id="@+id/tvNoCycleBody"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Create a growth cycle to begin cultivation automation."
+                    android:textColor="@color/nav_inactive"
+                    android:textSize="14sp"
+                    android:lineSpacingExtra="2dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnDashboardCreateCycle"
+                    style="@style/BasilienceButton.Primary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Create Cycle"
+                    android:visibility="gone" />
+            </LinearLayout>
+
             <!-- PARAMETERS MONITORING -->
             <LinearLayout
                 android:id="@+id/cardParameters"

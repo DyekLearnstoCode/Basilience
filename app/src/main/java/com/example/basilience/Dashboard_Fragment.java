@@ -17,7 +17,12 @@ import androidx.fragment.app.Fragment;
 import androidx.navigation.NavController;
 import androidx.navigation.Navigation;
 
+import com.google.android.material.button.MaterialButton;
+import com.google.firebase.firestore.ListenerRegistration;
+
 public class Dashboard_Fragment extends Fragment {
+
+    private ListenerRegistration cycleListener;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -81,6 +86,8 @@ public class Dashboard_Fragment extends Fragment {
                     });
         }
 
+        observeCycleState(view, navController);
+
         // Parameters Monitoring
         LinearLayout cardParameters = view.findViewById(R.id.cardParameters);
         cardParameters.setOnClickListener(v -> navController.navigate(R.id.action_home_to_parametersFragment));
@@ -103,5 +110,57 @@ public class Dashboard_Fragment extends Fragment {
                 }
             });
         }
+    }
+
+    /**
+     * Shows the no-active-cycle state, using the same cycles data every other
+     * screen reads. The card stays hidden while loading and on a read error -
+     * "we could not check" must never be presented as "there is no cycle".
+     */
+    private void observeCycleState(View view, NavController navController) {
+        View card = view.findViewById(R.id.cardNoActiveCycle);
+        TextView body = view.findViewById(R.id.tvNoCycleBody);
+        MaterialButton btnCreate = view.findViewById(R.id.btnDashboardCreateCycle);
+        if (card == null) return;
+
+        SharedPreferences prefs = requireContext()
+                .getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
+        String deviceId = prefs.getString("selected_device_id", null);
+
+        if (btnCreate != null) {
+            btnCreate.setOnClickListener(v ->
+                    navController.navigate(R.id.action_home_to_cycleDetailsFragment));
+        }
+
+        cycleListener = CycleGateState.observe(new Database_Helper(), deviceId,
+                (state, hasAnyCycle) -> {
+                    if (!isAdded()) return;
+
+                    if (state != CycleGateState.State.NONE) {
+                        // ACTIVE, LOADING and ERROR all leave the card hidden.
+                        card.setVisibility(View.GONE);
+                        return;
+                    }
+
+                    if (body != null) {
+                        // Admins and assigned Farmers can both start a cycle.
+                        body.setText(hasAnyCycle
+                                ? "The previous cycle has ended. Create a new cycle to begin the next cultivation period."
+                                : "Create a growth cycle to begin cultivation automation.");
+                    }
+                    if (btnCreate != null) {
+                        btnCreate.setVisibility(View.VISIBLE);
+                    }
+                    card.setVisibility(View.VISIBLE);
+                });
+    }
+
+    @Override
+    public void onDestroyView() {
+        if (cycleListener != null) {
+            cycleListener.remove();
+            cycleListener = null;
+        }
+        super.onDestroyView();
     }
 }
