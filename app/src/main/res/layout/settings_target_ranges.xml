@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Parameter Target Ranges.
+
+  The acceptable growing range for each monitored parameter - the values
+  Monitoring, alerts and Reports classify against. Deliberately does NOT expose
+  the actuator control thresholds (airTempRelease, humidityRelease,
+  coolerOffTemp, refillStartLevel, refillStopLevel): those decide when equipment
+  switches on and off, which is a different question from what counts as an
+  acceptable reading.
+-->
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
+        app:elevation="0dp">
+
+        <com.google.android.material.appbar.CollapsingToolbarLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:layout_scrollFlags="scroll|exitUntilCollapsed">
+
+            <include layout="@layout/layout_header" />
+
+        </com.google.android.material.appbar.CollapsingToolbarLayout>
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="@dimen/container_overlap_margin"
+        android:background="@drawable/top_rounded_white"
+        android:elevation="5dp"
+        android:fillViewport="true"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingTop="@dimen/container_top_padding"
+            android:paddingStart="@dimen/container_side_padding"
+            android:paddingEnd="@dimen/container_side_padding"
+            android:paddingBottom="@dimen/container_side_padding">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Parameter Target Ranges"
+                android:textColor="@color/state_primary_text"
+                android:textSize="24sp"
+                android:fontFamily="sans-serif-black"
+                android:letterSpacing="-0.02" />
+
+            <TextView
+                android:id="@+id/tvTargetRangesIntro"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:layout_marginBottom="18dp"
+                android:lineSpacingExtra="3dp"
+                android:text="The minimum is the lowest reading still considered acceptable, and the maximum is the highest. Readings outside either limit are marked out of range in Monitoring and Reports."
+                android:textColor="@color/nav_inactive"
+                android:textSize="14sp" />
+
+            <!-- Shown instead of the Save button for a user who may view but
+                 not change these values. -->
+            <TextView
+                android:id="@+id/tvViewOnlyNotice"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="18dp"
+                android:padding="12dp"
+                android:background="@drawable/card_option"
+                android:text="These ranges are set by an Admin. You can view them here."
+                android:textColor="@color/nav_inactive"
+                android:textSize="13sp"
+                android:visibility="gone" />
+
+            <!-- ================= pH ================= -->
+            <TextView style="@style/Basilience.RangeSectionLabel" android:text="pH" />
+
+            <LinearLayout style="@style/Basilience.RangeRow">
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutMinPh"
+                    style="@style/InputFieldStyle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:hint="Minimum">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etMinPh"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="numberDecimal" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutMaxPh"
+                    style="@style/InputFieldStyle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:hint="Maximum">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etMaxPh"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="numberDecimal" />
+                </com.google.android.material.textfield.TextInputLayout>
+            </LinearLayout>
+
+            <!-- ================= EC ================= -->
+            <TextView style="@style/Basilience.RangeSectionLabel" android:text="EC (mS/cm)" />
+
+            <LinearLayout style="@style/Basilience.RangeRow">
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutMinEc"
+                    style="@style/InputFieldStyle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:hint="Minimum">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etMinEc"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="numberDecimal" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutMaxEc"
+                    style="@style/InputFieldStyle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:hint="Maximum">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etMaxEc"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="numberDecimal" />
+                </com.google.android.material.textfield.TextInputLayout>
+            </LinearLayout>
+
+            <!-- ============ Air Temperature ============ -->
+            <TextView style="@style/Basilience.RangeSectionLabel" android:text="Air Temperature (°C)" />
+
+            <LinearLayout style="@style/Basilience.RangeRow">
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutMinAirTemp"
+                    style="@style/InputFieldStyle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:hint="Minimum">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etMinAirTemp"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="numberDecimal|numberSigned" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutMaxAirTemp"
+                    style="@style/InputFieldStyle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:hint="Maximum">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etMaxAirTemp"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="numberDecimal|numberSigned" />
+                </com.google.android.material.textfield.TextInputLayout>
+            </LinearLayout>
+
+            <!-- ================ Humidity ================ -->
+            <TextView style="@style/Basilience.RangeSectionLabel" android:text="Humidity (%)" />
+
+            <LinearLayout style="@style/Basilience.RangeRow">
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutMinHumidity"
+                    style="@style/InputFieldStyle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:hint="Minimum">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etMinHumidity"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="numberDecimal" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutMaxHumidity"
+                    style="@style/InputFieldStyle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:hint="Maximum">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etMaxHumidity"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="numberDecimal" />
+                </com.google.android.material.textfield.TextInputLayout>
+            </LinearLayout>
+
+            <!-- =========== Water Temperature =========== -->
+            <TextView style="@style/Basilience.RangeSectionLabel" android:text="Water Temperature (°C)" />
+
+            <LinearLayout style="@style/Basilience.RangeRow">
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutMinWaterTemp"
+                    style="@style/InputFieldStyle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:hint="Minimum">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etMinWaterTemp"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="numberDecimal" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutMaxWaterTemp"
+                    style="@style/InputFieldStyle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:hint="Maximum">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etMaxWaterTemp"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="numberDecimal" />
+                </com.google.android.material.textfield.TextInputLayout>
+            </LinearLayout>
+
+            <!-- ============== Water Level ============== -->
+            <TextView style="@style/Basilience.RangeSectionLabel" android:text="Water Level (%)" />
+
+            <LinearLayout style="@style/Basilience.RangeRow">
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutMinWaterLevel"
+                    style="@style/InputFieldStyle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:hint="Minimum">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etMinWaterLevel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="numberDecimal" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutMaxWaterLevel"
+                    style="@style/InputFieldStyle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:hint="Maximum">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etMaxWaterLevel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="numberDecimal" />
+                </com.google.android.material.textfield.TextInputLayout>
+            </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSaveTargetRanges"
+                style="@style/BasilienceButton.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:enabled="false"
+                android:text="Save Changes" />
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

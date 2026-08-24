@@ -778,15 +778,41 @@ exports.onAlertUpdated = onValueUpdated({
         { key: "ecHigh", title: "Nutrient level is too high", message: "The nutrient level is above the proper range. Basilience will correct it automatically when safe.", type: "parameter" },
         { key: "phLow", title: "pH is too low", message: "The pH level is below the proper range. Basilience will correct it automatically when safe.", type: "parameter" },
         { key: "phHigh", title: "pH is too high", message: "The pH level is above the proper range. Basilience will correct it automatically when safe.", type: "parameter" },
-        { key: "waterTempOutOfRange", title: "Water Temperature Alert", message: "Water temperature is outside the safe range.", type: "parameter" },
+        // waterTempOutOfRange is the HIGH side only - the firmware raises it when
+        // water temperature exceeds the configured maximum, and waterTempLow
+        // below covers the other direction. The old "outside the safe range"
+        // wording predated that split and would now be ambiguous next to its
+        // low-side counterpart. The firmware flag name is unchanged.
+        { key: "waterTempOutOfRange", title: "High Water Temperature", message: "Water temperature is above the configured maximum range.", type: "parameter" },
+        { key: "waterTempLow", title: "Low Water Temperature", message: "Water temperature is below the configured minimum range.", type: "parameter" },
         { key: "lowAirTemperature", title: "Low Air Temperature", message: "Air temperature is below the acceptable range.", type: "parameter" },
         { key: "highTemperature", title: "High Air Temperature", message: "Air temperature is above safe limits.", type: "parameter" },
+        // Humidity had no notifications at all before target ranges existed.
+        // Reported as a range condition only - Basilience has no humidifier, and
+        // the message must not imply one.
+        { key: "humidityLow", title: "Low Humidity", message: "Humidity is below the configured minimum range.", type: "parameter" },
+        { key: "humidityHigh", title: "High Humidity", message: "Humidity is above the configured maximum range.", type: "parameter" },
+        // Target-range counterparts to the operational lowWater alert above.
+        // waterLevelHigh promises no corrective action: there is no drain.
+        { key: "waterLevelLow", title: "Low Water Level", message: "Reservoir water level is below the configured minimum range.", type: "parameter" },
+        { key: "waterLevelHigh", title: "High Water Level", message: "Reservoir water level is above the configured maximum range.", type: "parameter" },
         { key: "sensorFault", title: "Sensor Fault", message: "A sensor reading is unavailable or invalid. Check the affected sensor.", type: "hardware" }
     ];
 
     for (const alert of alertKeys) {
         const wasActive = alertsBefore[alert.key] === true;
         const isActive = alertsAfter[alert.key] === true;
+
+        // lowWater (refill control threshold) and waterLevelLow (target-range
+        // minimum) both default to 20%, so they normally go true in the same
+        // write and would push two notifications for one physical event. The
+        // operational one wins: it already tells the farmer the level is low
+        // AND that a refill is coming. waterLevelLow still notifies on its own
+        // whenever it is the only one active - which is exactly the case that
+        // matters, an admin setting the target minimum above the refill level.
+        if (alert.key === "waterLevelLow" && alertsAfter.lowWater === true) {
+            continue;
+        }
 
         if (isActive && !wasActive) {
             const notificationId = `${safeEventId(event.id)}_${alert.key}`;

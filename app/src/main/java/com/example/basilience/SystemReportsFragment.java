@@ -32,9 +32,12 @@ import com.example.basilience.models.ParameterReportFilter;
 import com.github.mikephil.charting.components.LimitLine;
 import com.github.mikephil.charting.components.XAxis;
 import com.github.mikephil.charting.components.YAxis;
+import com.github.mikephil.charting.components.LegendEntry;
+import com.github.mikephil.charting.components.Legend;
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
+import com.github.mikephil.charting.interfaces.datasets.ILineDataSet;
 import com.github.mikephil.charting.formatter.ValueFormatter;
 import com.github.mikephil.charting.listener.ChartTouchListener;
 import com.github.mikephil.charting.listener.OnChartGestureListener;
@@ -105,6 +108,17 @@ public class SystemReportsFragment extends Fragment {
     private Double maxEcThreshold;
     private Double ecTargetMinThreshold;
     private Double ecTargetMaxThreshold;
+
+    // Canonical target (acceptable) ranges - the same settings the device uses
+    // to classify a reading. Distinct from the control/hysteresis values below.
+    private Double minAirTempTarget;
+    private Double maxAirTempTarget;
+    private Double minHumidityTarget;
+    private Double maxHumidityTarget;
+    private Double minWaterTempTarget;
+    private Double maxWaterTempTarget;
+    private Double minWaterLevelTarget;
+    private Double maxWaterLevelTarget;
 
     private Double highAirTempThreshold;
     private Double airTempReleaseThreshold;
@@ -579,6 +593,15 @@ public class SystemReportsFragment extends Fragment {
                         ecTargetMinThreshold = numberValue(snapshot.child("ecTargetMin"));
                         ecTargetMaxThreshold = numberValue(snapshot.child("ecTargetMax"));
 
+                        minAirTempTarget = numberValue(snapshot.child("minAirTemp"));
+                        maxAirTempTarget = numberValue(snapshot.child("maxAirTemp"));
+                        minHumidityTarget = numberValue(snapshot.child("minHumidity"));
+                        maxHumidityTarget = numberValue(snapshot.child("maxHumidity"));
+                        minWaterTempTarget = numberValue(snapshot.child("minWaterTemp"));
+                        maxWaterTempTarget = numberValue(snapshot.child("maxWaterTemp"));
+                        minWaterLevelTarget = numberValue(snapshot.child("minWaterLevel"));
+                        maxWaterLevelTarget = numberValue(snapshot.child("maxWaterLevel"));
+
                         highAirTempThreshold = numberValue(snapshot.child("highAirTemp"));
                         airTempReleaseThreshold = numberValue(snapshot.child("airTempRelease"));
 
@@ -729,22 +752,45 @@ public class SystemReportsFragment extends Fragment {
             return;
         }
 
-        LineDataSet dataSet = new LineDataSet(entries, filter.displayParameter);
         int primaryColor = getResources().getColor(R.color.primary);
-        dataSet.setColor(primaryColor);
-        dataSet.setCircleColor(primaryColor);
-        dataSet.setValueTextColor(Color.BLACK);
-        dataSet.setLineWidth(2f);
-        dataSet.setDrawCircles(false);
-        // Point values are shown on tap via the marker instead of being
-        // printed over every point, which made the chart unreadable.
-        dataSet.setDrawValues(false);
-        dataSet.setHighlightEnabled(true);
-        dataSet.setHighLightColor(primaryColor);
-        dataSet.setHighlightLineWidth(1f);
-        dataSet.setDrawHorizontalHighlightIndicator(false);
+        int outOfRangeColor = ContextCompat.getColor(requireContext(), R.color.state_critical);
 
-        lineChart.setData(new LineData(dataSet));
+        // Only the stretches outside the configured range are red; everything
+        // else keeps the normal series colour. The series is cut into
+        // contiguous runs because MPAndroidChart cannot colour part of one
+        // dataset - see ChartRangeSegmenter for the crossing interpolation.
+        Float rangeMin = configuredRangeMin(canonicalParameter);
+        Float rangeMax = configuredRangeMax(canonicalParameter);
+        List<ChartRangeSegmenter.Segment> segments =
+                ChartRangeSegmenter.segment(entries, rangeMin, rangeMax);
+
+        List<ILineDataSet> dataSets = new ArrayList<>(segments.size());
+        boolean anyOutOfRange = false;
+        for (ChartRangeSegmenter.Segment segment : segments) {
+            int color = segment.outOfRange ? outOfRangeColor : primaryColor;
+            anyOutOfRange |= segment.outOfRange;
+
+            LineDataSet dataSet = new LineDataSet(segment.entries, filter.displayParameter);
+            dataSet.setColor(color);
+            dataSet.setCircleColor(color);
+            dataSet.setValueTextColor(Color.BLACK);
+            dataSet.setLineWidth(2f);
+            dataSet.setDrawCircles(false);
+            // Point values are shown on tap via the marker instead of being
+            // printed over every point, which made the chart unreadable.
+            dataSet.setDrawValues(false);
+            dataSet.setHighlightEnabled(true);
+            dataSet.setHighLightColor(primaryColor);
+            dataSet.setHighlightLineWidth(1f);
+            dataSet.setDrawHorizontalHighlightIndicator(false);
+            dataSets.add(dataSet);
+        }
+
+        lineChart.setData(new LineData(dataSets));
+
+        // A custom legend keeps this at one or two entries no matter how many
+        // runs the series was cut into.
+        applyChartLegend(primaryColor, outOfRangeColor, anyOutOfRange);
         lineChart.getDescription().setEnabled(false);
         lineChart.getLegend().setEnabled(true);
         lineChart.getLegend().setYOffset(8f);
@@ -801,7 +847,10 @@ public class SystemReportsFragment extends Fragment {
         });
         lineChart.getAxisRight().setEnabled(false);
         applyTargetLimitLines(canonicalParameter, axisLeft);
-        applyThresholdBands(canonicalParameter);
+        // No shaded band behind the plot any more: the dashed limit lines plus
+        // the red out-of-range run carry that meaning without tinting the
+        // whole surface.
+        lineChart.setThresholdBands(null);
 
         // Tap marker: reads the same x-axis origin/unit the chart already
         // uses, so it never introduces a second source for a reading.
@@ -844,42 +893,127 @@ public class SystemReportsFragment extends Fragment {
      * show a matching pair.
      */
     private List<ThresholdIndicator> configuredIndicatorsFor(String canonicalParameter) {
+        // Every parameter now draws from the same canonical target range, so the
+        // chart lines, the out-of-range colouring and the summary text can never
+        // disagree. A bound that is genuinely unconfigured is simply not drawn -
+        // nothing is invented to make a chart look symmetric.
         List<ThresholdIndicator> indicators = new ArrayList<>();
-        if (canonicalParameter.equalsIgnoreCase("pH")) {
-            if (minPhThreshold != null) indicators.add(new ThresholdIndicator(minPhThreshold.floatValue(), "Min"));
-            if (maxPhThreshold != null) indicators.add(new ThresholdIndicator(maxPhThreshold.floatValue(), "Max"));
-        } else if (canonicalParameter.equalsIgnoreCase("EC")) {
-            if (minEcThreshold != null) indicators.add(new ThresholdIndicator(minEcThreshold.floatValue(), "Min"));
-            // Max was previously missing here even though maxEcThreshold is
-            // the real upper bound of EC's acceptable range everywhere else
-            // in this screen (getTargetRangeText/isWithinTarget) - added for
-            // consistency, not a new value.
-            if (maxEcThreshold != null) indicators.add(new ThresholdIndicator(maxEcThreshold.floatValue(), "Max"));
-        } else if (canonicalParameter.equalsIgnoreCase("Air Temperature")) {
-            // airTempReleaseThreshold is hysteresis (when the fan turns back
-            // off), not a user-facing lower bound - only the real configured
-            // ceiling is shown, matching isWithinTarget()'s own one-sided
-            // compliance check for this parameter.
-            if (highAirTempThreshold != null) indicators.add(new ThresholdIndicator(highAirTempThreshold.floatValue(), "Max"));
-        } else if (canonicalParameter.equalsIgnoreCase("Humidity")) {
-            // humidityReleaseThreshold is hysteresis, not a lower bound - see
-            // Air Temperature above.
-            if (highHumidityThreshold != null) indicators.add(new ThresholdIndicator(highHumidityThreshold.floatValue(), "Max"));
-        } else if (canonicalParameter.equalsIgnoreCase("Water Temperature")) {
-            // coolerOffTempThreshold is hysteresis, not a lower bound - see
-            // Air Temperature above.
-            if (highWaterTempThreshold != null) indicators.add(new ThresholdIndicator(highWaterTempThreshold.floatValue(), "Limit"));
-        } else if (canonicalParameter.equalsIgnoreCase("Water Level")) {
-            if (refillStartThreshold != null) indicators.add(new ThresholdIndicator(refillStartThreshold.floatValue(), "Refill"));
-        }
+
+        Float min = configuredRangeMin(canonicalParameter);
+        Float max = configuredRangeMax(canonicalParameter);
+
+        if (min != null) indicators.add(new ThresholdIndicator(min, "Min"));
+        if (max != null) indicators.add(new ThresholdIndicator(max, "Max"));
+
         return indicators;
+    }
+
+    /**
+     * Lower bound of the configured target range, or null when the parameter
+     * genuinely has none. Only a real configured minimum is returned - an
+     * actuator release/off value is hysteresis, never a reporting bound.
+     */
+    private Float configuredRangeMin(String canonicalParameter) {
+        ParameterTargetRanges parameter = targetRangeFor(canonicalParameter);
+        if (parameter == null) return null;
+
+        Float snapshot = cycleSnapshotValue(parameter.minKey);
+        if (snapshot != null) return snapshot;
+
+        if (canonicalParameter.equalsIgnoreCase("pH")) return toFloat(minPhThreshold);
+        if (canonicalParameter.equalsIgnoreCase("EC")) return toFloat(minEcThreshold);
+        if (canonicalParameter.equalsIgnoreCase("Air Temperature")) return toFloat(minAirTempTarget);
+        if (canonicalParameter.equalsIgnoreCase("Humidity")) return toFloat(minHumidityTarget);
+        if (canonicalParameter.equalsIgnoreCase("Water Temperature")) return toFloat(minWaterTempTarget);
+        if (canonicalParameter.equalsIgnoreCase("Water Level")) return toFloat(minWaterLevelTarget);
+        return null;
+    }
+
+    /**
+     * The single range-resolution rule for this screen: a cycle keeps the target
+     * ranges it was created under, so a report on a finished cycle stays fixed
+     * even after Settings change. Only a cycle created before snapshots existed
+     * falls back to the current device settings.
+     *
+     * Everything that evaluates a reading - the dashed lines, the red
+     * out-of-range runs, the compliance figure and the summary text - goes
+     * through configuredRangeMin/Max, so no two of them can disagree.
+     */
+    private Float cycleSnapshotValue(String key) {
+        if (selectedCycle == null) return null;
+
+        java.util.Map<String, Object> ranges = selectedCycle.getTargetRanges();
+        if (ranges == null) return null;
+
+        Object value = ranges.get(key);
+        if (!(value instanceof Number)) return null;
+
+        float parsed = ((Number) value).floatValue();
+        if (Float.isNaN(parsed) || Float.isInfinite(parsed)) return null;
+        return parsed;
+    }
+
+    private ParameterTargetRanges targetRangeFor(String canonicalParameter) {
+        for (ParameterTargetRanges parameter : ParameterTargetRanges.values()) {
+            if (parameter.displayName.equalsIgnoreCase(canonicalParameter)) return parameter;
+        }
+        return null;
+    }
+
+    /** Upper bound of the configured target range, or null when there is none. */
+    private Float configuredRangeMax(String canonicalParameter) {
+        ParameterTargetRanges parameter = targetRangeFor(canonicalParameter);
+        if (parameter != null) {
+            Float snapshot = cycleSnapshotValue(parameter.maxKey);
+            if (snapshot != null) return snapshot;
+        }
+
+        if (canonicalParameter.equalsIgnoreCase("pH")) return toFloat(maxPhThreshold);
+        if (canonicalParameter.equalsIgnoreCase("EC")) return toFloat(maxEcThreshold);
+        if (canonicalParameter.equalsIgnoreCase("Air Temperature")) return toFloat(maxAirTempTarget);
+        if (canonicalParameter.equalsIgnoreCase("Humidity")) return toFloat(maxHumidityTarget);
+        if (canonicalParameter.equalsIgnoreCase("Water Temperature")) return toFloat(maxWaterTempTarget);
+        if (canonicalParameter.equalsIgnoreCase("Water Level")) return toFloat(maxWaterLevelTarget);
+        return null;
+    }
+
+    private Float toFloat(Double value) {
+        return value == null ? null : value.floatValue();
+    }
+
+    /**
+     * One legend entry for the normal series, plus "Out of Range" only when the
+     * period actually contains an excursion. The dashed limit lines label
+     * themselves on the axis and are deliberately kept out of the legend.
+     */
+    private void applyChartLegend(int primaryColor, int outOfRangeColor, boolean anyOutOfRange) {
+        List<LegendEntry> legendEntries = new ArrayList<>(2);
+        legendEntries.add(legendEntry("Sensor Reading", primaryColor));
+        if (anyOutOfRange) {
+            legendEntries.add(legendEntry("Out of Range", outOfRangeColor));
+        }
+        lineChart.getLegend().setCustom(legendEntries);
+    }
+
+    private LegendEntry legendEntry(String label, int color) {
+        LegendEntry entry = new LegendEntry();
+        entry.label = label;
+        entry.formColor = color;
+        entry.form = Legend.LegendForm.LINE;
+        return entry;
     }
 
     private void applyTargetLimitLines(String canonicalParameter, YAxis axisLeft) {
         axisLeft.removeAllLimitLines();
-        int lineColor = Color.parseColor("#E53935");
+        // One red in the chart: the same danger token the out-of-range runs use.
+        int lineColor = ContextCompat.getColor(requireContext(), R.color.state_critical);
+        int decimals = markerDecimalsForParameter(canonicalParameter);
         for (ThresholdIndicator indicator : configuredIndicatorsFor(canonicalParameter)) {
-            addLimitLine(axisLeft, indicator.value, indicator.label, lineColor);
+            // "Min 5.5" rather than a bare "Min", so the boundary is readable
+            // without tracing it back to the axis.
+            String label = indicator.label + " "
+                    + String.format(Locale.getDefault(), "%." + decimals + "f", indicator.value);
+            addLimitLine(axisLeft, indicator.value, label, lineColor);
         }
     }
 
@@ -944,56 +1078,6 @@ public class SystemReportsFragment extends Fragment {
         line.setTextSize(9f);
         line.setLabelPosition(LimitLine.LimitLabelPosition.RIGHT_TOP);
         axis.addLimitLine(line);
-    }
-
-    // ------------------------------------------------------------------
-    // Threshold range bands (adviser feedback): very subtle background
-    // shading behind the trend line showing the acceptable zone and the
-    // outside-range zone(s), using the exact same configured thresholds as
-    // applyTargetLimitLines() above - never a separately invented value.
-    // Presentation only: never touches sensor data, filters, or thresholds.
-    // ------------------------------------------------------------------
-
-    private void applyThresholdBands(String canonicalParameter) {
-        List<ThresholdBandLineChart.Band> bands = new ArrayList<>();
-        int primaryColor = getResources().getColor(R.color.primary);
-        // ~8% opacity (0x14 of 0xFF) - subtle tint, never a solid block. The
-        // outside-range tint reuses the same red already used for the
-        // threshold lines above, so no new palette color is introduced.
-        int acceptableColor = (0x14 << 24) | (primaryColor & 0x00FFFFFF);
-        int outsideColor = (0x14 << 24) | 0x00E53935;
-
-        if (canonicalParameter.equalsIgnoreCase("pH") && minPhThreshold != null && maxPhThreshold != null) {
-            addTwoSidedBands(bands, minPhThreshold.floatValue(), maxPhThreshold.floatValue(), acceptableColor, outsideColor);
-        } else if (canonicalParameter.equalsIgnoreCase("EC") && minEcThreshold != null && maxEcThreshold != null) {
-            addTwoSidedBands(bands, minEcThreshold.floatValue(), maxEcThreshold.floatValue(), acceptableColor, outsideColor);
-        } else if (canonicalParameter.equalsIgnoreCase("Air Temperature") && highAirTempThreshold != null) {
-            addUpperBoundOnlyBands(bands, highAirTempThreshold.floatValue(), acceptableColor, outsideColor);
-        } else if (canonicalParameter.equalsIgnoreCase("Humidity") && highHumidityThreshold != null) {
-            addUpperBoundOnlyBands(bands, highHumidityThreshold.floatValue(), acceptableColor, outsideColor);
-        } else if (canonicalParameter.equalsIgnoreCase("Water Temperature") && highWaterTempThreshold != null) {
-            addUpperBoundOnlyBands(bands, highWaterTempThreshold.floatValue(), acceptableColor, outsideColor);
-        }
-        // Water Level and any parameter without a usable configured
-        // threshold: no bands - nothing is fabricated.
-
-        lineChart.setThresholdBands(bands);
-    }
-
-    private void addTwoSidedBands(List<ThresholdBandLineChart.Band> bands, float min, float max,
-                                   int acceptableColor, int outsideColor) {
-        bands.add(new ThresholdBandLineChart.Band(Float.NaN, min, outsideColor));
-        bands.add(new ThresholdBandLineChart.Band(min, max, acceptableColor));
-        bands.add(new ThresholdBandLineChart.Band(max, Float.NaN, outsideColor));
-    }
-
-    // For a parameter with only a configured ceiling (no real lower bound -
-    // see the hysteresis note in applyTargetLimitLines): acceptable below
-    // it, outside above it. No low-side band is fabricated.
-    private void addUpperBoundOnlyBands(List<ThresholdBandLineChart.Band> bands, float max,
-                                         int acceptableColor, int outsideColor) {
-        bands.add(new ThresholdBandLineChart.Band(Float.NaN, max, acceptableColor));
-        bands.add(new ThresholdBandLineChart.Band(max, Float.NaN, outsideColor));
     }
 
     // ------------------------------------------------------------------
@@ -1104,88 +1188,76 @@ public class SystemReportsFragment extends Fragment {
     // coolerOffTemp, refillStopLevel), which describe when automation kicks
     // in/out, not what counts as an acceptable reading for this report.
     private Boolean isWithinTarget(String canonicalParameter, float value) {
-        if (canonicalParameter.equalsIgnoreCase("pH")) {
-            if (minPhThreshold == null || maxPhThreshold == null) return null;
-            return value >= minPhThreshold && value <= maxPhThreshold;
-        }
-        if (canonicalParameter.equalsIgnoreCase("EC")) {
-            if (minEcThreshold == null || maxEcThreshold == null) return null;
-            return value >= minEcThreshold && value <= maxEcThreshold;
-        }
-        if (canonicalParameter.equalsIgnoreCase("Air Temperature")) {
-            if (highAirTempThreshold == null) return null;
-            return value <= highAirTempThreshold;
-        }
-        if (canonicalParameter.equalsIgnoreCase("Humidity")) {
-            if (highHumidityThreshold == null) return null;
-            return value <= highHumidityThreshold;
-        }
-        if (canonicalParameter.equalsIgnoreCase("Water Temperature")) {
-            if (highWaterTempThreshold == null) return null;
-            return value <= highWaterTempThreshold;
-        }
-        if (canonicalParameter.equalsIgnoreCase("Water Level")) {
-            if (refillStartThreshold == null) return null;
-            return value >= refillStartThreshold;
-        }
-        return null;
+        Float min = configuredRangeMin(canonicalParameter);
+        Float max = configuredRangeMax(canonicalParameter);
+
+        // Nothing configured on either side means compliance cannot be judged.
+        if (min == null && max == null) return null;
+
+        // Inclusive at both bounds, and delegated to the same helper the chart
+        // colouring uses, so the compliance figure and the red segments can
+        // never disagree about what "out of range" means.
+        return !ChartRangeSegmenter.isOutOfRange(value, min, max);
     }
 
-    // Returns the complete farmer-facing label, including its own prefix -
-    // "Acceptable range" for the two-sided pH/EC ranges, "Upper limit" for
-    // the one-sided Air Temperature/Humidity/Water Temperature ceilings, and
-    // "Low-water threshold" for Water Level - so a one-sided limit is never
-    // presented as if it were a "target range."
+    // The farmer-facing range label. Every parameter now has a canonical target
+    // range, so this reads the same values the chart draws and the compliance
+    // figure uses - the summary can no longer say "under 28" while the chart
+    // shows 20-28. Control/hysteresis values are still shown, but described as
+    // when equipment switches rather than presented as bounds.
     private String getTargetRangeText(String canonicalParameter) {
-        if (canonicalParameter.equalsIgnoreCase("pH")) {
-            if (minPhThreshold == null || maxPhThreshold == null) return "No configured acceptable range for this parameter.";
-            String text = String.format(Locale.getDefault(), "Acceptable range: %.2f – %.2f", minPhThreshold, maxPhThreshold);
-            if (phTargetMinThreshold != null && phTargetMaxThreshold != null) {
-                text += String.format(Locale.getDefault(), " (correction target: %.2f – %.2f)", phTargetMinThreshold, phTargetMaxThreshold);
-            }
-            return text;
+        Float min = configuredRangeMin(canonicalParameter);
+        Float max = configuredRangeMax(canonicalParameter);
+
+        if (min == null && max == null) {
+            return "No configured target range for this parameter.";
         }
-        if (canonicalParameter.equalsIgnoreCase("EC")) {
-            if (minEcThreshold == null || maxEcThreshold == null) return "No configured acceptable range for this parameter.";
-            String text = String.format(Locale.getDefault(), "Acceptable range: %.2f – %.2f mS/cm", minEcThreshold, maxEcThreshold);
-            if (ecTargetMinThreshold != null && ecTargetMaxThreshold != null) {
-                text += String.format(Locale.getDefault(), " (correction target: %.2f – %.2f mS/cm)", ecTargetMinThreshold, ecTargetMaxThreshold);
-            }
-            return text;
+
+        final String unit = getUnitForParameter(canonicalParameter);
+        final int decimals = markerDecimalsForParameter(canonicalParameter);
+        final String number = "%." + decimals + "f";
+
+        String text;
+        if (min != null && max != null) {
+            text = String.format(Locale.getDefault(),
+                    "Target range: " + number + " \u2013 " + number + "%s", min, max, unit);
+        } else if (max != null) {
+            text = String.format(Locale.getDefault(), "Upper limit: " + number + "%s", max, unit);
+        } else {
+            text = String.format(Locale.getDefault(), "Lower limit: " + number + "%s", min, unit);
         }
-        if (canonicalParameter.equalsIgnoreCase("Air Temperature")) {
-            if (highAirTempThreshold == null) return "No configured upper limit for this parameter.";
-            String text = String.format(Locale.getDefault(), "Upper limit: %.1f°C", highAirTempThreshold);
-            if (airTempReleaseThreshold != null) {
-                text += String.format(Locale.getDefault(), " (fan turns off again at %.1f°C)", airTempReleaseThreshold);
-            }
-            return text;
+
+        if (canonicalParameter.equalsIgnoreCase("pH")
+                && phTargetMinThreshold != null && phTargetMaxThreshold != null) {
+            text += String.format(Locale.getDefault(),
+                    " (correction target: %.2f \u2013 %.2f)", phTargetMinThreshold, phTargetMaxThreshold);
+        } else if (canonicalParameter.equalsIgnoreCase("EC")
+                && ecTargetMinThreshold != null && ecTargetMaxThreshold != null) {
+            text += String.format(Locale.getDefault(),
+                    " (correction target: %.2f \u2013 %.2f mS/cm)", ecTargetMinThreshold, ecTargetMaxThreshold);
+        } else if (canonicalParameter.equalsIgnoreCase("Air Temperature")
+                && highAirTempThreshold != null && airTempReleaseThreshold != null) {
+            text += String.format(Locale.getDefault(),
+                    " (fan runs above %.1f\u00B0C, off again at %.1f\u00B0C)",
+                    highAirTempThreshold, airTempReleaseThreshold);
+        } else if (canonicalParameter.equalsIgnoreCase("Humidity")
+                && highHumidityThreshold != null && humidityReleaseThreshold != null) {
+            text += String.format(Locale.getDefault(),
+                    " (fan runs above %.1f%%, off again at %.1f%%)",
+                    highHumidityThreshold, humidityReleaseThreshold);
+        } else if (canonicalParameter.equalsIgnoreCase("Water Temperature")
+                && highWaterTempThreshold != null && coolerOffTempThreshold != null) {
+            text += String.format(Locale.getDefault(),
+                    " (cooling runs above %.1f\u00B0C, off again at %.1f\u00B0C)",
+                    highWaterTempThreshold, coolerOffTempThreshold);
+        } else if (canonicalParameter.equalsIgnoreCase("Water Level")
+                && refillStartThreshold != null && refillStopThreshold != null) {
+            text += String.format(Locale.getDefault(),
+                    " (refill starts at %.1f%%, fills to %.1f%%)",
+                    refillStartThreshold, refillStopThreshold);
         }
-        if (canonicalParameter.equalsIgnoreCase("Humidity")) {
-            if (highHumidityThreshold == null) return "No configured upper limit for this parameter.";
-            String text = String.format(Locale.getDefault(), "Upper limit: %.1f%%", highHumidityThreshold);
-            if (humidityReleaseThreshold != null) {
-                text += String.format(Locale.getDefault(), " (fan turns off again at %.1f%%)", humidityReleaseThreshold);
-            }
-            return text;
-        }
-        if (canonicalParameter.equalsIgnoreCase("Water Temperature")) {
-            if (highWaterTempThreshold == null) return "No configured upper limit for this parameter.";
-            String text = String.format(Locale.getDefault(), "Upper limit: %.1f°C", highWaterTempThreshold);
-            if (coolerOffTempThreshold != null) {
-                text += String.format(Locale.getDefault(), " (cooling turns off again at %.1f°C)", coolerOffTempThreshold);
-            }
-            return text;
-        }
-        if (canonicalParameter.equalsIgnoreCase("Water Level")) {
-            if (refillStartThreshold == null) return "No configured low-water threshold for this parameter.";
-            String text = String.format(Locale.getDefault(), "Low-water threshold: %.1f%%", refillStartThreshold);
-            if (refillStopThreshold != null) {
-                text += String.format(Locale.getDefault(), " (automatic refill target: %.1f%%)", refillStopThreshold);
-            }
-            return text;
-        }
-        return "No configured target for this parameter.";
+
+        return text;
     }
 
     // Plain-language interpretation shown on screen under "What This Means"

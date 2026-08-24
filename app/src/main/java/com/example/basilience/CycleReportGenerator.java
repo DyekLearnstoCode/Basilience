@@ -415,8 +415,8 @@ public class CycleReportGenerator {
         y = drawSectionHeading(canvas, paint, "Fogging Summary", x, y);
         applyBodyPaint(paint);
         y = drawTextBlock(canvas, paint, "Status: " + status, x, y);
-        y = drawTextBlock(canvas, paint, "Total Sessions: " + totals.totalSessionCount, x, y);
-        y = drawTextBlock(canvas, paint, "Total Fogging Runtime: "
+        y = drawTextBlock(canvas, paint, "Fogging Sessions: " + totals.totalSessionCount, x, y);
+        y = drawTextBlock(canvas, paint, "Total Fogging Time: "
                 + DurationFormatter.formatRuntime(totals.totalRuntimeMs), x, y);
         y = drawTextBlock(canvas, paint, "Average Session: "
                 + DurationFormatter.formatSession(totals.averageSessionDurationMs), x, y);

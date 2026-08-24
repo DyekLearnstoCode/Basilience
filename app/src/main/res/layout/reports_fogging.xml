@@ -61,7 +61,7 @@
                     style="@style/Basilience.PageSubtitle"
                     android:layout_marginTop="@dimen/ds_space_xs"
                     android:gravity="center"
-                    android:text="Mist-delivery activity for the selected cycle" />
+                    android:text="When the fogger ran, how often, and for how long during the selected cycle" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -364,7 +364,7 @@
                             android:layout_height="wrap_content"
                             style="@style/Basilience.MetricLabel"
                             android:layout_marginTop="2dp"
-                            android:text="Sessions" />
+                            android:text="Fogging Sessions" />
                     </LinearLayout>
 
                     <View
@@ -391,7 +391,7 @@
                             android:layout_height="wrap_content"
                             style="@style/Basilience.MetricLabel"
                             android:layout_marginTop="2dp"
-                            android:text="Runtime" />
+                            android:text="Total Fogging Time" />
                     </LinearLayout>
 
                     <View
@@ -418,7 +418,7 @@
                             android:layout_height="wrap_content"
                             style="@style/Basilience.MetricLabel"
                             android:layout_marginTop="2dp"
-                            android:text="Avg Session" />
+                            android:text="Average Session" />
                     </LinearLayout>
                 </LinearLayout>
 
@@ -435,7 +435,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         style="@style/Basilience.SectionTitle"
-                        android:text="Daily Fogging Runtime" />
+                        android:text="Fogging Time Per Day" />
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -558,7 +558,7 @@
                         android:layout_height="wrap_content"
                         style="@style/Basilience.Caption"
                         android:layout_marginTop="2dp"
-                        android:text="Current estimate" />
+                        android:text="Rough estimate from typical use" />
 
                     <LinearLayout
                         android:id="@+id/waterOutlookValues"

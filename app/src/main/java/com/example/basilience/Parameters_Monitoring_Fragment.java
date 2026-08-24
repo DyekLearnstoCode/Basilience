@@ -78,6 +78,16 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private boolean airTemperatureAlertActive;
     private boolean waterTemperatureAlertActive;
     private boolean waterLevelAlertActive;
+    private boolean humidityAlertActive;
+
+    // Direction of the current excursion per parameter, so Monitoring can show
+    // Below Range / Above Range instead of a single undirected warning.
+    private boolean phBelowRange, phAboveRange;
+    private boolean ecBelowRange, ecAboveRange;
+    private boolean airTempBelowRange, airTempAboveRange;
+    private boolean humidityBelowRange, humidityAboveRange;
+    private boolean waterTempBelowRange, waterTempAboveRange;
+    private boolean waterLevelBelowRange, waterLevelAboveRange;
 
     // Directional firmware alert flags, kept alongside the combined flags above
     // (which drive reading colour only) so a manual action can tell which way
@@ -490,15 +500,34 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 overrideFlags.lowWater = isAlertActive(snapshot, "lowWater");
                 alertsLoaded = true;
 
-                phAlertActive = isAlertActive(snapshot, "phLow")
-                        || isAlertActive(snapshot, "phHigh")
+                // Direction is kept, not collapsed, so each reading can say
+                // Below Range / Normal / Above Range rather than just "Warning".
+                phBelowRange = isAlertActive(snapshot, "phLow");
+                phAboveRange = isAlertActive(snapshot, "phHigh");
+                phAlertActive = phBelowRange || phAboveRange
                         || isAlertActive(snapshot, "phOutOfRange");
-                ecAlertActive = isAlertActive(snapshot, "ecLow")
-                        || isAlertActive(snapshot, "ecHigh");
-                airTemperatureAlertActive = isAlertActive(snapshot, "lowAirTemperature")
-                        || isAlertActive(snapshot, "highTemperature");
-                waterTemperatureAlertActive = isAlertActive(snapshot, "waterTempOutOfRange");
-                waterLevelAlertActive = isAlertActive(snapshot, "lowWater");
+
+                ecBelowRange = isAlertActive(snapshot, "ecLow");
+                ecAboveRange = isAlertActive(snapshot, "ecHigh");
+                ecAlertActive = ecBelowRange || ecAboveRange;
+
+                airTempBelowRange = isAlertActive(snapshot, "lowAirTemperature");
+                airTempAboveRange = isAlertActive(snapshot, "highTemperature");
+                airTemperatureAlertActive = airTempBelowRange || airTempAboveRange;
+
+                humidityBelowRange = isAlertActive(snapshot, "humidityLow");
+                humidityAboveRange = isAlertActive(snapshot, "humidityHigh");
+                humidityAlertActive = humidityBelowRange || humidityAboveRange;
+
+                waterTempBelowRange = isAlertActive(snapshot, "waterTempLow");
+                waterTempAboveRange = isAlertActive(snapshot, "waterTempOutOfRange");
+                waterTemperatureAlertActive = waterTempBelowRange || waterTempAboveRange;
+
+                // Target-range classification for display. lowWater stays the
+                // separate refill CONTROL signal and is not shown as a range.
+                waterLevelBelowRange = isAlertActive(snapshot, "waterLevelLow");
+                waterLevelAboveRange = isAlertActive(snapshot, "waterLevelHigh");
+                waterLevelAlertActive = waterLevelBelowRange || waterLevelAboveRange;
                 updateSensorUI();
             }
 
@@ -1325,12 +1354,17 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (tvWaterLevel != null) tvWaterLevel.setText(formatSensor(
                 data != null ? data.waterLevel : null, 0.0, 100.0, 1, "%", null));
 
-        applyParameterStateColor(tvPH, tvPHStatus, phAlertActive);
-        applyParameterStateColor(tvEC, tvECStatus, ecAlertActive);
-        applyParameterStateColor(tvTemp, tvTempStatus, airTemperatureAlertActive);
-        applyParameterStateColor(tvHumidity, tvHumidityStatus, false);
-        applyParameterStateColor(tvWaterTemp, tvWaterTempStatus, waterTemperatureAlertActive);
-        applyParameterStateColor(tvWaterLevel, tvWaterLevelStatus, waterLevelAlertActive);
+        applyParameterStateColor(tvPH, tvPHStatus, phAlertActive, phBelowRange, phAboveRange);
+        applyParameterStateColor(tvEC, tvECStatus, ecAlertActive, ecBelowRange, ecAboveRange);
+        applyParameterStateColor(tvTemp, tvTempStatus, airTemperatureAlertActive,
+                airTempBelowRange, airTempAboveRange);
+        // Humidity now has a real target range instead of always reading Normal.
+        applyParameterStateColor(tvHumidity, tvHumidityStatus, humidityAlertActive,
+                humidityBelowRange, humidityAboveRange);
+        applyParameterStateColor(tvWaterTemp, tvWaterTempStatus, waterTemperatureAlertActive,
+                waterTempBelowRange, waterTempAboveRange);
+        applyParameterStateColor(tvWaterLevel, tvWaterLevelStatus, waterLevelAlertActive,
+                waterLevelBelowRange, waterLevelAboveRange);
     }
 
     private boolean isAlertActive(DataSnapshot alerts, String key) {
@@ -1339,12 +1373,28 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
     /** Applies the same Normal/Warning/No Data state to both the value's color and a text status label. */
     private void applyParameterStateColor(TextView valueView, TextView statusView, boolean alertActive) {
+        applyParameterStateColor(valueView, statusView, alertActive, false, false);
+    }
+
+    /**
+     * Renders one reading's state. A missing reading stays "No Data" and is
+     * never reported as out of range; an excursion is labelled with its
+     * direction when the device published one.
+     */
+    private void applyParameterStateColor(TextView valueView, TextView statusView,
+                                          boolean alertActive, boolean belowRange, boolean aboveRange) {
         if (valueView == null) return;
         final int colorRes;
         final String statusText;
         if ("--".contentEquals(valueView.getText())) {
             colorRes = R.color.state_no_data;
             statusText = "No Data";
+        } else if (belowRange) {
+            colorRes = R.color.state_critical;
+            statusText = "Below Range";
+        } else if (aboveRange) {
+            colorRes = R.color.state_critical;
+            statusText = "Above Range";
         } else if (alertActive) {
             colorRes = R.color.state_critical;
             statusText = "Warning";

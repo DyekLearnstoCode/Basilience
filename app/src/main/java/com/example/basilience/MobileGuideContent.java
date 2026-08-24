@@ -61,7 +61,8 @@ final class MobileGuideContent {
                         "The top grid shows pH, EC, Air Temperature, and Humidity.",
                         "The Details section below shows Water Temperature and Water Level.",
                         "Each card shows the current value with its unit (°C for temperature, % for humidity and water level, mS/cm for EC; pH has no unit).",
-                        "Each card also shows a status word: Normal, Warning, or No Data, matching the value's color."))
+                        "Each card also shows a status word: Normal, Below Range, Above Range, or No Data, matching the value's color.",
+                        "Every parameter has a target range with a Minimum and a Maximum. The Minimum is the lowest reading still considered inside the target growing range, and the Maximum is the highest. A reading outside either limit is shown as Below Range or Above Range here, and appears in red on the Reports charts."))
                 .tip("If a card shows \"--\" and a No Data status, the sensor reading hasn't arrived yet or is currently invalid — this is not the same as a Warning.")
                 .build());
 
@@ -140,6 +141,7 @@ final class MobileGuideContent {
                         "Choose a Parameter (pH, EC, temperature, humidity, or water level).",
                         "Choose a Period: Entire, Today, 7D, 30D, or Custom.",
                         "The chart, Average/Highest/Lowest metrics, and \"What This Means\" summary update for that selection.",
+                        "The dashed Minimum and Maximum lines are the target ranges that were in use when that growth cycle was created, so an older report keeps reading the way it did at the time. Readings outside them are drawn in red.",
                         "Use the share icon at the top to export the report as a PDF."))
                 .build());
 
@@ -191,9 +193,22 @@ final class MobileGuideContent {
                 .imagePlaceholder("Settings screen listing Account Information, About Basilience, and Terms and Agreements")
                 .steps(Arrays.asList(
                         "Account Information — view and edit your profile, or log out.",
+                        "Parameter Target Ranges — the acceptable minimum and maximum for each monitored parameter. Admins can change them; everyone else can view them.",
                         "About Basilience — general information about the app.",
                         "Terms and Agreements — the app's terms of use.",
                         "Developer Options — Admin Only. Diagnostic and testing utilities used for system maintenance and validation. Only appears once a developer-mode flag has been turned on for the device — see the Developer Options section of this guide."))
+                .build());
+
+        list.add(GuideSection.builder("Parameter Target Ranges")
+                .description("The acceptable growing range for each monitored parameter. Settings > Parameter Target Ranges.")
+                .imagePlaceholder("Parameter Target Ranges screen showing Minimum and Maximum for each parameter")
+                .steps(Arrays.asList(
+                        "Each parameter has a Minimum and a Maximum. The Minimum is the lowest value considered acceptable, and the Maximum is the highest.",
+                        "A reading below the minimum or above the maximum is marked as out of range in Monitoring, and appears in red on the Reports charts.",
+                        "Enter the values for a parameter and tap Save Changes. The minimum must be lower than the maximum.",
+                        "Changes reach the device within about a minute and are used for monitoring, alerts and reports from then on.",
+                        "Only an Admin can change these values; other users can open the screen to see what they are currently set to."))
+                .tip("Each growth cycle keeps the target ranges that were in use when the cycle was created, so changing the ranges later does not change that cycle's report. Cycles created before this feature use the ranges configured now.")
                 .build());
 
         list.add(GuideSection.builder("Account Settings")
@@ -276,7 +291,8 @@ final class MobileGuideContent {
         list.add(GuideSection.builder("Common Messages")
                 .description("A quick reference for status text you may see around the app.")
                 .steps(Arrays.asList(
-                        "No Data — a sensor reading hasn't arrived yet or is currently invalid. Not the same as Warning.",
+                        "Below Range / Above Range \u2014 the reading is outside the parameter's configured Minimum or Maximum.",
+                        "No Data \u2014 a sensor reading hasn't arrived yet or is currently invalid. Not the same as being out of range.",
                         "Device Unreachable — Basilience hasn't heard from the device recently enough to consider it online.",
                         "Unable to load data — a screen couldn't refresh from Basilience's servers; check your phone's internet connection and try again.",
                         "No growth cycles yet — this device has no cycles recorded yet; an Admin or assigned Personnel can add one.",

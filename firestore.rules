@@ -119,7 +119,12 @@ service cloud.firestore {
         // write may only set completedBy to the caller's own UID. Writes that
         // do not touch completedBy (harvest totals, frequency edits) are
         // unaffected, so this needed no restructuring of the clause.
-        allow update: if (isAdmin() && isAssignedToDevice(deviceId) &&
+        // targetRanges is the historical record of what this cycle was grown
+        // against, so it is written once at creation and never edited - by
+        // anyone. Without this the broad admin clause below would let it be
+        // rewritten, silently changing how a finished cycle's report reads.
+        allow update: if !request.resource.data.diff(resource.data).affectedKeys().hasAny(['targetRanges']) &&
+                        ((isAdmin() && isAssignedToDevice(deviceId) &&
                          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['completedBy']) ||
                           request.resource.data.completedBy == request.auth.uid)) ||
                         (isFarmer() && isAssignedToDevice(deviceId) &&
@@ -134,7 +139,7 @@ service cloud.firestore {
                          request.resource.data.completedBy == request.auth.uid &&
                          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                            'status', 'endDate', 'nextHarvestDate', 'completedBy'
-                         ]));
+                         ])));
 
         // HARVEST LOGS sub-collection
         match /harvestLogs/{harvestId} {

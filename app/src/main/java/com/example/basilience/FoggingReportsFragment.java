@@ -1194,7 +1194,7 @@ public class FoggingReportsFragment extends Fragment {
     private String buildFoggingInterpretation(String status, int autoCount, int manualCount) {
         switch (status) {
             case "NO FOGGING RECORDS":
-                return "No fogging activity was recorded for this period. Check that the system was running and that fogging records were being saved.";
+                return "No fogging sessions were recorded for this growth cycle in the selected period. This is not necessarily a problem - fogging does not run while a cycle is paused, and it pauses when the reservoir is low or the system is holding for safety.";
             case "REPORT UNAVAILABLE":
                 return "Fogging records could not be loaded. Check your connection and try again.";
             case "CHECK FOGGING ACTIVITY":
@@ -1677,18 +1677,22 @@ public class FoggingReportsFragment extends Fragment {
                 {"Why is this useful?",
                         "It helps you confirm the basil roots were getting mist regularly, spot days with little or no fogging, and see roughly when the water tank will need a refill."},
                 {"What the numbers mean",
-                        "• Sessions - how many times fogging ran during the selected period.\n"
-                                + "• Runtime - the total time fogging was on.\n"
-                                + "• Avg Session - how long a typical fogging run lasted.\n"
+                        "• Fogging Sessions - how many separate times the fogger ran. One session is one continuous run, from the moment the fogger switches on until it switches off.\n"
+                                + "• Total Fogging Time - all of those sessions added together.\n"
+                                + "• Average Session - the total time divided by the number of sessions.\n"
                                 + "• Automatic - fogging the system started on its own.\n"
                                 + "• Manual - fogging someone started by hand.\n"
                                 + "• Fogging Strategy - the different fogging patterns the system used, such as Normal or Startup, and how long each one ran."},
-                {"Daily Fogging Runtime",
-                        "The chart shows how much fogging time was recorded on each day of the period (or each hour when you pick Today). Tap any bar to see that day's exact fogging time."},
+                {"Fogging Time Per Day",
+                        "Each bar is the total fogging time recorded in one day - or in one hour when you pick Today. A bar of zero means no fogging was recorded then. Tap any bar to see its exact total."},
                 {"Water Outlook",
-                        "This is a current estimate of how much water is left and roughly how long it may last, based on the last 7 days of fogging. It is separate from the period you picked above, so it does not change when you switch cycles or periods."},
+                        "A rough estimate of how much water is left and roughly how long it may last, worked out from the last 7 days of fogging and a typical tank size and fogger usage rate. Basilience does not measure water use directly, so treat this as a guide rather than a reading. It is separate from the period you picked above, so it does not change when you switch cycles or periods."},
                 {"Recent Fogging Activity",
                         "The most recent fogging sessions, newest first. A session still in progress shows as running now. If the system restarted in the middle of a session, its length cannot be trusted and it is marked as an incomplete record."},
+                {"What this report cannot tell you",
+                        "\u2022 It records equipment activity, not how much water the plants took up. The Water Outlook figures are a rough estimate from typical use, not a measurement.\n"
+                                + "\u2022 Fogging that happens while the device is offline is not added to this history afterwards, so a long connection outage can leave a gap.\n"
+                                + "\u2022 A session that was interrupted by a restart is shown as an incomplete record and is left out of the totals."},
                 {"How to use it",
                         "• Pick a cultivation cycle from the dropdown - both in-progress and finished cycles are available.\n"
                                 + "• Use the period buttons (Entire, Today, 7D, 30D, Custom) to narrow the range - it always stays inside the selected cycle's dates.\n"

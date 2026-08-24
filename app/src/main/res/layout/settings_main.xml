@@ -105,6 +105,70 @@
 
                 </LinearLayout>
 
+                <!-- PARAMETER TARGET RANGES -->
+                <LinearLayout
+                    android:id="@+id/rowTargetRanges"
+                    android:layout_width="match_parent"
+                    android:layout_height="90dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    android:layout_marginBottom="12dp"
+                    android:background="@drawable/card_option"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="12dp">
+
+                    <ImageView
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:padding="0dp"
+                        android:scaleType="fitCenter"
+                        android:src="@drawable/ic_science_24" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Parameter Target Ranges"
+                            style="@style/Basilience.CardOptionLabel" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Set the acceptable minimum and maximum values used for monitoring, alerts, and reports."
+                            android:textColor="@color/nav_inactive"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <FrameLayout
+                        android:id="@+id/btnTargetRanges"
+                        android:layout_width="50dp"
+                        android:layout_height="50dp"
+                        android:background="@drawable/circle_button"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:duplicateParentState="true"
+                        android:importantForAccessibility="no"
+                        android:gravity="center">
+
+                        <ImageView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center"
+                            android:src="@drawable/enter_arrow" />
+
+                    </FrameLayout>
+
+                </LinearLayout>
+
                 <!-- ABOUT -->
                 <LinearLayout
                     android:id="@+id/rowAbout"

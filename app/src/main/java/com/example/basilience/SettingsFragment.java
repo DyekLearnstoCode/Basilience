@@ -48,6 +48,11 @@ public class SettingsFragment extends Fragment {
         // Account Information
         bindSettingsRow(view, R.id.rowAccount, navController, R.id.action_settings_to_accountFragment);
 
+        // Parameter Target Ranges - a normal cultivation setting, so it sits
+        // with the other Settings rows rather than under Developer Options.
+        bindSettingsRow(view, R.id.rowTargetRanges, navController,
+                R.id.action_settings_to_targetRangesFragment);
+
         // About Basilience
         bindSettingsRow(view, R.id.rowAbout, navController, R.id.action_settings_to_aboutFragment);
 

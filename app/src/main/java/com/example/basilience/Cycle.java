@@ -19,6 +19,16 @@ public class Cycle {
     // Set only when the cycle is completed. Historical cycles completed before
     // this field existed simply leave it null and deserialize normally.
     private String completedBy;
+
+    // The parameter target ranges in force when this cycle was created, keyed by
+    // the canonical setting names (minPH, maxAirTemp, ...). Reporting metadata
+    // only - the device and Monitoring always run on current settings.
+    //
+    // Deliberately Map<String, Object> rather than Map<String, Double>: Firestore
+    // can hand a whole number back as a Long, and a stricter declaration would
+    // make the whole document fail to deserialize. Legacy cycles created before
+    // this existed simply leave it null.
+    private java.util.Map<String, Object> targetRanges;
     private int totalHarvestCount;
     private double totalHarvestWeight;
     private String notes;
@@ -72,6 +82,9 @@ public class Cycle {
 
     public String getCompletedBy() { return completedBy; }
     public void setCompletedBy(String completedBy) { this.completedBy = completedBy; }
+
+    public java.util.Map<String, Object> getTargetRanges() { return targetRanges; }
+    public void setTargetRanges(java.util.Map<String, Object> targetRanges) { this.targetRanges = targetRanges; }
 
     public int getTotalHarvestCount() { return totalHarvestCount; }
     public void setTotalHarvestCount(int totalHarvestCount) { this.totalHarvestCount = totalHarvestCount; }

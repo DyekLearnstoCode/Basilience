@@ -31,6 +31,7 @@ import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.functions.FirebaseFunctions;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.ServerValue;
 
@@ -570,12 +571,60 @@ public class Database_Helper {
                 cycle.setCreatedBy(getCurrentUid());
             }
 
-            return db.collection("devices")
-                    .document(selectedDeviceId)
-                    .collection("cycles")
-                    .document(cycle.getCycleId())
-                    .set(cycle);
+            // Capture the target ranges in force right now, then write them with
+            // the cycle in ONE set() - so a cycle can never briefly exist without
+            // the ranges its report will be judged against.
+            return buildTargetRangeSnapshot(selectedDeviceId).onSuccessTask(ranges -> {
+                cycle.setTargetRanges(ranges);
+
+                return db.collection("devices")
+                        .document(selectedDeviceId)
+                        .collection("cycles")
+                        .document(cycle.getCycleId())
+                        .set(cycle);
+            });
         });
+    }
+
+    /**
+     * Resolves the twelve canonical target-range values for a cycle snapshot.
+     *
+     * Only acceptable growing ranges are captured. Actuator control settings
+     * (refillStartLevel/refillStopLevel, coolerOffTemp, airTempRelease,
+     * humidityRelease) are deliberately excluded - they say when equipment
+     * switches, which is not what a report evaluates a reading against.
+     *
+     * Never fails: a settings read that errors, or a field that has never been
+     * written, falls back to the same canonical default Android and the firmware
+     * both compile in. Cycle creation must not depend on a network-only fetch
+     * when a correct default is already known.
+     */
+    private Task<Map<String, Object>> buildTargetRangeSnapshot(String deviceId) {
+        return getDeviceSettings(deviceId).get().continueWith(task -> {
+            DataSnapshot snapshot = task.isSuccessful() ? task.getResult() : null;
+            if (!task.isSuccessful()) {
+                Log.w(TAG, "Unable to read settings for cycle target-range snapshot; using defaults",
+                        task.getException());
+            }
+
+            Map<String, Object> ranges = new HashMap<>();
+            for (ParameterTargetRanges parameter : ParameterTargetRanges.values()) {
+                ranges.put(parameter.minKey, readSettingValue(snapshot, parameter.minKey, parameter.defaultMin));
+                ranges.put(parameter.maxKey, readSettingValue(snapshot, parameter.maxKey, parameter.defaultMax));
+            }
+            return ranges;
+        });
+    }
+
+    private double readSettingValue(DataSnapshot snapshot, String key, float fallback) {
+        if (snapshot != null) {
+            Object value = snapshot.child(key).getValue();
+            if (value instanceof Number) {
+                double parsed = ((Number) value).doubleValue();
+                if (!Double.isNaN(parsed) && !Double.isInfinite(parsed)) return parsed;
+            }
+        }
+        return fallback;
     }
 
     public ListenerRegistration listenToCycles(EventListener<QuerySnapshot> listener) {
@@ -632,6 +681,36 @@ public class Database_Helper {
                     .collection("cycles").document(cycleId)
                     .update(updates);
         });
+    }
+
+    /**
+     * Reference to the device's existing RTDB settings node - the single place
+     * target ranges, control thresholds and the light schedule all live.
+     */
+    public DatabaseReference getDeviceSettings(String deviceId) {
+        return rtdb.getReference("devices").child(deviceId).child("settings");
+    }
+
+    /**
+     * Writes the parameter target ranges as one atomic update.
+     *
+     * updateChildren() applies every key or none, so the device can never read
+     * a half-applied range (a new minimum against an old maximum). Only the
+     * keys passed in are touched - control/hysteresis settings and the light
+     * schedule in the same node are left alone.
+     *
+     * Authority is enforced server-side: the RTDB rule on
+     * devices/$deviceId/settings already restricts writes to an ADMIN with
+     * device access, so a non-admin request fails here regardless of the UI.
+     */
+    public Task<Void> saveTargetRanges(String deviceId, Map<String, Object> updates) {
+        if (deviceId == null || deviceId.isEmpty()) {
+            return Tasks.forException(new Exception("No device selected"));
+        }
+        if (updates == null || updates.isEmpty()) {
+            return Tasks.forResult(null);
+        }
+        return getDeviceSettings(deviceId).updateChildren(updates);
     }
 
     public Task<QuerySnapshot> getParameterLogs(long startTime, long endTime) {
