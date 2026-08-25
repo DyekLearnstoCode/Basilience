@@ -359,7 +359,9 @@
                             <com.google.android.material.switchmaterial.SwitchMaterial
                                 android:id="@+id/switchMockEnable"
                                 android:layout_width="wrap_content"
-                                android:layout_height="wrap_content" />
+                                android:layout_height="wrap_content"
+                                android:thumbTint="@color/switch_thumb_tint"
+                                android:trackTint="@color/switch_track_tint" />
                         </LinearLayout>
 
                         <!-- Input Fields -->

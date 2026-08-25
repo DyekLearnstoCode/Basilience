@@ -449,8 +449,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (v != null) {
             SwitchMaterial modeSwitch = v.findViewById(R.id.switchMode);
             if (modeSwitch != null) {
-                modeSwitch.setEnabled(isCurrentlyOnline);
-                modeSwitch.setAlpha(isCurrentlyOnline ? 1.0f : 0.6f);
+                boolean modeSwitchEnabled = isAdminUser() && isCurrentlyOnline;
+                modeSwitch.setEnabled(modeSwitchEnabled);
+                modeSwitch.setAlpha(modeSwitchEnabled ? 1.0f : 0.6f);
             }
         }
 
@@ -577,7 +578,25 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                         modeSwitch.setOnCheckedChangeListener(null);
                         modeSwitch.setChecked(isManualMode);
                         modeSwitch.setText("Manual Mode");
-                        modeSwitch.setOnCheckedChangeListener((buttonView, checked) -> {
+
+                        // Named (not inline) so the Admin guard below can restore
+                        // this exact listener - including its confirmation-dialog
+                        // logic - after reverting a blocked attempt, instead of
+                        // permanently downgrading to the simpler post-confirm
+                        // listener used at lines below.
+                        final android.widget.CompoundButton.OnCheckedChangeListener[] fullListenerRef =
+                                new android.widget.CompoundButton.OnCheckedChangeListener[1];
+                        fullListenerRef[0] = (buttonView, checked) -> {
+                            if (!isAdminUser()) {
+                                // Enabling Manual Mode is Admin-only, same as the
+                                // per-actuator switches - Database_Helper.updateManualMode()
+                                // and the RTDB commands rule both already enforce this.
+                                modeSwitch.setOnCheckedChangeListener(null);
+                                modeSwitch.setChecked(isManualMode);
+                                modeSwitch.setOnCheckedChangeListener(fullListenerRef[0]);
+                                Toast.makeText(getContext(), "You do not have permission to control Manual Mode.", Toast.LENGTH_LONG).show();
+                                return;
+                            }
                             if (checked) {
                                 // Snap back and show confirmation
                                 modeSwitch.setOnCheckedChangeListener(null);
@@ -603,7 +622,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                                 return;
                             }
                             onModeSwitchChanged(modeSwitch, checked);
-                        });
+                        };
+                        modeSwitch.setOnCheckedChangeListener(fullListenerRef[0]);
                     }
                     updateActuatorControls();
                 }
@@ -740,6 +760,16 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         return 0;
     }
 
+    /**
+     * Same SharedPreferences role check already used for btnTriggerRefill/
+     * btnResetSafety in this fragment - manual actuator control shares the
+     * same Admin-only policy as those two.
+     */
+    private boolean isAdminUser() {
+        SharedPreferences localPrefs = requireContext().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
+        return "ADMIN".equalsIgnoreCase(localPrefs.getString("user_role", "FARMER"));
+    }
+
     // =========================================================
     // ACTUATOR UI SETUP — tap shows loading popup, not inline
     // =========================================================
@@ -751,13 +781,31 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         SwitchMaterial toggle = card.findViewById(R.id.switchActuator);
         if (toggle == null) return;
 
+        // Manual actuator control is Admin-only - Database_Helper.updateActuatorState()
+        // gates every write behind checkAdminTask(), and the RTDB commands node's
+        // .write rule requires role === 'ADMIN'. Without this check the switch was
+        // enabled for any signed-in Personnel/Farmer whenever Manual Mode was on,
+        // even though every command they sent was guaranteed to fail server-side.
+        boolean isAdmin = isAdminUser();
+
         // Clear any previous listener first
         toggle.setOnCheckedChangeListener(null);
         // Confirmed firmware state is authoritative for both AUTO and MANUAL.
         toggle.setChecked(actuator.physicalRunning);
-        toggle.setEnabled(isManualMode && isCurrentlyOnline && !isSafetyLock && !isActuatorBusy);
+        toggle.setEnabled(isAdmin && isManualMode && isCurrentlyOnline && !isSafetyLock && !isActuatorBusy);
+        toggle.setAlpha(isAdmin ? 1.0f : 0.6f);
 
         toggle.setOnCheckedChangeListener((buttonView, checked) -> {
+            if (!isAdmin) {
+                // Defense in depth: the switch is disabled above, but this
+                // mirrors the !isManualMode guard immediately below in case the
+                // listener still fires (e.g. accessibility tooling).
+                toggle.setOnCheckedChangeListener(null);
+                toggle.setChecked(actuator.physicalRunning);
+                setupActuatorUI(card, actuator);
+                Toast.makeText(getContext(), "You do not have permission to manually control actuators.", Toast.LENGTH_LONG).show();
+                return;
+            }
             if (!isManualMode) {
                 // Snap back immediately — no popup
                 toggle.setOnCheckedChangeListener(null);
@@ -805,7 +853,10 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                             ManualOverrideAdvisor.CONFIRM_TITLE,
                             ManualOverrideAdvisor.messageFor(condition, advice),
                             "Continue", "Cancel",
-                            () -> sendActuatorCommand(card, actuator, true));
+                            () -> {
+                                Log.d("Monitoring", "[MANUAL-APP] Override confirmed actuator=" + actuator.dbKey + " target=ON");
+                                sendActuatorCommand(card, actuator, true);
+                            });
                     return;
                 }
             }
@@ -838,6 +889,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
      * can defer it without duplicating the request path.
      */
     private void sendActuatorCommand(View card, Actuator actuator, boolean checked) {
+            Log.d("Monitoring", "[MANUAL-APP] sendActuatorCommand actuator=" + actuator.dbKey + " target=" + checked
+                    + " deviceId=" + selectedDeviceId + " isManualMode=" + isManualMode + " isCurrentlyOnline=" + isCurrentlyOnline);
+
             SwitchMaterial toggle = card.findViewById(R.id.switchActuator);
             if (toggle == null) return;
 
@@ -1294,7 +1348,11 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     }
 
     private void updateActuatorControls() {
-        boolean enabled = isManualMode && isCurrentlyOnline && !isSafetyLock;
+        // Same Admin-only gate as setupActuatorUI() - without it, this method
+        // (called from onModeSwitchChanged() and after every command
+        // completes) would re-enable the switches for a non-Admin right
+        // after setupActuatorUI() correctly disabled them.
+        boolean enabled = isAdminUser() && isManualMode && isCurrentlyOnline && !isSafetyLock;
         setActuatorEnabled(actWaterPumpValve, enabled);
         setActuatorEnabled(actCanopyFan, enabled);
         setActuatorEnabled(actGrowLights, enabled);
@@ -1487,8 +1545,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (v != null) {
             SwitchMaterial modeSwitch = v.findViewById(R.id.switchMode);
             if (modeSwitch != null) {
-                modeSwitch.setEnabled(isCurrentlyOnline);
-                modeSwitch.setAlpha(isCurrentlyOnline ? 1.0f : 0.6f);
+                boolean modeSwitchEnabled = isAdminUser() && isCurrentlyOnline;
+                modeSwitch.setEnabled(modeSwitchEnabled);
+                modeSwitch.setAlpha(modeSwitchEnabled ? 1.0f : 0.6f);
             }
         }
 

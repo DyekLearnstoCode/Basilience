@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Brand tint for plain/Material checkboxes (Registration legal consent,
+  Login "Remember me"). Without this, MaterialCheckBox/CheckBox fall back to
+  the stock Material Components accent colour instead of Basilience green.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:alpha="0.5" android:color="@color/state_off" />
+    <item android:state_checked="true" android:color="@color/primary" />
+    <item android:color="@color/state_off" />
+</selector>

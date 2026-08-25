@@ -33,36 +33,132 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="@dimen/container_side_padding">
+            android:paddingTop="@dimen/container_top_padding"
+            android:paddingStart="@dimen/container_side_padding"
+            android:paddingEnd="@dimen/container_side_padding"
+            android:paddingBottom="32dp">
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="24dp"
+                android:layout_marginBottom="16dp"
                 android:gravity="center"
                 android:text="About Basilience"
                 android:textColor="@color/state_primary_text"
                 android:textSize="28sp"
                 android:fontFamily="sans-serif-black"
-                android:letterSpacing="-0.02"
-                 />
+                android:letterSpacing="-0.02" />
+
+            <!-- WHAT BASILIENCE IS -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingExtra="4dp"
+                android:text="Basilience is an IoT-enabled cultivation system designed to support Genovese basil production using fogponics. It connects your growing equipment to this app so you can monitor and manage your farm from your phone."
+                android:textColor="#333333"
+                android:textSize="16sp" />
+
+            <!-- WHAT THE SYSTEM DOES -->
+            <TextView
+                style="@style/Basilience.SectionTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="8dp"
+                android:text="What It Does" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingExtra="5dp"
+                android:textColor="#333333"
+                android:textSize="14.5sp"
+                android:text="●  Monitors growing conditions in real time\n●  Manages automated cultivation equipment\n●  Tracks growth cycles from start to harvest\n●  Records harvests\n●  Sends alerts when something needs your attention\n●  Provides historical reports\n●  Supports assigned farm personnel" />
+
+            <!-- MONITORED PARAMETERS -->
+            <TextView
+                style="@style/Basilience.SectionTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="8dp"
+                android:text="What It Monitors" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingExtra="5dp"
+                android:textColor="#333333"
+                android:textSize="14.5sp"
+                android:text="●  pH\n●  Nutrient concentration (EC)\n●  Air temperature\n●  Humidity\n●  Water temperature\n●  Reservoir water level" />
+
+            <!-- AUTOMATION -->
+            <TextView
+                style="@style/Basilience.SectionTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="8dp"
+                android:text="Automation" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:lineSpacingExtra="4dp"
-                android:text="Basilience is an advanced monitoring and automation system designed to optimize agricultural processes. Our platform provides real-time data insights and remote control capabilities to ensure maximum productivity and sustainability."
                 android:textColor="#333333"
-                android:textSize="16sp" />
+                android:textSize="14.5sp"
+                android:text="Automated cultivation runs while a growth cycle is active, keeping conditions within your target ranges. When no cycle is active, normal cultivation automation is paused, but monitoring and safety functions remain available." />
+
+            <!-- OFFLINE BEHAVIOR -->
+            <TextView
+                style="@style/Basilience.SectionTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="8dp"
+                android:text="Staying Connected" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingExtra="4dp"
+                android:textColor="#333333"
+                android:textSize="14.5sp"
+                android:text="The cultivation device is designed to continue essential local automation during a temporary connection loss." />
+
+            <View
+                style="@style/Basilience.Divider"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="16dp" />
+
+            <!-- PROJECT INFORMATION: subordinate to the operational content
+                 above - smaller, muted, no card - so About still reads as a
+                 user-facing screen rather than a research abstract. -->
+            <TextView
+                style="@style/Basilience.SectionLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:text="PROJECT INFORMATION" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="20dp"
+                android:lineSpacingExtra="3dp"
+                android:textColor="@color/nav_inactive"
+                android:textSize="12.5sp"
+                android:textStyle="italic"
+                android:text="Basilience was developed as the project &quot;Basilience: An IoT-Android Based Fogponics Cultivation System for Genovese Basil Using Ultrasonic Atomization for Girasoles Farm Candelaria.&quot;" />
 
             <TextView
                 android:id="@+id/tvVersion"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:text="Version: 1.0.0"
+                android:gravity="center"
+                android:text="Version 1.0.0"
                 android:textColor="#777777"
-                android:textSize="14sp" />
+                android:textSize="13sp" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

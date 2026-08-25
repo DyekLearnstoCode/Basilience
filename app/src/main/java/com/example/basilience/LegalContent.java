@@ -25,20 +25,79 @@ public final class LegalContent {
     public static final String PRIVACY_TITLE = "Privacy Policy";
 
     /**
-     * Unchanged from the wording that already shipped on the Settings Terms
-     * screen - moved, not rewritten.
+     * Expanded from the original five-clause version, which covered too
+     * little of what the app actually does. Every section below maps to
+     * real, shipped behaviour - device claiming, growth cycles, automated
+     * equipment, sensor readings, reports - and adds nothing the app does
+     * not do.
      */
     public static final String TERMS_BODY =
             "1. Acceptance of Terms\n"
-                    + "By accessing and using Basilience, you agree to be bound by these Terms and Conditions.\n\n"
-                    + "2. Use of Service\n"
-                    + "You agree to use the service only for lawful purposes and in a way that does not infringe the rights of others.\n\n"
-                    + "3. Privacy Policy\n"
-                    + "Your use of the service is also governed by our Privacy Policy, which is incorporated into these terms by reference.\n\n"
-                    + "4. Data Collection\n"
-                    + "We collect sensor data and user information to provide and improve our services. We do not sell your personal data to third parties.\n\n"
-                    + "5. Limitation of Liability\n"
-                    + "Basilience is provided 'as is'. We are not liable for any damages arising from the use or inability to use the service.";
+                    + "By creating an account and using Basilience, you agree to be bound by these Terms and "
+                    + "Conditions. If you do not agree, please do not use the app.\n\n"
+
+                    + "2. Purpose of Basilience\n"
+                    + "Basilience is a farm management application that supports Genovese basil cultivation "
+                    + "using fogponics. It is provided to help you monitor growing conditions, manage "
+                    + "connected cultivation equipment, and keep records of your growth cycles and "
+                    + "harvests. It is an academic/farm management tool, not a financial or commercial "
+                    + "trading platform.\n\n"
+
+                    + "3. Account Responsibilities\n"
+                    + "You are responsible for the accuracy of the information you provide when creating "
+                    + "your account, and for keeping your login credentials confidential. An Admin is "
+                    + "responsible for the personnel they assign access to their devices, and for the "
+                    + "actions those personnel take within their assigned access.\n\n"
+
+                    + "4. Authorized Use\n"
+                    + "You agree to use Basilience only for lawful purposes connected to operating the farm "
+                    + "you have access to, and in a way that does not infringe the rights of others or "
+                    + "interfere with the normal operation of the service.\n\n"
+
+                    + "5. Device and Connectivity\n"
+                    + "Basilience is designed to work with a physical cultivation controller connected to "
+                    + "your account. Some app features require an internet connection to load or update. "
+                    + "If your device or phone temporarily loses connectivity, information shown in the app "
+                    + "may become stale until the connection is restored.\n\n"
+
+                    + "6. Automated Cultivation\n"
+                    + "While a growth cycle is active, Basilience can automate connected cultivation "
+                    + "equipment based on your configured settings. When no growth cycle is active, normal "
+                    + "cultivation automation is paused; monitoring and safety functions remain available. "
+                    + "Automated actions depend on your device's configured settings and the hardware "
+                    + "actually connected to it.\n\n"
+
+                    + "7. Sensor and Report Limitations\n"
+                    + "Sensor readings, alerts, and reports reflect the data recorded by your device at the "
+                    + "time it was recorded. Readings can be affected by sensor calibration, hardware "
+                    + "condition, or connectivity, and may not always represent current real-world "
+                    + "conditions. Reports and historical data are generated from this recorded data and "
+                    + "carry the same limitations.\n\n"
+
+                    + "8. User Actions and Farm Decisions\n"
+                    + "Basilience is a monitoring and support tool. You remain responsible for the normal "
+                    + "physical observation and maintenance of your farm, and for the cultivation decisions "
+                    + "you make, whether or not they are informed by data shown in the app.\n\n"
+
+                    + "9. Data and Privacy\n"
+                    + "Your use of Basilience is also governed by our Privacy Policy, which is incorporated "
+                    + "into these Terms by reference and explains what information we collect and why.\n\n"
+
+                    + "10. Service Availability\n"
+                    + "We aim to keep Basilience's app and cloud features available, but do not guarantee "
+                    + "uninterrupted access. Maintenance, connectivity issues, or circumstances outside our "
+                    + "control may make some features temporarily unavailable.\n\n"
+
+                    + "11. Changes to the Application / Terms\n"
+                    + "Basilience may be updated over time, and these Terms may change to reflect those "
+                    + "updates. If these Terms change, the updated version will be made available in the "
+                    + "app.\n\n"
+
+                    + "12. Limitation of Liability\n"
+                    + "Basilience is provided 'as is', on an academic/farm-support basis. To the extent "
+                    + "permitted by law, we are not liable for damages arising from reliance on sensor "
+                    + "readings, automated actions, or reports, or from the use or inability to use the "
+                    + "service.";
 
     /**
      * Describes only what the application actually processes today. Every

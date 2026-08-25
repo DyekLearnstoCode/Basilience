@@ -215,6 +215,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
+                android:thumbTint="@color/switch_thumb_tint"
+                android:trackTint="@color/switch_track_tint"
                 android:text="Manual Mode"
                 android:textColor="@color/black"
                 android:textSize="16sp" />

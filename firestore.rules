@@ -157,13 +157,21 @@ service cloud.firestore {
       }
 
       // PARAMETER LOGS sub-collection
+      // Ingested only by Cloud Functions via the Admin SDK, which bypasses
+      // these rules entirely - client write access here was never needed for
+      // that path and only exposed an assigned Farmer to deleting/overwriting
+      // a device's log history. Admin-only, matching the app's own intent
+      // (the mock-log-injection debug tool in DevOptionsFragment is UI-gated
+      // to Admin already).
       match /parameterLogs/{logId} {
-        allow read, write: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+        allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+        allow write: if isAdmin() && isAssignedToDevice(deviceId);
       }
 
-      // FOGGING LOGS sub-collection
+      // FOGGING LOGS sub-collection - same reasoning as parameterLogs above.
       match /foggingLogs/{logId} {
-        allow read, write: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+        allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+        allow write: if isAdmin() && isAssignedToDevice(deviceId);
       }
 
       // NOTIFICATIONS sub-collection

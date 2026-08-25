@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Brand tint for plain on/off SwitchMaterial toggles (Developer Options mock
+  data, Parameters Monitoring manual/auto mode). Per-actuator switches in
+  item_actuator.xml are intentionally excluded: their tint is set
+  programmatically per actuator state (auto/manual/off/pending) and must
+  keep that semantic colour instead of this fixed brand tint.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:alpha="0.5" android:color="@color/state_off" />
+    <item android:state_checked="true" android:color="@color/primary" />
+    <item android:color="@color/white" />
+</selector>

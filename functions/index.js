@@ -1219,6 +1219,13 @@ exports.logSensorData = onValueWritten({
 // That is the only place an ON/OFF transition can be observed, so the trigger
 // watches the whole actuatorStatus/fogger node (not just /running) to read
 // source/reason atomically with the transition.
+// LIVE PATH - legacy/current-firmware compatibility only. Firmware that has
+// FoggingEventQueue (see onFoggingEventQueued below) stamps
+// lastFoggingEventId onto this same actuatorStatus/fogger write whenever it
+// already owns a transition through its own durable queue+replay path; this
+// function must then defer, or the same transition would be double-logged.
+// Firmware without that field (pre-upgrade devices) is unaffected - this
+// path behaves exactly as before, just idempotent now.
 exports.logFoggerActivity = onValueWritten({
     ref: "/devices/{deviceId}/actuatorStatus/fogger",
     instance: "basilience-database-default-rtdb"
@@ -1232,17 +1239,31 @@ exports.logFoggerActivity = onValueWritten({
 
     if (wasRunning === isRunning) return;
 
+    if (after.lastFoggingEventId) {
+        // New firmware already recorded this transition through
+        // onFoggingEventQueued - do not log it a second time here.
+        logger.info(`logFoggerActivity: deferring to queue path for device ${deviceId} (eventId=${after.lastFoggingEventId})`);
+        return;
+    }
+
     const db = admin.firestore();
     const eventType = isRunning ? "ON" : "OFF";
     const source = after.source || null;
     const isManual = source === "manual" || source === "android";
     const strategy = source === "automatic" ? (after.strategy || null) : null;
 
+    // Deterministic id from THIS trigger invocation's own delivery id
+    // (same safeEventId(event.id) pattern already used throughout this
+    // file): RTDB triggers are at-least-once, so a retried invocation of the
+    // SAME write must not create a second foggingLogs document.
+    const docId = `fog_${safeEventId(event.id)}`;
+
     try {
         await db.collection("devices")
             .doc(deviceId)
             .collection("foggingLogs")
-            .add({
+            .doc(docId)
+            .create({
                 event: eventType,
                 timestamp: Date.now(),
                 isManual: isManual,
@@ -1251,10 +1272,76 @@ exports.logFoggerActivity = onValueWritten({
                 reason: after.reason || null
             });
     } catch (error) {
-        logger.error(`Error logging fogger activity for ${deviceId}:`, error);
+        if (!(error && (error.code === 6 || error.code === "already-exists"))) {
+            logger.error(`Error logging fogger activity for ${deviceId}:`, error);
+        }
+        // already-exists: an earlier retry of this same invocation already
+        // produced the document - nothing left to do.
     }
 
     logger.info(`logFoggerActivity: Fogger turned ${eventType} for device ${deviceId} (source=${source})`);
+});
+
+// QUEUE PATH - the append-only history record for firmware running
+// FoggingEventQueue. Never reads/writes actuatorStatus/fogger (that node is
+// current-state only); mirrors onNotificationQueued's shape exactly:
+// idempotent by eventId, ack written back only after Firestore persistence
+// actually succeeds.
+exports.onFoggingEventQueued = onValueWritten({
+    ref: "/devices/{deviceId}/foggingEventQueue/{eventId}",
+    instance: "basilience-database-default-rtdb",
+    retry: true
+}, async (event) => {
+    const deviceId = event.params.deviceId;
+    const eventId = event.params.eventId;
+    const data = event.data.after.val();
+
+    if (!data || data.status === "acked") {
+        // Null: entry deleted (firmware already removed it locally after a
+        // prior ack). "acked": this write is our own ack below (RTDB
+        // triggers on this ref fire for descendant writes too), or a stale
+        // re-trigger - either way, already handled.
+        return;
+    }
+
+    if (data.event !== "ON" && data.event !== "OFF") {
+        logger.error(`onFoggingEventQueued: invalid event shape for ${deviceId}/${eventId}`, data);
+        return;
+    }
+
+    const source = data.source || null;
+    // Same derivation the live path (logFoggerActivity) uses, so a
+    // transition logs identically regardless of which path recorded it.
+    const isManual = source === "manual" || source === "android";
+    const strategy = source === "automatic" ? (data.strategy || null) : null;
+
+    const db = admin.firestore();
+    const logRef = db.collection("devices").doc(deviceId).collection("foggingLogs").doc(eventId);
+
+    try {
+        await logRef.create({
+            event: data.event,
+            // Original device-observed time is preserved, never replaced by
+            // ingest/server time - only falls back to now() if the firmware
+            // itself never had a valid RTC timestamp to offer (see
+            // timestampValid in the task report's timestamp-behavior notes).
+            timestamp: (data.timestampValid && data.occurredAt) ? data.occurredAt * 1000 : Date.now(),
+            isManual: isManual,
+            source: source,
+            strategy: strategy,
+            reason: data.reason || null
+        });
+        logger.info(`onFoggingEventQueued: recorded ${data.event} for device ${deviceId} (eventId=${eventId})`);
+    } catch (error) {
+        if (!(error && (error.code === 6 || error.code === "already-exists"))) {
+            logger.error(`Failed to persist queued fogging event ${eventId} for device ${deviceId}`, error);
+            return; // leave unacked; firmware will resubmit later
+        }
+        // already-exists: a previous invocation already created it - still
+        // safe/correct to ack below so the firmware can drop it locally.
+    }
+
+    await admin.database().ref(`/devices/${deviceId}/foggingEventQueue/${eventId}/status`).set("acked");
 });
 
 exports.trackDeviceHeartbeat = onValueWritten({

@@ -398,22 +398,50 @@ public class Database_Helper {
         if (selectedDeviceId == null || selectedDeviceId.isEmpty())
             return Tasks.forException(new Exception("No device selected"));
 
-        return checkAdminTask().onSuccessTask(aVoid ->
-                rtdb.getReference("devices").child(selectedDeviceId).child("commands").child("manualMode").get()
-        ).onSuccessTask(snapshot -> {
-            Boolean isManual = snapshot.getValue(Boolean.class);
-            if (isManual != null && isManual) {
-                Map<String, Object> commandData = new HashMap<>();
-                commandData.put("state", isOn);
-                commandData.put("source", "manual");
-                commandData.put("timestamp", ServerValue.TIMESTAMP);
-                
-                String path = "devices/" + selectedDeviceId + "/commands/" + actuatorName;
-                return rtdb.getReference(path).setValue(commandData);
-            } else {
-                return Tasks.forException(new Exception("Manual mode must be enabled to control actuators."));
-            }
-        });
+        final String deviceIdAtCallTime = selectedDeviceId;
+        Log.d(TAG, "[MANUAL-APP] updateActuatorState actuator=" + actuatorName + " target=" + isOn
+                + " uid=" + getCurrentUid() + " cachedRole=" + cachedRole + " deviceId=" + deviceIdAtCallTime);
+
+        return checkAdminTask()
+                .addOnFailureListener(e -> Log.e(TAG, "[MANUAL-APP] Admin authorization failed actuator=" + actuatorName
+                        + " cachedRole=" + cachedRole, e))
+                .onSuccessTask(aVoid -> {
+                    Log.d(TAG, "[MANUAL-APP] Admin authorization passed actuator=" + actuatorName);
+                    return rtdb.getReference("devices").child(deviceIdAtCallTime).child("commands").child("manualMode").get();
+                })
+                .onSuccessTask(snapshot -> {
+                    Boolean isManual = snapshot.getValue(Boolean.class);
+                    Log.d(TAG, "[MANUAL-APP] manualMode=" + isManual + " actuator=" + actuatorName
+                            + " deviceId=" + deviceIdAtCallTime);
+                    if (isManual != null && isManual) {
+                        Map<String, Object> commandData = new HashMap<>();
+                        commandData.put("state", isOn);
+                        commandData.put("source", "manual");
+                        commandData.put("timestamp", ServerValue.TIMESTAMP);
+
+                        String path = "devices/" + deviceIdAtCallTime + "/commands/" + actuatorName;
+                        DatabaseReference commandRef = rtdb.getReference(path);
+                        return commandRef.setValue(commandData)
+                                .addOnSuccessListener(unused -> {
+                                    Log.d(TAG, "[MANUAL-APP] Command write success actuator=" + actuatorName);
+                                    // Read-back is diagnostic only - never gates the write's own
+                                    // success/failure result returned to the caller.
+                                    commandRef.get()
+                                            .addOnSuccessListener(readBack -> Log.d(TAG,
+                                                    "[MANUAL-APP] Stored state=" + readBack.child("state").getValue(Boolean.class)
+                                                            + " source=" + readBack.child("source").getValue(String.class)
+                                                            + " timestamp=" + readBack.child("timestamp").getValue(Long.class)
+                                                            + " actuator=" + actuatorName))
+                                            .addOnFailureListener(e -> Log.w(TAG,
+                                                    "[MANUAL-APP] Read-back failed (write already succeeded) actuator=" + actuatorName, e));
+                                })
+                                .addOnFailureListener(e -> Log.e(TAG, "[MANUAL-APP] Command write failed actuator=" + actuatorName
+                                        + " deviceId=" + deviceIdAtCallTime, e));
+                    } else {
+                        Log.e(TAG, "[MANUAL-APP] Rejected: manual mode not enabled actuator=" + actuatorName);
+                        return Tasks.forException(new Exception("Manual mode must be enabled to control actuators."));
+                    }
+                });
     }
 
     public Task<Void> updateManualMode(boolean isManual) {

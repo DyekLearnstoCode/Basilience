@@ -142,6 +142,7 @@
                         android:layout_height="wrap_content"
                         android:minWidth="48dp"
                         android:minHeight="48dp"
+                        app:buttonTint="@color/checkbox_tint"
                         android:contentDescription="I agree to the Terms and Conditions and Privacy Policy" />
 
                     <TextView

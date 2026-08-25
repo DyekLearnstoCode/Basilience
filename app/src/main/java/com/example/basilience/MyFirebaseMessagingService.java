@@ -303,7 +303,12 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                 || "phHigh".equalsIgnoreCase(type)
                 || "lowAirTemperature".equalsIgnoreCase(type)
                 || "highTemperature".equalsIgnoreCase(type)
-                || "waterTempOutOfRange".equalsIgnoreCase(type);
+                || "waterTempOutOfRange".equalsIgnoreCase(type)
+                || "waterTempLow".equalsIgnoreCase(type)
+                || "humidityLow".equalsIgnoreCase(type)
+                || "humidityHigh".equalsIgnoreCase(type)
+                || "waterLevelLow".equalsIgnoreCase(type)
+                || "waterLevelHigh".equalsIgnoreCase(type);
     }
 
     private boolean isCriticalAlert(String type) {

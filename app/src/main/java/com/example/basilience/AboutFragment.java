@@ -2,6 +2,8 @@ package com.example.basilience;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -42,7 +44,19 @@ public class AboutFragment extends Fragment {
 
         TextView tvVersion = view.findViewById(R.id.tvVersion);
         if (tvVersion != null) {
+            tvVersion.setText("Version " + resolveVersionName());
             tvVersion.setOnClickListener(v -> handleVersionTap());
+        }
+    }
+
+    private String resolveVersionName() {
+        if (getContext() == null) return "";
+        try {
+            PackageInfo info = requireContext().getPackageManager()
+                    .getPackageInfo(requireContext().getPackageName(), 0);
+            return info.versionName != null ? info.versionName : "";
+        } catch (PackageManager.NameNotFoundException e) {
+            return "";
         }
     }
 
