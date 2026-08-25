@@ -1772,43 +1772,170 @@ exports.onDeviceWrittenUpdateSmsRecipients = onDocumentWritten(
     }
 );
 
-// Recomputes the /devices/{deviceId}/harvestSchedule RTDB projection - the
-// minimum fields the ESP needs to generate an offline HARVEST_DUE event
-// (cycle identity + next due date), never the whole cycle document.
+// A cycle counts as active when explicitly marked ACTIVE, or when it predates
+// the status field entirely and was never completed - same legacy rule as
+// the Android client's CycleStatus.isActive(), so the cloud and app sides
+// agree on what "active" means for a cycle document.
+function isCycleDataActive(data) {
+    if (!data) return false;
+    const status = data.status;
+    if (status === null || status === undefined || status === "") {
+        return !data.endDate;
+    }
+    return String(status).toUpperCase() === "ACTIVE";
+}
+
+// Ranks a candidate active cycle so the projection can deterministically pick
+// one even if legacy data has more than one ACTIVE cycle, or is missing
+// fields newer cycles always have. cycleNumber is preferred when present
+// (matches the ordering the app itself displays cycles in), but a cycle
+// created before that field existed - or written by a path that never set
+// it - must still be discoverable, never silently skipped. Tiers, in order:
+//   0: has a valid numeric cycleNumber - highest wins
+//   1: no cycleNumber, has startDate - newest wins
+//   2: neither, has createdAt (always set since Cycle's constructor) - newest wins
+//   3: none of the above - falls back to document ID as a stable tie-break
+// A lower tier always outranks a higher one; only ties within the same tier
+// compare by value, then finally by document ID.
+function cycleRankKey(id, data) {
+    const cycleNumber = data.cycleNumber;
+    if (typeof cycleNumber === "number" && Number.isFinite(cycleNumber)) {
+        return [0, cycleNumber, id];
+    }
+    const startMillis = data.startDate && typeof data.startDate.toMillis === "function"
+        ? data.startDate.toMillis() : null;
+    if (startMillis !== null) {
+        return [1, startMillis, id];
+    }
+    const createdAt = typeof data.createdAt === "number" ? data.createdAt : null;
+    if (createdAt !== null) {
+        return [2, createdAt, id];
+    }
+    return [3, 0, id];
+}
+
+// True when `key` should replace `currentKey` as the authoritative cycle.
+function outranks(key, currentKey) {
+    if (key[0] !== currentKey[0]) return key[0] < currentKey[0];
+    if (key[1] !== currentKey[1]) return key[1] > currentKey[1];
+    return key[2] > currentKey[2];
+}
+
+// Single source of truth for the /devices/{deviceId}/harvestSchedule RTDB
+// projection - the minimum fields the ESP needs to generate an offline
+// HARVEST_DUE event (cycle identity + next due date), never the whole cycle
+// document. Always re-derives the authoritative cycle from a fresh scan of
+// Firestore rather than reasoning incrementally from whichever cycle wrote
+// last, so it is correct (and idempotent) whether it's called from the
+// per-write trigger or from a manual/backfill reconciliation:
+//   - a stray extra ACTIVE cycle from old data can't get lost behind the one
+//     that happens to have written most recently
+//   - a deleted or newly-COMPLETED cycle can't wrongly clobber a different,
+//     still-active cycle's projection
+// Deliberately an unfiltered, unordered collection get() rather than
+// .orderBy("cycleNumber") or a status equality filter: Firestore excludes
+// any document missing the ordered/filtered field entirely, and legacy
+// cycles missing cycleNumber (or predating the status field) are a real,
+// already-handled case elsewhere in this codebase (see the app's
+// Cycle_Details_Fragment fallback mapping) - this reconciliation exists
+// specifically to recover cycles the normal path lost track of, so it must
+// not apply the same kind of filter that could cause that in the first place.
+async function syncHarvestScheduleForDevice(db, rtdb, deviceId) {
+    const cyclesSnap = await db.collection("devices").doc(deviceId)
+        .collection("cycles").get();
+
+    let authoritativeId = null;
+    let authoritative = null;
+    let authoritativeKey = null;
+    for (const doc of cyclesSnap.docs) {
+        const data = doc.data();
+        if (!isCycleDataActive(data)) continue;
+        const key = cycleRankKey(doc.id, data);
+        if (authoritativeKey === null || outranks(key, authoritativeKey)) {
+            authoritativeId = doc.id;
+            authoritative = data;
+            authoritativeKey = key;
+        }
+    }
+
+    if (!authoritative) {
+        logger.info(`[CYCLE-SYNC] device=${deviceId} no active cycle`);
+        await rtdb.ref(`/devices/${deviceId}/harvestSchedule`).set({active: false, updatedAt: Date.now()});
+        return {active: false};
+    }
+
+    // No cycleNumber on a legacy/pre-field cycle is not an error - firmware's
+    // own parser already defaults to 0 when the JSON key is absent
+    // (FirebaseManager.cpp readHarvestSchedule()), and cycleNumber is only
+    // ever used there for a diagnostic Serial.print(), never a gating
+    // condition, so 0 is a genuinely safe (not fabricated) compatibility
+    // value - it's the same value an absent field would already produce.
+    const cycleNumber = typeof authoritative.cycleNumber === "number"
+        && Number.isFinite(authoritative.cycleNumber) ? authoritative.cycleNumber : 0;
+
+    const nextHarvestDate = authoritative.nextHarvestDate;
+    const nextHarvestAt = nextHarvestDate && typeof nextHarvestDate.toMillis === "function"
+        ? Math.floor(nextHarvestDate.toMillis() / 1000)
+        : 0;
+
+    logger.info(`[CYCLE-SYNC] device=${deviceId} activeCycle=${authoritativeId} nextHarvestAt=${nextHarvestAt}`);
+
+    await rtdb.ref(`/devices/${deviceId}/harvestSchedule`).set({
+        cycleId: authoritativeId,
+        cycleNumber,
+        nextHarvestAt,
+        active: true,
+        updatedAt: Date.now()
+    });
+    logger.info(`[CYCLE-SYNC] device=${deviceId} RTDB projection updated`);
+
+    return {active: true, cycleId: authoritativeId, cycleNumber, nextHarvestAt};
+}
+
 exports.onCycleWrittenUpdateHarvestSchedule = onDocumentWritten(
     "devices/{deviceId}/cycles/{cycleId}",
     async (event) => {
         const deviceId = event.params.deviceId;
-        const cycleId = event.params.cycleId;
-        const after = event.data.after.exists ? event.data.after.data() : null;
-        const rtdb = admin.database();
-
-        if (!after || String(after.status || "").toUpperCase() !== "ACTIVE") {
-            // Cycle deleted or no longer active - only clear the projection
-            // if THIS cycle was the one currently reflected there, so an
-            // unrelated/older cycle write can't clobber a different,
-            // still-active cycle's schedule.
-            const currentCycleIdSnap = await rtdb.ref(`/devices/${deviceId}/harvestSchedule/cycleId`).get();
-            if (currentCycleIdSnap.exists() && currentCycleIdSnap.val() === cycleId) {
-                await rtdb.ref(`/devices/${deviceId}/harvestSchedule`).set({active: false, updatedAt: Date.now()});
-            }
-            return;
+        try {
+            await syncHarvestScheduleForDevice(admin.firestore(), admin.database(), deviceId);
+        } catch (error) {
+            logger.error(`[CYCLE-SYNC] device=${deviceId} projection failed`, {error: error.message});
+            throw error;
         }
-
-        const nextHarvestDate = after.nextHarvestDate;
-        const nextHarvestAt = nextHarvestDate && typeof nextHarvestDate.toMillis === "function"
-            ? Math.floor(nextHarvestDate.toMillis() / 1000)
-            : 0;
-
-        await rtdb.ref(`/devices/${deviceId}/harvestSchedule`).set({
-            cycleId,
-            cycleNumber: after.cycleNumber || 0,
-            nextHarvestAt,
-            active: true,
-            updatedAt: Date.now()
-        });
     }
 );
+
+// One-time/on-demand repair for a device whose harvestSchedule projection
+// was lost or never written (e.g. an ACTIVE cycle created before this
+// projection existed, or an earlier trigger invocation failed) - re-derives
+// the RTDB node from Firestore using the exact same logic as the write
+// trigger. Admin-only: this is a manual recovery tool, not a client-facing
+// feature, so it follows the same auth + role-check convention as
+// changePersonnelPassword above rather than trusting caller-supplied data.
+exports.reconcileHarvestSchedule = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Authentication is required.");
+    }
+
+    const deviceId = typeof request.data?.deviceId === "string" ? request.data.deviceId.trim() : "";
+    if (!deviceId) {
+        throw new HttpsError("invalid-argument", "A deviceId is required.");
+    }
+
+    const db = admin.firestore();
+    const adminProfile = await db.collection("users").doc(request.auth.uid).get();
+    if (!adminProfile.exists || String(adminProfile.data().role || "").toUpperCase() !== "ADMIN") {
+        throw new HttpsError("permission-denied", "Only an authenticated Admin may perform this action.");
+    }
+
+    try {
+        const result = await syncHarvestScheduleForDevice(db, admin.database(), deviceId);
+        return {success: true, ...result};
+    } catch (error) {
+        logger.error(`[CYCLE-SYNC] device=${deviceId} manual reconciliation failed`, {error: error.message});
+        throw new HttpsError("internal", "Unable to reconcile the harvest schedule for this device.");
+    }
+});
 
 // Bridges a firmware-replayed offline event into the SAME
 // devices/{deviceId}/notifications history every other producer already
