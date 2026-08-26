@@ -152,6 +152,13 @@ public class DeviceFragment extends Fragment {
                     deviceList.clear();
                     for (QueryDocumentSnapshot doc : queryDocumentSnapshots) {
                         Device device = doc.toObject(Device.class);
+                        // The document ID is the authoritative identifier - a device's
+                        // in-body `deviceId` field is provisioned outside this app and
+                        // isn't guaranteed to match its own document ID. toObject() would
+                        // otherwise silently use that field (or leave it null), so every
+                        // downstream cycle/RTDB path keyed off getDeviceId() must be
+                        // pinned to doc.getId() here.
+                        if (device != null) device.setDeviceId(doc.getId());
                         deviceList.add(device);
                     }
                     deviceAdapter.notifyDataSetChanged();
