@@ -162,13 +162,17 @@ public final class LegalContent {
      *
      * Used by the registration screen so the Terms and Privacy Policy can be
      * read before an account exists - reading them must never require signing
-     * in first.
+     * in first. Unlike the post-login Settings screens (ToSFragment /
+     * PrivacyPolicyFragment), which have their own header Back control, this
+     * dialog's body is plain read-only text with no button of its own -
+     * "Back" here is the shared dialog shell's existing tertiary dismiss
+     * button (see NotificationHelper.showCustomViewDialog), not a new control.
      */
     public static void showReadOnly(Context context, String title, String body) {
         if (context == null) return;
         View content = LayoutInflater.from(context).inflate(R.layout.dialog_legal_text, null);
         TextView tvBody = content.findViewById(R.id.tvLegalBody);
         if (tvBody != null) tvBody.setText(body);
-        NotificationHelper.showCustomViewDialog(context, title, content);
+        NotificationHelper.showCustomViewDialog(context, title, content, "Back");
     }
 }

@@ -818,6 +818,16 @@ public class MainActivity extends AppCompatActivity {
                         Boolean.TRUE.equals(snapshot.child("highTemperature").getValue(Boolean.class)));
                 currentParameterAlertStates.put("waterTempOutOfRange",
                         Boolean.TRUE.equals(snapshot.child("waterTempOutOfRange").getValue(Boolean.class)));
+                currentParameterAlertStates.put("waterTempLow",
+                        Boolean.TRUE.equals(snapshot.child("waterTempLow").getValue(Boolean.class)));
+                currentParameterAlertStates.put("humidityLow",
+                        Boolean.TRUE.equals(snapshot.child("humidityLow").getValue(Boolean.class)));
+                currentParameterAlertStates.put("humidityHigh",
+                        Boolean.TRUE.equals(snapshot.child("humidityHigh").getValue(Boolean.class)));
+                currentParameterAlertStates.put("waterLevelLow",
+                        Boolean.TRUE.equals(snapshot.child("waterLevelLow").getValue(Boolean.class)));
+                currentParameterAlertStates.put("waterLevelHigh",
+                        Boolean.TRUE.equals(snapshot.child("waterLevelHigh").getValue(Boolean.class)));
                 reconcileCurrentParameterAlerts();
             }
 
@@ -876,6 +886,10 @@ public class MainActivity extends AppCompatActivity {
             if ("pH — High".equals(only)) return "pH is above the configured range.";
             if ("Air Temperature — Low".equals(only)) return "Air temperature is below the acceptable range.";
             if ("Air Temperature — High".equals(only)) return "Air Temperature is above the configured range.";
+            if ("Water Temperature — Low".equals(only)) return "Water temperature is below the configured minimum range.";
+            if ("Humidity — Low".equals(only)) return "Humidity is below the configured minimum range.";
+            if ("Humidity — High".equals(only)) return "Humidity is above the configured maximum range.";
+            if ("Water Level — High".equals(only)) return "Reservoir water level is above the configured maximum range.";
             return "Water Temperature is outside the configured range.";
         }
         StringBuilder content = new StringBuilder(activeParameterAlerts.size()
@@ -943,6 +957,11 @@ public class MainActivity extends AppCompatActivity {
         if ("lowAirTemperature".equalsIgnoreCase(type)) return "Air Temperature — Low";
         if ("highTemperature".equalsIgnoreCase(type)) return "Air Temperature — High";
         if ("waterTempOutOfRange".equalsIgnoreCase(type)) return "Water Temperature — Out of Range";
+        if ("waterTempLow".equalsIgnoreCase(type)) return "Water Temperature — Low";
+        if ("humidityLow".equalsIgnoreCase(type)) return "Humidity — Low";
+        if ("humidityHigh".equalsIgnoreCase(type)) return "Humidity — High";
+        if ("waterLevelLow".equalsIgnoreCase(type)) return "Water Level — Low";
+        if ("waterLevelHigh".equalsIgnoreCase(type)) return "Water Level — High";
         return null;
     }
 

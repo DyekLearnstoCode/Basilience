@@ -29,6 +29,7 @@
             <include layout="@layout/layout_header" />
 
         </com.google.android.material.appbar.CollapsingToolbarLayout>
+
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView
@@ -38,6 +39,7 @@
         android:background="@drawable/top_rounded_white"
         android:elevation="5dp"
         android:fillViewport="true"
+        android:overScrollMode="never"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <LinearLayout
@@ -49,6 +51,7 @@
             android:paddingEnd="@dimen/container_side_padding"
             android:paddingBottom="@dimen/container_side_padding">
 
+            <!-- TITLE -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -56,8 +59,10 @@
                 android:textColor="@color/state_primary_text"
                 android:textSize="24sp"
                 android:fontFamily="sans-serif-black"
-                android:letterSpacing="-0.02" />
+                android:letterSpacing="-0.02"
+                android:textAlignment="center"/>
 
+            <!-- PAGE DESCRIPTION -->
             <TextView
                 android:id="@+id/tvTargetRangesIntro"
                 android:layout_width="match_parent"
@@ -65,12 +70,11 @@
                 android:layout_marginTop="6dp"
                 android:layout_marginBottom="18dp"
                 android:lineSpacingExtra="3dp"
-                android:text="The minimum is the lowest reading still considered acceptable, and the maximum is the highest. Readings outside either limit are marked out of range in Monitoring and Reports."
+                android:text="Set the acceptable minimum and maximum values used for monitoring, alerts, and reports. The minimum is the lowest reading still considered acceptable, while the maximum is the highest."
                 android:textColor="@color/nav_inactive"
                 android:textSize="14sp" />
 
-            <!-- Shown instead of the Save button for a user who may view but
-                 not change these values. -->
+            <!-- VIEW-ONLY NOTICE -->
             <TextView
                 android:id="@+id/tvViewOnlyNotice"
                 android:layout_width="match_parent"
@@ -84,15 +88,19 @@
                 android:visibility="gone" />
 
             <!-- ================= pH ================= -->
-            <TextView style="@style/Basilience.RangeSectionLabel" android:text="pH" />
+            <TextView
+                style="@style/Basilience.RangeSectionLabel"
+                android:text="pH" />
 
-            <LinearLayout style="@style/Basilience.RangeRow">
+            <LinearLayout
+                style="@style/Basilience.RangeRow">
+
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutMinPh"
                     style="@style/InputFieldStyle"
                     android:layout_width="0dp"
-                    android:layout_weight="1"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:layout_marginEnd="6dp"
                     android:hint="Minimum">
 
@@ -101,14 +109,15 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="numberDecimal" />
+
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutMaxPh"
                     style="@style/InputFieldStyle"
                     android:layout_width="0dp"
-                    android:layout_weight="1"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:layout_marginStart="6dp"
                     android:hint="Maximum">
 
@@ -117,19 +126,25 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="numberDecimal" />
+
                 </com.google.android.material.textfield.TextInputLayout>
+
             </LinearLayout>
 
             <!-- ================= EC ================= -->
-            <TextView style="@style/Basilience.RangeSectionLabel" android:text="EC (mS/cm)" />
+            <TextView
+                style="@style/Basilience.RangeSectionLabel"
+                android:text="EC (mS/cm)" />
 
-            <LinearLayout style="@style/Basilience.RangeRow">
+            <LinearLayout
+                style="@style/Basilience.RangeRow">
+
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutMinEc"
                     style="@style/InputFieldStyle"
                     android:layout_width="0dp"
-                    android:layout_weight="1"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:layout_marginEnd="6dp"
                     android:hint="Minimum">
 
@@ -138,14 +153,15 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="numberDecimal" />
+
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutMaxEc"
                     style="@style/InputFieldStyle"
                     android:layout_width="0dp"
-                    android:layout_weight="1"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:layout_marginStart="6dp"
                     android:hint="Maximum">
 
@@ -154,19 +170,25 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="numberDecimal" />
+
                 </com.google.android.material.textfield.TextInputLayout>
+
             </LinearLayout>
 
-            <!-- ============ Air Temperature ============ -->
-            <TextView style="@style/Basilience.RangeSectionLabel" android:text="Air Temperature (°C)" />
+            <!-- ============ AIR TEMPERATURE ============ -->
+            <TextView
+                style="@style/Basilience.RangeSectionLabel"
+                android:text="Air Temperature (°C)" />
 
-            <LinearLayout style="@style/Basilience.RangeRow">
+            <LinearLayout
+                style="@style/Basilience.RangeRow">
+
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutMinAirTemp"
                     style="@style/InputFieldStyle"
                     android:layout_width="0dp"
-                    android:layout_weight="1"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:layout_marginEnd="6dp"
                     android:hint="Minimum">
 
@@ -175,14 +197,15 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="numberDecimal|numberSigned" />
+
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutMaxAirTemp"
                     style="@style/InputFieldStyle"
                     android:layout_width="0dp"
-                    android:layout_weight="1"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:layout_marginStart="6dp"
                     android:hint="Maximum">
 
@@ -191,19 +214,25 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="numberDecimal|numberSigned" />
+
                 </com.google.android.material.textfield.TextInputLayout>
+
             </LinearLayout>
 
-            <!-- ================ Humidity ================ -->
-            <TextView style="@style/Basilience.RangeSectionLabel" android:text="Humidity (%)" />
+            <!-- ================ HUMIDITY ================ -->
+            <TextView
+                style="@style/Basilience.RangeSectionLabel"
+                android:text="Humidity (%)" />
 
-            <LinearLayout style="@style/Basilience.RangeRow">
+            <LinearLayout
+                style="@style/Basilience.RangeRow">
+
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutMinHumidity"
                     style="@style/InputFieldStyle"
                     android:layout_width="0dp"
-                    android:layout_weight="1"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:layout_marginEnd="6dp"
                     android:hint="Minimum">
 
@@ -212,14 +241,15 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="numberDecimal" />
+
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutMaxHumidity"
                     style="@style/InputFieldStyle"
                     android:layout_width="0dp"
-                    android:layout_weight="1"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:layout_marginStart="6dp"
                     android:hint="Maximum">
 
@@ -228,19 +258,25 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="numberDecimal" />
+
                 </com.google.android.material.textfield.TextInputLayout>
+
             </LinearLayout>
 
-            <!-- =========== Water Temperature =========== -->
-            <TextView style="@style/Basilience.RangeSectionLabel" android:text="Water Temperature (°C)" />
+            <!-- =========== WATER TEMPERATURE =========== -->
+            <TextView
+                style="@style/Basilience.RangeSectionLabel"
+                android:text="Water Temperature (°C)" />
 
-            <LinearLayout style="@style/Basilience.RangeRow">
+            <LinearLayout
+                style="@style/Basilience.RangeRow">
+
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutMinWaterTemp"
                     style="@style/InputFieldStyle"
                     android:layout_width="0dp"
-                    android:layout_weight="1"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:layout_marginEnd="6dp"
                     android:hint="Minimum">
 
@@ -249,14 +285,15 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="numberDecimal" />
+
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutMaxWaterTemp"
                     style="@style/InputFieldStyle"
                     android:layout_width="0dp"
-                    android:layout_weight="1"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:layout_marginStart="6dp"
                     android:hint="Maximum">
 
@@ -265,19 +302,25 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="numberDecimal" />
+
                 </com.google.android.material.textfield.TextInputLayout>
+
             </LinearLayout>
 
-            <!-- ============== Water Level ============== -->
-            <TextView style="@style/Basilience.RangeSectionLabel" android:text="Water Level (%)" />
+            <!-- ============== WATER LEVEL ============== -->
+            <TextView
+                style="@style/Basilience.RangeSectionLabel"
+                android:text="Water Level (%)" />
 
-            <LinearLayout style="@style/Basilience.RangeRow">
+            <LinearLayout
+                style="@style/Basilience.RangeRow">
+
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutMinWaterLevel"
                     style="@style/InputFieldStyle"
                     android:layout_width="0dp"
-                    android:layout_weight="1"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:layout_marginEnd="6dp"
                     android:hint="Minimum">
 
@@ -286,14 +329,15 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="numberDecimal" />
+
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutMaxWaterLevel"
                     style="@style/InputFieldStyle"
                     android:layout_width="0dp"
-                    android:layout_weight="1"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:layout_marginStart="6dp"
                     android:hint="Maximum">
 
@@ -302,9 +346,12 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="numberDecimal" />
+
                 </com.google.android.material.textfield.TextInputLayout>
+
             </LinearLayout>
 
+            <!-- SAVE BUTTON -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSaveTargetRanges"
                 style="@style/BasilienceButton.Primary"
@@ -315,7 +362,7 @@
                 android:text="Save Changes" />
 
         </LinearLayout>
-    </androidx.core.widget.NestedScrollView>
 
+    </androidx.core.widget.NestedScrollView>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

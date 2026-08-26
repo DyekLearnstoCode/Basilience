@@ -21,6 +21,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.DrawableRes;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
 import androidx.core.app.NotificationCompat;
@@ -738,9 +739,23 @@ public class NotificationHelper {
     }
 
     /**
-     * Shows a dialog with a custom view (for forms) while maintaining the Basilience UI style
+     * Shows a dialog with a custom view (for forms) while maintaining the Basilience UI style.
+     * No visible dismiss control - callers whose custom view has its own Save/Cancel affordance.
      */
     public static AlertDialog showCustomViewDialog(Context context, String title, View customView) {
+        return showCustomViewDialog(context, title, customView, null);
+    }
+
+    /**
+     * Same as {@link #showCustomViewDialog(Context, String, View)}, with an
+     * optional single dismiss button (the layout's existing tertiary slot,
+     * already used the same way by {@link #showTripleActionDialog}) for a
+     * custom view - such as a read-only document - that has no buttons of
+     * its own. Pass null for tertiaryLabel to keep the original no-button
+     * behavior.
+     */
+    public static AlertDialog showCustomViewDialog(Context context, String title, View customView,
+                                                    @Nullable String tertiaryLabel) {
         if (!isContextUsable(context)) return null;
 
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
@@ -750,10 +765,11 @@ public class NotificationHelper {
         TextView tvTitle = root.findViewById(R.id.dialog_title);
         TextView tvMessage = root.findViewById(R.id.dialog_message);
         tvMessage.setVisibility(View.GONE);
-        
+
         // Hide standard buttons as custom forms usually have their own
         root.findViewById(R.id.dialog_button).setVisibility(View.GONE);
         root.findViewById(R.id.dialog_button_secondary).setVisibility(View.GONE);
+        MaterialButton btnTertiary = root.findViewById(R.id.dialog_button_tertiary);
 
         tvTitle.setText(title);
 
@@ -764,7 +780,14 @@ public class NotificationHelper {
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
         }
-        
+
+        if (tertiaryLabel != null && btnTertiary != null) {
+            btnTertiary.setText(tertiaryLabel);
+            btnTertiary.setContentDescription(tertiaryLabel);
+            btnTertiary.setVisibility(View.VISIBLE);
+            btnTertiary.setOnClickListener(v -> dialog.dismiss());
+        }
+
         dialog.show();
         return dialog;
     }

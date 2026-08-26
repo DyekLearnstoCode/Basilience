@@ -82,18 +82,31 @@ public class DeviceFragment extends Fragment {
                     androidx.navigation.Navigation.findNavController(view)
                             .navigate(R.id.home, bundle);
                 },
-                // 2. 🔥 Long Press -> Lalabas ang Confirmation Dialog para mag-Unclaim
+                // 2. Long Press -> Wi-Fi Configuration is offered to every role;
+                //    Unclaim Device stays Admin-only, via an action chooser when
+                //    both are available.
                 device -> {
                     SharedPreferences currentPrefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
                     String currentRole = currentPrefs.getString("user_role", RoleConstants.ROLE_FARMER);
                     if (RoleConstants.ROLE_ADMIN.equalsIgnoreCase(currentRole)) {
-                        NotificationHelper.showDestructiveConfirmation(
-                                requireContext(),
-                                "Unclaim Device",
-                                "Are you sure you want to unclaim " + device.getDeviceName() + "?",
-                                "Unclaim",
-                                () -> unclaimDevice(device)
-                        );
+                        NotificationHelper.showSelectionDialog(requireContext(),
+                                device.getDeviceName() != null ? device.getDeviceName() : "Device",
+                                new String[]{"Configure Wi-Fi", "Unclaim Device"},
+                                index -> {
+                                    if (index == 0) {
+                                        openWifiConfiguration(view, device);
+                                    } else {
+                                        NotificationHelper.showDestructiveConfirmation(
+                                                requireContext(),
+                                                "Unclaim Device",
+                                                "Are you sure you want to unclaim " + device.getDeviceName() + "?",
+                                                "Unclaim",
+                                                () -> unclaimDevice(device)
+                                        );
+                                    }
+                                });
+                    } else {
+                        openWifiConfiguration(view, device);
                     }
                 }
         );
@@ -138,6 +151,16 @@ public class DeviceFragment extends Fragment {
         loadDevices();
 
         return view;
+    }
+
+    private void openWifiConfiguration(View view, Device device) {
+        if (device.getDeviceId() == null) return;
+        requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString("selected_device_id", device.getDeviceId())
+                .apply();
+        androidx.navigation.Navigation.findNavController(view)
+                .navigate(R.id.action_deviceManagement_to_wifiConfigFragment);
     }
 
     private void loadDevices() {

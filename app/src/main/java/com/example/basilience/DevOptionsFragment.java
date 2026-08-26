@@ -2,7 +2,6 @@ package com.example.basilience;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -27,15 +26,10 @@ import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
-import com.google.firebase.firestore.DocumentReference;
-import com.google.firebase.firestore.DocumentSnapshot;
-import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.firestore.WriteBatch;
 
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Random;
 
 public class DevOptionsFragment extends Fragment {
 
@@ -48,22 +42,16 @@ public class DevOptionsFragment extends Fragment {
 
     private SwitchMaterial switchMockEnable;
     private EditText etPh, etEc, etTemp, etHumidity, etWaterTemperature, etWaterLevel;
-    private EditText etMinWaterLevel, etMaxWaterLevel;
-    private EditText etSsid, etPassword;
-    private TextView tvWifiStatus, tvSensorTestIndicator;
+    private TextView tvSensorTestIndicator;
     private TextView tvDiagnosticPh, tvDiagnosticEc, tvDiagnosticAirTemperature;
     private TextView tvDiagnosticHumidity, tvDiagnosticWaterTemperature, tvDiagnosticWaterLevel;
     private TextView tvDiagnosticWaterLevelDistance;
 
-    private MaterialButton btnPush, btnPushSettings, btnInjectLogs, btnPushWifi, btnEnableProvisioningAp, btnDisableDeveloperMode;
-    private MaterialButton btnFilterSensorTest, btnFilterMock, btnFilterRefill, btnFilterWifi, btnSensorTest;
+    private MaterialButton btnPush, btnEnableProvisioningAp, btnDisableDeveloperMode;
+    private MaterialButton btnFilterSensorTest, btnFilterMock, btnSensorTest;
 
-    private View containerSensorTest, containerMockData, containerRefillLevels, containerWifiConfig;
+    private View containerSensorTest, containerMockData;
 
-    private boolean isCurrentlyOnline = false;
-    private DeviceConnectivityState connectivityState = DeviceConnectivityState.RECONNECTING;
-    private Boolean lastReportedWifiConnected = null;
-    private boolean setupApReachable = false;
     private boolean loadingMockState = true;
     private boolean suppressMockSwitchCallback = false;
     private boolean sensorTestActive = false;
@@ -100,14 +88,10 @@ public class DevOptionsFragment extends Fragment {
         // Filter chips
         btnFilterSensorTest = view.findViewById(R.id.btnFilterSensorTest);
         btnFilterMock = view.findViewById(R.id.btnFilterMock);
-        btnFilterRefill = view.findViewById(R.id.btnFilterRefill);
-        btnFilterWifi = view.findViewById(R.id.btnFilterWifi);
 
         // Containers
         containerSensorTest = view.findViewById(R.id.containerSensorTest);
         containerMockData = view.findViewById(R.id.containerMockData);
-        containerRefillLevels = view.findViewById(R.id.containerRefillLevels);
-        containerWifiConfig = view.findViewById(R.id.containerWifiConfig);
 
         // Mock data components
         switchMockEnable = view.findViewById(R.id.switchMockEnable);
@@ -118,7 +102,6 @@ public class DevOptionsFragment extends Fragment {
         etWaterTemperature = view.findViewById(R.id.etWaterTemperature);
         etWaterLevel = view.findViewById(R.id.etWaterLevel);
         btnPush = view.findViewById(R.id.btnPush);
-        btnInjectLogs = view.findViewById(R.id.btnInjectLogs);
 
         // Physical sensor test components
         btnSensorTest = view.findViewById(R.id.btnSensorTest);
@@ -131,16 +114,7 @@ public class DevOptionsFragment extends Fragment {
         tvDiagnosticWaterLevel = view.findViewById(R.id.tvDiagnosticWaterLevel);
         tvDiagnosticWaterLevelDistance = view.findViewById(R.id.tvDiagnosticWaterLevelDistance);
 
-        // Refill thresholds components
-        etMinWaterLevel = view.findViewById(R.id.etMinWaterLevel);
-        etMaxWaterLevel = view.findViewById(R.id.etMaxWaterLevel);
-        btnPushSettings = view.findViewById(R.id.btnPushSettings);
-
-        // Wi-Fi Config components
-        etSsid = view.findViewById(R.id.etSsid);
-        etPassword = view.findViewById(R.id.etPassword);
-        tvWifiStatus = view.findViewById(R.id.tvWifiStatus);
-        btnPushWifi = view.findViewById(R.id.btnPushWifi);
+        // Always-visible actions below the tabs
         btnEnableProvisioningAp = view.findViewById(R.id.btnEnableProvisioningAp);
         btnDisableDeveloperMode = view.findViewById(R.id.btnDisableDeveloperMode);
 
@@ -189,49 +163,18 @@ public class DevOptionsFragment extends Fragment {
         // Setup filter button listeners
         btnFilterSensorTest.setOnClickListener(v -> updateFilterSelection("Sensor"));
         btnFilterMock.setOnClickListener(v -> updateFilterSelection("Mock"));
-        btnFilterRefill.setOnClickListener(v -> updateFilterSelection("Refill"));
-        btnFilterWifi.setOnClickListener(v -> updateFilterSelection("Wifi"));
 
         btnPush.setOnClickListener(v -> pushMockValues());
         btnSensorTest.setOnClickListener(v -> handleSensorTestButton());
-        btnPushSettings.setOnClickListener(v -> pushSettings());
-        btnPushWifi.setOnClickListener(v -> handleSaveWifiCredentials());
         if (btnEnableProvisioningAp != null) {
             btnEnableProvisioningAp.setOnClickListener(v -> enableProvisioningApMode());
         }
         if (btnDisableDeveloperMode != null) {
             btnDisableDeveloperMode.setOnClickListener(v -> disableDeveloperMode(navController));
         }
-        
-        final String fDeviceId = currentDeviceId;
-        btnInjectLogs.setOnClickListener(v -> confirmAndInjectMockFirestoreLogs(fDeviceId));
 
         observeSensorTest();
         updateFilterSelection("Sensor");
-
-        // Observe online status for Wi-Fi config UI
-        DeviceConnectionManager.getInstance().getConnectivityState().observe(getViewLifecycleOwner(), state -> {
-            connectivityState = state == null
-                    ? DeviceConnectivityState.RECONNECTING : state;
-            isCurrentlyOnline = connectivityState == DeviceConnectivityState.ONLINE;
-            renderWifiStatusUI();
-            checkSetupApReachability();
-        });
-
-        deviceRef.child("status").child("wifiConnected").addValueEventListener(new ValueEventListener() {
-            @Override
-            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                lastReportedWifiConnected = snapshot.getValue(Boolean.class);
-                renderWifiStatusUI();
-            }
-
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {
-                lastReportedWifiConnected = null;
-                renderWifiStatusUI();
-            }
-        });
-        checkSetupApReachability();
     }
 
     /**
@@ -243,24 +186,19 @@ public class DevOptionsFragment extends Fragment {
      * now carried by the view's selected state and resolved by the colour state
      * lists on DeveloperFilterChip.
      *
-     * Which tab is shown is unchanged: the same filter names select the same
-     * containers as before.
+     * Only Sensor Test and Mock Data remain as tabs - Water Refill and Wi-Fi
+     * Config were removed from Developer Options (refill has no developer UI
+     * anymore; Wi-Fi Configuration moved to Device Management).
      */
     private void updateFilterSelection(String selectedFilter) {
         boolean sensor = "Sensor".equalsIgnoreCase(selectedFilter);
-        boolean refill = "Refill".equalsIgnoreCase(selectedFilter);
-        boolean wifi = "Wifi".equalsIgnoreCase(selectedFilter);
-        boolean mock = !sensor && !refill && !wifi;
+        boolean mock = !sensor;
 
         btnFilterSensorTest.setSelected(sensor);
         btnFilterMock.setSelected(mock);
-        btnFilterRefill.setSelected(refill);
-        btnFilterWifi.setSelected(wifi);
 
         containerSensorTest.setVisibility(sensor ? View.VISIBLE : View.GONE);
         containerMockData.setVisibility(mock ? View.VISIBLE : View.GONE);
-        containerRefillLevels.setVisibility(refill ? View.VISIBLE : View.GONE);
-        containerWifiConfig.setVisibility(wifi ? View.VISIBLE : View.GONE);
     }
 
     private void handleSensorTestButton() {
@@ -313,7 +251,8 @@ public class DevOptionsFragment extends Fragment {
                 renderDiagnostic(tvDiagnosticEc, "EC", snapshot.child("ec").getValue(), " mS/cm");
                 renderDiagnostic(tvDiagnosticAirTemperature, "Air Temperature", snapshot.child("airTemperature").getValue(), " °C");
                 renderDiagnostic(tvDiagnosticHumidity, "Humidity", snapshot.child("humidity").getValue(), " %");
-                renderDiagnostic(tvDiagnosticWaterTemperature, "Water Temperature", snapshot.child("waterTemperature").getValue(), " °C");
+                renderDiagnostic(tvDiagnosticWaterTemperature, "Water Temperature",
+                        snapshot.child("waterTemperature").getValue(), " °C", "Unavailable");
                 renderDiagnostic(tvDiagnosticWaterLevel, "Water Level", snapshot.child("waterLevel").getValue(), " %");
                 renderDiagnostic(tvDiagnosticWaterLevelDistance, "Water Level Distance", snapshot.child("waterLevelDistanceCm").getValue(), " cm");
             }
@@ -342,16 +281,25 @@ public class DevOptionsFragment extends Fragment {
     }
 
     private void renderDiagnostic(TextView view, String label, Object rawValue, String unit) {
+        renderDiagnostic(view, label, rawValue, unit, "NO VALID READING");
+    }
+
+    // Row stays visible either way - only the status line under the label
+    // changes - so a dead/disconnected sensor reads as an explicit,
+    // unmistakable status rather than a blank or missing row. unavailableText
+    // lets one field (Water Temperature) use clearer wording for hardware
+    // diagnosis without changing every other diagnostic row's existing style.
+    private void renderDiagnostic(TextView view, String label, Object rawValue, String unit, String unavailableText) {
         if (view == null) return;
         if (!sensorTestActive) {
-            view.setText(label + "\n--\nNO VALID READING");
+            view.setText(label + "\n--\n" + unavailableText);
             view.setTextColor(ContextCompat.getColor(requireContext(), R.color.sensor_no_data));
         } else if (rawValue instanceof Number) {
             view.setText(String.format(Locale.US, "%s\n%.2f%s\nREADING", label,
                     ((Number) rawValue).doubleValue(), unit));
             view.setTextColor(ContextCompat.getColor(requireContext(), R.color.sensor_reading));
         } else {
-            view.setText(label + "\n--\nNO VALID READING");
+            view.setText(label + "\n--\n" + unavailableText);
             view.setTextColor(ContextCompat.getColor(requireContext(), R.color.sensor_no_data));
         }
     }
@@ -361,7 +309,7 @@ public class DevOptionsFragment extends Fragment {
         renderDiagnostic(tvDiagnosticEc, "EC", null, " mS/cm");
         renderDiagnostic(tvDiagnosticAirTemperature, "Air Temperature", null, " °C");
         renderDiagnostic(tvDiagnosticHumidity, "Humidity", null, " %");
-        renderDiagnostic(tvDiagnosticWaterTemperature, "Water Temperature", null, " °C");
+        renderDiagnostic(tvDiagnosticWaterTemperature, "Water Temperature", null, " °C", "Unavailable");
         renderDiagnostic(tvDiagnosticWaterLevel, "Water Level", null, " %");
         renderDiagnostic(tvDiagnosticWaterLevelDistance, "Water Level Distance", null, " cm");
     }
@@ -400,26 +348,6 @@ public class DevOptionsFragment extends Fragment {
                 loadingMockState = false;
                 if (getContext() != null) {
                     Toast.makeText(getContext(), "Failed to load mock data", Toast.LENGTH_SHORT).show();
-                }
-            }
-        });
-        
-        settingsRef.addListenerForSingleValueEvent(new ValueEventListener() {
-            @Override
-            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                if (snapshot.exists()) {
-                    Double minLevel = snapshot.child("refillStartLevel").getValue(Double.class);
-                    if (minLevel != null) etMinWaterLevel.setText(String.valueOf(minLevel));
-
-                    Double maxLevel = snapshot.child("refillStopLevel").getValue(Double.class);
-                    if (maxLevel != null) etMaxWaterLevel.setText(String.valueOf(maxLevel));
-                }
-            }
-
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {
-                if (getContext() != null) {
-                    Toast.makeText(getContext(), "Failed to load settings data", Toast.LENGTH_SHORT).show();
                 }
             }
         });
@@ -520,74 +448,6 @@ public class DevOptionsFragment extends Fragment {
         mainHandler.postDelayed(timeout, 15000L);
     }
 
-    private void pushSettings() {
-        Map<String, Object> updates = new HashMap<>();
-        try {
-            if (!etMinWaterLevel.getText().toString().isEmpty()) updates.put("refillStartLevel", Double.parseDouble(etMinWaterLevel.getText().toString()));
-            if (!etMaxWaterLevel.getText().toString().isEmpty()) updates.put("refillStopLevel", Double.parseDouble(etMaxWaterLevel.getText().toString()));
-
-            showLoading("Pushing Thresholds...", "Writing settings to ESP32...");
-
-            settingsRef.updateChildren(updates).addOnCompleteListener(task -> {
-                hideLoading();
-                if (task.isSuccessful() && getContext() != null) {
-                    Toast.makeText(getContext(), "Refill thresholds pushed to ESP32", Toast.LENGTH_SHORT).show();
-                } else if (getContext() != null) {
-                    Toast.makeText(getContext(), "Failed to push settings", Toast.LENGTH_SHORT).show();
-                }
-            });
-        } catch (NumberFormatException e) {
-            hideLoading();
-            Toast.makeText(getContext(), "Please enter valid numbers", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    private void handleSaveWifiCredentials() {
-        String ssid = etSsid.getText() != null ? etSsid.getText().toString().trim() : "";
-        String password = etPassword.getText() != null ? etPassword.getText().toString().trim() : "";
-
-        if (ssid.isEmpty()) {
-            etSsid.setError("SSID cannot be empty");
-            return;
-        }
-
-        NotificationHelper.showConfirmation(requireContext(),
-                "Change Wi-Fi Credentials?",
-                "Connect this phone to the ESP32 'Basilience-Setup' Wi-Fi network, then Basilience will send the credentials directly to the ESP32 over the local setup page. Firebase is not required for this step.",
-                "Send Locally", "Cancel", () -> sendWifiCommandLocal(ssid, password));
-    }
-
-    private void sendWifiCommandLocal(String ssid, String password) {
-        showLoading("Connecting to ESP32...", "Sending credentials through Basilience-Setup Wi-Fi...");
-        
-        new Thread(() -> {
-            try {
-                int responseCode = LocalProvisioningClient.sendCredentials(requireContext().getApplicationContext(), ssid, password);
-                
-                new Handler(Looper.getMainLooper()).post(() -> {
-                    if (responseCode == 200) {
-                        showLoading("Credentials Sent!", "ESP32 is restarting...");
-                        etSsid.setText("");
-                        etPassword.setText("");
-                        new Handler(Looper.getMainLooper()).postDelayed(this::hideLoading, 3000);
-                    } else {
-                        hideLoading();
-                        Toast.makeText(getContext(), "Failed to send to ESP32: HTTP " + responseCode, Toast.LENGTH_LONG).show();
-                    }
-                });
-                
-            } catch (Exception e) {
-                new Handler(Looper.getMainLooper()).post(() -> {
-                    hideLoading();
-                    if (isAdded()) {
-                        NotificationHelper.showError(requireContext(), "Wi-Fi Configuration Failed",
-                                "Wi-Fi configuration could not be sent.\nReconnect to Basilience-Setup and try again.");
-                    }
-                });
-            }
-        }).start();
-    }
-
     private void enableProvisioningApMode() {
         if (deviceRef == null) return;
 
@@ -619,173 +479,6 @@ public class DevOptionsFragment extends Fragment {
         if (settingsRef != null) settingsRef.child("devModeEnabled").setValue(false);
         Toast.makeText(getContext(), "Developer Mode disabled", Toast.LENGTH_SHORT).show();
         navController.popBackStack();
-    }
-
-    private void checkSetupApReachability() {
-        new Thread(() -> {
-            boolean reachable = LocalProvisioningClient.isSetupApReachable(requireContext().getApplicationContext());
-
-            boolean finalReachable = reachable;
-            new Handler(Looper.getMainLooper()).post(() -> {
-                setupApReachable = finalReachable;
-                renderWifiStatusUI();
-            });
-        }).start();
-    }
-
-    private void renderWifiStatusUI() {
-        if (tvWifiStatus == null || !isAdded()) return;
-
-        if (setupApReachable) {
-            tvWifiStatus.setText("● Provisioning");
-            tvWifiStatus.setTextColor(androidx.core.content.ContextCompat.getColor(
-                    requireContext(), R.color.device_status_reconnecting));
-        } else {
-            tvWifiStatus.setText("● " + connectivityState.getLabel());
-            tvWifiStatus.setTextColor(androidx.core.content.ContextCompat.getColor(
-                    requireContext(), connectivityState.getColorRes()));
-        }
-    }
-
-    // This button permanently replaces a device's Reports history and is
-    // meant only for exercising the Reports UI against simulated data, so it
-    // requires (a) an explicit destructive confirmation before it can run at
-    // all, and (b) that the device's own existing Mock Sensors state - not a
-    // new permission concept - already indicates this device is currently in
-    // a testing configuration rather than serving real production readings.
-    private void confirmAndInjectMockFirestoreLogs(String deviceId) {
-        if (deviceId == null || deviceId.isEmpty()) return;
-
-        if (loadingMockState) {
-            if (getContext() != null) {
-                Toast.makeText(getContext(), "Still loading Mock Sensors state, please try again in a moment.", Toast.LENGTH_SHORT).show();
-            }
-            return;
-        }
-
-        if (!switchMockEnable.isChecked()) {
-            NotificationHelper.showError(requireContext(), "Mock Sensors Required",
-                    "Injecting simulated report data deletes this device's existing parameter and fogging "
-                            + "history, so it's only allowed while Mock Sensors are enabled for this device. "
-                            + "Enable Mock Sensors above first.");
-            return;
-        }
-
-        NotificationHelper.showDestructiveConfirmation(requireContext(), "Replace Report History?",
-                "This will permanently delete ALL existing parameter and fogging history for device \""
-                        + deviceId + "\" and replace it with 30 days of simulated data.\n\n"
-                        + "This cannot be casually undone.",
-                "Delete & Inject",
-                () -> injectMockFirestoreLogs(deviceId));
-    }
-
-    private void injectMockFirestoreLogs(String deviceId) {
-        showLoading("Injecting Mock Logs...", "Clearing previous logs...");
-
-        if (btnInjectLogs != null) {
-            btnInjectLogs.setEnabled(false);
-            btnInjectLogs.setText("Injecting...");
-        }
-
-        FirebaseFirestore db = FirebaseFirestore.getInstance();
-        
-        db.collection("devices").document(deviceId).collection("foggingLogs").get().addOnSuccessListener(fogSnaps -> {
-            WriteBatch deleteBatch = db.batch();
-            for (DocumentSnapshot doc : fogSnaps) {
-                deleteBatch.delete(doc.getReference());
-            }
-            db.collection("devices").document(deviceId).collection("parameterLogs").get().addOnSuccessListener(paramSnaps -> {
-                for (DocumentSnapshot doc : paramSnaps) {
-                    deleteBatch.delete(doc.getReference());
-                }
-                deleteBatch.commit().addOnSuccessListener(aVoid -> {
-                    injectFreshMockData(deviceId);
-                });
-            });
-        }).addOnFailureListener(e -> {
-            hideLoading();
-            if (btnInjectLogs != null) {
-                btnInjectLogs.setEnabled(true);
-                btnInjectLogs.setText("Inject Mock Firestore Logs");
-            }
-            if (getContext() != null) {
-                Toast.makeText(getContext(), "Failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
-        });
-    }
-
-    private void injectFreshMockData(String deviceId) {
-        showLoading("Injecting Mock Logs...", "Writing 30 days of simulation logs...");
-
-        FirebaseFirestore db = FirebaseFirestore.getInstance();
-        WriteBatch batch = db.batch();
-        Random random = new Random();
-        long now = System.currentTimeMillis();
-        
-        for (int i = 0; i < 180; i++) {
-            long timestamp = now - (i * 14400000L);
-            Map<String, Object> log = new HashMap<>();
-            log.put("timestamp", timestamp);
-            log.put("ph", 5.5 + random.nextDouble() * 1.5);
-            log.put("ec", 1.0 + random.nextDouble() * 1.0);
-            log.put("air_temp", 22.0 + random.nextDouble() * 6.0);
-            log.put("humidity", 45.0 + random.nextDouble() * 25.0);
-            log.put("water_temp", 20.0 + random.nextDouble() * 4.0);
-            log.put("water_level", 40.0 + random.nextDouble() * 50.0);
-
-            DocumentReference ref = db.collection("devices").document(deviceId)
-                    .collection("parameterLogs").document("mock_param_" + timestamp);
-            batch.set(ref, log);
-        }
-
-        long currentSimTime = now;
-        for (int i = 0; i < 60; i++) {
-            long gap = (long)(28800000L + random.nextDouble() * 28800000L); 
-            long offTime = currentSimTime - gap;
-            
-            long duration = (long)(120000 + random.nextDouble() * 300000); 
-            long onTime = offTime - duration;
-            
-            boolean isManual = random.nextBoolean();
-
-            Map<String, Object> onEvent = new HashMap<>();
-            onEvent.put("event", "ON");
-            onEvent.put("timestamp", onTime);
-            onEvent.put("isManual", isManual);
-            DocumentReference refOn = db.collection("devices").document(deviceId)
-                    .collection("foggingLogs").document("mock_fog_on_" + onTime);
-            batch.set(refOn, onEvent);
-
-            Map<String, Object> offEvent = new HashMap<>();
-            offEvent.put("event", "OFF");
-            offEvent.put("timestamp", offTime);
-            offEvent.put("isManual", isManual);
-            DocumentReference refOff = db.collection("devices").document(deviceId)
-                    .collection("foggingLogs").document("mock_fog_off_" + offTime);
-            batch.set(refOff, offEvent);
-            
-            currentSimTime = onTime;
-        }
-
-        batch.commit().addOnSuccessListener(aVoid -> {
-            hideLoading();
-            if (getContext() != null) {
-                Toast.makeText(getContext(), "Mock logs injected! Check Reports.", Toast.LENGTH_SHORT).show();
-            }
-            if (btnInjectLogs != null) {
-                btnInjectLogs.setEnabled(true);
-                btnInjectLogs.setText("Inject Mock Firestore Logs");
-            }
-        }).addOnFailureListener(e -> {
-            hideLoading();
-            if (getContext() != null) {
-                Toast.makeText(getContext(), "Failed to inject: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
-            if (btnInjectLogs != null) {
-                btnInjectLogs.setEnabled(true);
-                btnInjectLogs.setText("Inject Mock Firestore Logs");
-            }
-        });
     }
 
     @Override

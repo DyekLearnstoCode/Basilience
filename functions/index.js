@@ -944,7 +944,7 @@ exports.onCoolingPeltierUpdated = onValueWritten({
         admin.database().ref(`/devices/${deviceId}/settings`).once("value")
     ]);
 
-    const waterTemp = (sensorsSnapshot.val() || {}).waterTemp;
+    const waterTemp = (sensorsSnapshot.val() || {}).waterTemperature;
     const waterTempValid = typeof waterTemp === "number" && Number.isFinite(waterTemp);
     const coolerOffTemp = resolveTargetSetting(settingsSnapshot, "coolerOffTemp", 22.5, {deviceId});
     const targetSatisfied = waterTempValid && waterTemp <= coolerOffTemp;

@@ -96,6 +96,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private boolean alertsLoaded = false;
     /** Configured cooling ceiling from settings/highWaterTemp; null when not configured. */
     private Double configuredHighWaterTemp = null;
+    /** status/currentMode, phDirection, ecDirection and the subsystem/global locks - all from the same statusListener below. */
+    private final ManualOverrideAdvisor.OperationContext operationContext = new ManualOverrideAdvisor.OperationContext();
     private DatabaseReference highWaterTempRef;
     private ValueEventListener highWaterTempListener;
 
@@ -222,11 +224,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (actFogger != null) setupActuatorUI(actFogger, fogger);
         if (actReservoirFan != null) setupActuatorUI(actReservoirFan, reservoirFan);
         if (actPeltier != null) setupActuatorUI(actPeltier, peltier);
-        if (actCirculationPump != null) {
-            setupActuatorUI(actCirculationPump, circulationPump);
-            SwitchMaterial circulationSwitch = actCirculationPump.findViewById(R.id.switchActuator);
-            if (circulationSwitch != null) circulationSwitch.setVisibility(View.GONE);
-        }
+        if (actCirculationPump != null) setupActuatorUI(actCirculationPump, circulationPump);
 
         updateActuatorControls();
 
@@ -551,13 +549,30 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
                 // Sync status: reservoirLocked & safetyLock
                 Boolean reservoirLocked = snapshot.child("reservoirLocked").getValue(Boolean.class);
-                if (reservoirLocked != null) isReservoirLocked = reservoirLocked;
+                if (reservoirLocked != null) {
+                    isReservoirLocked = reservoirLocked;
+                    operationContext.reservoirLocked = reservoirLocked;
+                }
 
                 Boolean safetyLock = snapshot.child("safetyLock").getValue(Boolean.class);
                 if (safetyLock != null) {
                     isSafetyLock = safetyLock;
+                    operationContext.safetyLock = safetyLock;
                     updateConnectionUI();
                 }
+
+                // Operation-aware manual-command validation (ManualOverrideAdvisor.evaluateCommand)
+                // reads the rest of this same node - none of these are a new
+                // RTDB path, just fields on /status this listener wasn't
+                // pulling out before.
+                Integer currentMode = snapshot.child("currentMode").getValue(Integer.class);
+                operationContext.currentMode = currentMode != null ? currentMode : -1;
+                operationContext.phDirection = snapshot.child("phDirection").getValue(String.class);
+                operationContext.ecDirection = snapshot.child("ecDirection").getValue(String.class);
+                operationContext.phSubsystemLocked = Boolean.TRUE.equals(snapshot.child("phSubsystemLocked").getValue(Boolean.class));
+                operationContext.ecSubsystemLocked = Boolean.TRUE.equals(snapshot.child("ecSubsystemLocked").getValue(Boolean.class));
+                operationContext.refillSubsystemLocked = Boolean.TRUE.equals(snapshot.child("refillSubsystemLocked").getValue(Boolean.class));
+                operationContext.coolingSubsystemLocked = Boolean.TRUE.equals(snapshot.child("coolingSubsystemLocked").getValue(Boolean.class));
             }
 
             @Override
@@ -822,73 +837,83 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 return;
             }
 
-            // Pre-validation: pH Up / pH Down mutual exclusivity
-            if (checked) {
-                if (actuator == phUp && phDown.physicalRunning) {
-                    toggle.setOnCheckedChangeListener(null);
-                    toggle.setChecked(false);
-                    setupActuatorUI(card, actuator);
-                    Toast.makeText(getContext(), "Cannot activate pH Up while pH Down is running.", Toast.LENGTH_LONG).show();
-                    return;
-                } else if (actuator == phDown && phUp.physicalRunning) {
-                    toggle.setOnCheckedChangeListener(null);
-                    toggle.setChecked(false);
-                    setupActuatorUI(card, actuator);
-                    Toast.makeText(getContext(), "Cannot activate pH Down while pH Up is running.", Toast.LENGTH_LONG).show();
-                    return;
-                }
+            // Every manual command - ON or OFF alike - is routed through the
+            // one shared operation-aware validator: normal-condition rules,
+            // active pH/EC dosing-or-stabilization interference, automation
+            // ownership, and firmware's hard locks/interlocks are all folded
+            // into a single SAFE / SOFT_CONFLICT / HARD_BLOCK verdict, never
+            // a stack of separate checks or dialogs.
+            ManualOverrideAdvisor.ActuatorKey key = keyFor(actuator);
+            ManualOverrideAdvisor.Result result = ManualOverrideAdvisor.evaluateCommand(
+                    key, checked, sensorLiveData.getValue(), alertsLoaded ? overrideFlags : null,
+                    configuredHighWaterTemp, operationContext, buildActuatorSnapshots());
+
+            if (result.decision == ManualOverrideAdvisor.Decision.HARD_BLOCK) {
+                toggle.setOnCheckedChangeListener(null);
+                toggle.setChecked(actuator.physicalRunning);
+                setupActuatorUI(card, actuator);
+                NotificationHelper.showError(requireContext(), result.title, result.message);
+                return;
             }
 
-            // Turning an actuator OFF never needs threshold confirmation - it
-            // goes straight through the existing request path. Turning one ON
-            // is checked against the parameter it controls first.
-            if (checked) {
-                ManualOverrideAdvisor.Condition condition = conditionFor(actuator);
-                ManualOverrideAdvisor.Advice advice = ManualOverrideAdvisor.evaluate(
-                        condition, sensorLiveData.getValue(),
-                        alertsLoaded ? overrideFlags : null, configuredHighWaterTemp);
+            if (result.decision == ManualOverrideAdvisor.Decision.SOFT_CONFLICT) {
+                // The switch must not sit visually at the requested state while
+                // the user is still deciding, so it goes back to confirmed
+                // device state before the dialog appears. Nothing is locked
+                // and no request exists yet - Cancel simply leaves it as it was.
+                toggle.setOnCheckedChangeListener(null);
+                toggle.setChecked(actuator.physicalRunning);
+                setupActuatorUI(card, actuator);
 
-                if (advice != ManualOverrideAdvisor.Advice.PROCEED) {
-                    // The switch must not sit visually ON while the user is
-                    // still deciding, so it goes back to confirmed device state
-                    // before the dialog appears. Nothing is locked and no
-                    // request exists yet - Cancel simply leaves it as it was.
-                    toggle.setOnCheckedChangeListener(null);
-                    toggle.setChecked(actuator.physicalRunning);
-                    setupActuatorUI(card, actuator);
-
-                    NotificationHelper.showConfirmation(requireContext(),
-                            ManualOverrideAdvisor.CONFIRM_TITLE,
-                            ManualOverrideAdvisor.messageFor(condition, advice),
-                            "Continue", "Cancel",
-                            () -> {
-                                Log.d("Monitoring", "[MANUAL-APP] Override confirmed actuator=" + actuator.dbKey + " target=ON");
-                                sendActuatorCommand(card, actuator, true, true);
-                            });
-                    return;
-                }
+                final boolean targetChecked = checked;
+                NotificationHelper.showConfirmation(requireContext(),
+                        result.title, result.message,
+                        "Continue", "Cancel",
+                        () -> {
+                            Log.d("Monitoring", "[MANUAL-APP] Override confirmed actuator=" + actuator.dbKey + " target=" + targetChecked);
+                            sendActuatorCommand(card, actuator, targetChecked, true);
+                        });
+                return;
             }
 
             sendActuatorCommand(card, actuator, checked, false);
         });
     }
 
-    /**
-     * Maps an actuator to the condition that governs whether switching it on
-     * by hand is called for right now.
-     *
-     * Only mappings backed by a real controlling condition in this codebase
-     * appear here. Grow Lights are exempt by design, and the fans, fogger and
-     * circulation pump have no single verified directional condition available
-     * to Android - all of them fall through to NONE and never prompt.
-     */
-    private ManualOverrideAdvisor.Condition conditionFor(Actuator actuator) {
-        if (actuator == phUp) return ManualOverrideAdvisor.Condition.PH_RAISE;
-        if (actuator == phDown) return ManualOverrideAdvisor.Condition.PH_LOWER;
-        if (actuator == nutrients || actuator == bloomPump) return ManualOverrideAdvisor.Condition.EC_RAISE;
-        if (actuator == peltier) return ManualOverrideAdvisor.Condition.WATER_COOL;
-        if (actuator == waterPumpValve) return ManualOverrideAdvisor.Condition.WATER_LEVEL_FILL;
-        return ManualOverrideAdvisor.Condition.NONE;
+    /** Maps a fragment Actuator to its ManualOverrideAdvisor.ActuatorKey - both cover the same 10 UI cards. */
+    private ManualOverrideAdvisor.ActuatorKey keyFor(Actuator actuator) {
+        if (actuator == phUp) return ManualOverrideAdvisor.ActuatorKey.PH_UP;
+        if (actuator == phDown) return ManualOverrideAdvisor.ActuatorKey.PH_DOWN;
+        if (actuator == nutrients || actuator == bloomPump) return ManualOverrideAdvisor.ActuatorKey.NUTRIENTS;
+        if (actuator == waterPumpValve) return ManualOverrideAdvisor.ActuatorKey.SOLENOID;
+        if (actuator == peltier) return ManualOverrideAdvisor.ActuatorKey.PELTIER;
+        if (actuator == circulationPump) return ManualOverrideAdvisor.ActuatorKey.CIRCULATION_PUMP;
+        if (actuator == fogger) return ManualOverrideAdvisor.ActuatorKey.FOGGER;
+        if (actuator == reservoirFan) return ManualOverrideAdvisor.ActuatorKey.BLOWER;
+        if (actuator == canopyFan) return ManualOverrideAdvisor.ActuatorKey.CANOPY_FAN;
+        return ManualOverrideAdvisor.ActuatorKey.GROW_LIGHT;
+    }
+
+    /** Snapshots actuatorStatus's already-synced running/source/reason for every actuator a validation rule might cross-check against. */
+    private ManualOverrideAdvisor.ActuatorSnapshots buildActuatorSnapshots() {
+        ManualOverrideAdvisor.ActuatorSnapshots snapshots = new ManualOverrideAdvisor.ActuatorSnapshots();
+        copySnapshot(phUp, snapshots.phUp);
+        copySnapshot(phDown, snapshots.phDown);
+        copySnapshot(nutrients, snapshots.nutrients);
+        copySnapshot(waterPumpValve, snapshots.solenoid);
+        copySnapshot(peltier, snapshots.peltier);
+        copySnapshot(circulationPump, snapshots.circulationPump);
+        copySnapshot(fogger, snapshots.fogger);
+        copySnapshot(reservoirFan, snapshots.blower);
+        copySnapshot(canopyFan, snapshots.canopyFan);
+        copySnapshot(growLights, snapshots.growLight);
+        return snapshots;
+    }
+
+    private void copySnapshot(Actuator source, ManualOverrideAdvisor.ActuatorSnapshot target) {
+        target.physicalRunning = source.physicalRunning;
+        target.physicalSource = source.physicalSource;
+        target.reason = source.reason;
     }
 
     /**
@@ -1382,6 +1407,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         setActuatorEnabled(actFogger, enabled);
         setActuatorEnabled(actReservoirFan, enabled);
         setActuatorEnabled(actPeltier, enabled);
+        setActuatorEnabled(actCirculationPump, enabled);
     }
 
     /** Shared logic for manual mode toggle — called both directly and from the confirmation dialog. */

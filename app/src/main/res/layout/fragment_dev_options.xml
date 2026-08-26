@@ -54,7 +54,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:text="Configure developer options, simulation data, and Wi-Fi settings."
+                android:text="Configure developer options and simulation data."
                 android:textColor="#757575"
                 android:textSize="14sp"
                 android:fontFamily="sans-serif-medium"
@@ -92,7 +92,6 @@
                     android:layout_height="42dp"
                     android:layout_weight="1"
                     android:layout_marginStart="3dp"
-                    android:layout_marginEnd="3dp"
                     android:paddingStart="0dp"
                     android:paddingEnd="0dp"
                     app:iconPadding="0dp"
@@ -101,41 +100,6 @@
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
                     android:text="Mock Data"
-                    android:textSize="10sp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnFilterRefill"
-                    style="@style/DeveloperFilterChip"
-                    android:layout_width="0dp"
-                    android:layout_height="42dp"
-                    android:layout_weight="1"
-                    android:layout_marginStart="3dp"
-                    android:layout_marginEnd="3dp"
-                    android:paddingStart="0dp"
-                    android:paddingEnd="0dp"
-                    app:iconPadding="0dp"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    android:insetLeft="0dp"
-                    android:insetRight="0dp"
-                    android:text="Water Refill"
-                    android:textSize="10sp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnFilterWifi"
-                    style="@style/DeveloperFilterChip"
-                    android:layout_width="0dp"
-                    android:layout_height="42dp"
-                    android:layout_weight="1"
-                    android:layout_marginStart="3dp"
-                    android:paddingStart="0dp"
-                    android:paddingEnd="0dp"
-                    app:iconPadding="0dp"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    android:insetLeft="0dp"
-                    android:insetRight="0dp"
-                    android:text="Wi-Fi Config"
                     android:textSize="10sp" />
             </LinearLayout>
 
@@ -254,7 +218,7 @@
                                 android:background="@drawable/card_option"
                                 android:gravity="center"
                                 android:padding="12dp"
-                                android:text="Water Temperature\n--\nNO VALID READING"
+                                android:text="Water Temperature\n--\nUnavailable"
                                 android:textColor="@color/sensor_no_data" />
 
                             <TextView
@@ -477,222 +441,33 @@
                             app:cornerRadius="12dp"
                             app:backgroundTint="@color/primary"
                             android:textColor="@color/onPrimary"
-                            android:layout_marginBottom="12dp"
-                            android:textStyle="bold"/>
-
-                        <!-- Inject Logs Button -->
-                        <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnInjectLogs"
-                    style="@style/BasilienceButton.Secondary"
-                            android:layout_width="match_parent"
-                            android:layout_height="52dp"
-                            android:text="Inject Firestore Mock Logs"
-                            app:cornerRadius="12dp"
-                            app:strokeColor="@color/primary"
-                            app:strokeWidth="1.5dp"
-                            android:textColor="@color/primary"
                             android:textStyle="bold"/>
 
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
 
-            <!-- 2. WATER REFILL CONTAINER -->
-            <LinearLayout
-                android:id="@+id/containerRefillLevels"
+            <!-- Always visible below either tab: developer/recovery actions that
+                 aren't part of either Sensor Test or Mock Data. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnEnableProvisioningAp"
+                style="@style/BasilienceButton.Primary"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
+                android:layout_height="52dp"
+                android:layout_marginTop="4dp"
+                android:text="Enable Provisioning/AP Mode"
+                android:textStyle="bold"
+                app:cornerRadius="12dp"/>
 
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="16dp"
-                    app:cardCornerRadius="16dp"
-                    app:cardElevation="2dp"
-                    app:strokeColor="#E0E0E0"
-                    app:strokeWidth="1dp"
-                    app:cardBackgroundColor="@android:color/white">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="20dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Water Refill Thresholds"
-                            android:fontFamily="sans-serif-bold"
-                            android:textColor="#212121"
-                            android:textSize="18sp"
-                            android:layout_marginBottom="16dp"/>
-
-                        <!-- Min Water Level -->
-                        <com.google.android.material.textfield.TextInputLayout
-                            style="@style/InputFieldStyle"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginBottom="12dp">
-
-                            <com.google.android.material.textfield.TextInputEditText
-                                android:id="@+id/etMinWaterLevel"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:hint="Min Water Level % - Refill Start"
-                                android:inputType="numberDecimal"
-                                android:textColor="@android:color/black"
-                                android:textCursorDrawable="@null" />
-                        </com.google.android.material.textfield.TextInputLayout>
-
-                        <!-- Max Water Level -->
-                        <com.google.android.material.textfield.TextInputLayout
-                            style="@style/InputFieldStyle"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginBottom="20dp">
-
-                            <com.google.android.material.textfield.TextInputEditText
-                                android:id="@+id/etMaxWaterLevel"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:hint="Max Water Level % - Refill Stop"
-                                android:inputType="numberDecimal"
-                                android:textColor="@android:color/black"
-                                android:textCursorDrawable="@null" />
-                        </com.google.android.material.textfield.TextInputLayout>
-
-                        <!-- Push Settings Button -->
-                        <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnPushSettings"
-                    style="@style/BasilienceButton.Primary"
-                            android:layout_width="match_parent"
-                            android:layout_height="52dp"
-                            android:text="Push Refill Thresholds to ESP32"
-                            app:cornerRadius="12dp"
-                            app:backgroundTint="@color/primary"
-                            android:textColor="@color/onPrimary"
-                            android:textStyle="bold"/>
-
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-            </LinearLayout>
-
-            <!-- 3. WI-FI CONFIG CONTAINER -->
-            <LinearLayout
-                android:id="@+id/containerWifiConfig"
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDisableDeveloperMode"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="16dp"
-                    app:cardCornerRadius="16dp"
-                    app:cardElevation="2dp"
-                    app:strokeColor="#E0E0E0"
-                    app:strokeWidth="1dp"
-                    app:cardBackgroundColor="@android:color/white">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="20dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Wi-Fi Configuration"
-                            android:fontFamily="sans-serif-bold"
-                            android:textColor="#212121"
-                            android:textSize="18sp"
-                            android:layout_marginBottom="8dp"/>
-
-                        <!-- Wi-Fi Connection Status -->
-                        <TextView
-                            android:id="@+id/tvWifiStatus"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="Checking status..."
-                            android:textColor="#757575"
-                            android:textSize="13sp"
-                            android:fontFamily="sans-serif-medium"
-                            android:layout_marginBottom="16dp"/>
-
-                        <!-- SSID Input -->
-                        <com.google.android.material.textfield.TextInputLayout
-                            style="@style/InputFieldStyle"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginBottom="12dp">
-
-                            <com.google.android.material.textfield.TextInputEditText
-                                android:id="@+id/etSsid"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:hint="Wi-Fi SSID / Network Name"
-                                android:inputType="textNoSuggestions"
-                                android:textColor="@android:color/black"
-                                android:textCursorDrawable="@null" />
-                        </com.google.android.material.textfield.TextInputLayout>
-
-                        <!-- Password Input -->
-                        <com.google.android.material.textfield.TextInputLayout
-                            style="@style/InputFieldStyle"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginBottom="20dp"
-                            app:passwordToggleEnabled="true">
-
-                            <com.google.android.material.textfield.TextInputEditText
-                                android:id="@+id/etPassword"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:hint="Wi-Fi Password"
-                                android:inputType="textPassword"
-                                android:textColor="@android:color/black"
-                                android:textCursorDrawable="@null" />
-                        </com.google.android.material.textfield.TextInputLayout>
-
-                        <!-- Push Wi-Fi Config Button -->
-                        <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnPushWifi"
-                    style="@style/BasilienceButton.Primary"
-                            android:layout_width="match_parent"
-                            android:layout_height="52dp"
-                            android:text="Send Wi-Fi Config Locally"
-                            app:cornerRadius="12dp"
-                            app:backgroundTint="@color/primary"
-                            android:textColor="@color/onPrimary"
-                            android:textStyle="bold"/>
-
-                        <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnEnableProvisioningAp"
-                    style="@style/BasilienceButton.Primary"
-                            android:layout_width="match_parent"
-                            android:layout_height="52dp"
-                            android:layout_marginTop="12dp"
-                            android:text="Enable Provisioning/AP Mode"
-                            android:textStyle="bold"/>
-
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnDisableDeveloperMode"
-                    android:layout_width="match_parent"
-                    android:layout_height="52dp"
-                    android:layout_marginTop="4dp"
-                    android:text="Disable Developer Mode"
-                    android:textColor="#757575"
-                    app:cornerRadius="12dp"
-                    style="@style/Widget.MaterialComponents.Button.TextButton"/>
-            </LinearLayout>
+                android:layout_height="52dp"
+                android:layout_marginTop="12dp"
+                android:text="Disable Developer Mode"
+                android:textColor="#757575"
+                app:cornerRadius="12dp"
+                style="@style/Widget.MaterialComponents.Button.TextButton"/>
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

@@ -18,14 +18,12 @@ public class FoggingReportProcessor {
     // Ceiling on how long a single reconstructed ON->OFF (or still-running)
     // fogging session may plausibly last before it is treated as a
     // reboot/offline-corrupted pair rather than real continuous fogging.
-    // The dev-tools mock data generator (DevOptionsFragment.injectFreshMockData)
-    // simulates realistic session lengths of 2-7 minutes, matching how the
-    // fogger actually duty-cycles in normal operation (short bursts, long
-    // gaps between them). Two hours is over 15x the longest simulated normal
-    // session, so it cannot misclassify genuine Basilience fog cycles -
-    // including long manual/startup overrides - as stale, while still
-    // reliably catching an ON event whose matching OFF only arrives after a
-    // multi-hour/multi-day connectivity gap.
+    // Normal fogger duty-cycling runs sessions of a few minutes at a time
+    // (short bursts, long gaps between them). Two hours is well beyond any
+    // real session length, so it cannot misclassify genuine Basilience fog
+    // cycles - including long manual/startup overrides - as stale, while
+    // still reliably catching an ON event whose matching OFF only arrives
+    // after a multi-hour/multi-day connectivity gap.
     private static final long MAX_PLAUSIBLE_SESSION_DURATION_MS = 2L * 60 * 60 * 1000;
 
     /**

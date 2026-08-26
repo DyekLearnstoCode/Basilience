@@ -185,7 +185,7 @@ final class MobileGuideContent {
                         "Enter the device's token code and tap \"Claim Device\" to add it to your account.",
                         "Registered Devices lists everything claimed to your account, with a live status dot.",
                         "Tap a device to select it — the rest of the app will then work with that device.",
-                        "Press and hold a device to unclaim it."))
+                        "Press and hold a device to choose \"Configure Wi-Fi\" or \"Unclaim Device.\""))
                 .build());
 
         list.add(GuideSection.builder("Settings")
@@ -225,7 +225,7 @@ final class MobileGuideContent {
                 .imagePlaceholder("Wi-Fi Configuration screen with the device status card and network name/password fields")
                 .steps(Arrays.asList(
                         "On your phone's Wi-Fi settings, connect to the \"Basilience-Setup\" network broadcast by the device.",
-                        "Return to Basilience and open Wi-Fi Configuration (from Monitoring's \"Retry Wi-Fi Configuration\" button, or by tapping a Wi-Fi setup notification).",
+                        "Return to Basilience and open Wi-Fi Configuration — from Device Management by pressing and holding a device and choosing \"Configure Wi-Fi,\" from Monitoring's \"Retry Wi-Fi Configuration\" button, or by tapping a Wi-Fi setup notification.",
                         "Enter your home/facility Wi-Fi Network Name and Password.",
                         "Tap \"Save & Reconnect.\" Basilience sends the credentials to the device directly over the local setup connection — no internet connection is required for this step.",
                         "Once saved, the device reconnects to your network and the Current Device Status card updates automatically."))
@@ -236,12 +236,15 @@ final class MobileGuideContent {
         // entirely for non-Admin accounts (see MobileGuideFragment).
         // Every function documented here exists in DevOptionsFragment
         // today; nothing was invented. Grouped to match the app's own
-        // four tabs (Sensor Test / Mock Data / Water Refill / Wi-Fi
-        // Config), split into natural diagnostic/testing/maintenance
-        // categories within that. The role badge and warning appear
-        // once on the overview section rather than on every one of the
-        // five, to avoid cluttering a block that's already filtered as
-        // a unit for non-Admins.
+        // two tabs (Sensor Test / Mock Data), plus the always-visible
+        // Provisioning/AP Mode and Disable Developer Mode actions below
+        // them. Water Refill and Wi-Fi Config were removed from
+        // Developer Options - refill thresholds have no app-editable
+        // UI anymore, and Wi-Fi Configuration moved to Device
+        // Management, reachable by every role without Developer Mode.
+        // The role badge and warning appear once on the overview
+        // section rather than on every one, to avoid cluttering a
+        // block that's already filtered as a unit for non-Admins.
         // ------------------------------------------------------------
         list.add(GuideSection.builder("Developer Options")
                 .role(ADMIN_ONLY)
@@ -251,8 +254,8 @@ final class MobileGuideContent {
                 .steps(Arrays.asList(
                         "Developer Options only appears once a developer-mode flag has been turned on for a device — it will not appear for an Admin account by default, even though the screen exists in the app.",
                         "Once enabled, it's reached from Settings, in a \"Developer Options\" row that only shows up while that flag is on.",
-                        "The screen is organized into four tabs: Sensor Test, Mock Data, Water Refill, and Wi-Fi Config."))
-                .warning("Some of these tools change real device behavior or data — Mock Sensors, Inject Firestore Mock Logs, Water Refill Thresholds, and Provisioning/AP Mode all affect the actual device or its stored history, not just a preview. Use Developer Options only when troubleshooting or validating the system, and turn Sensor Test and Mock Sensors back off when you're done.")
+                        "The screen is organized into two tabs, Sensor Test and Mock Data, with \"Enable Provisioning/AP Mode\" and \"Disable Developer Mode\" always visible below them."))
+                .warning("Some of these tools change real device behavior or data — Mock Sensors and Provisioning/AP Mode both affect the actual device, not just a preview. Use Developer Options only when troubleshooting or validating the system, and turn Sensor Test and Mock Sensors back off when you're done.")
                 .build());
 
         list.add(GuideSection.builder("Developer Options — Diagnostics")
@@ -267,15 +270,12 @@ final class MobileGuideContent {
                 .description("Mock Sensors replace the values used by the device's real automatic control with values you type in — useful for demonstrations or testing automation without needing real plant conditions.")
                 .steps(Arrays.asList(
                         "Enable Mock Data Override — A switch that turns simulated sensor values on for this device. When to use: for demonstrations, or to test how automation reacts to specific conditions (for example, a low pH) without waiting for real conditions. Expected result: a confirmation dialog explains mock values will replace physical readings until turned off; Monitoring then reflects your entered values instead of the real sensors. Impact: changes real device behavior — automatic control acts on the mock values you provide until Mock Sensors is disabled again.",
-                        "pH / EC / Air Temperature / Humidity / Water Temperature / Water Level fields and \"Push Mock Values to ESP32\" — Enter the values to simulate, then push them to the device. When to use: together with Enable Mock Data Override, to set specific test conditions. Expected result: a success message once the device confirms receipt, or a warning if confirmation doesn't arrive within about 15 seconds. Impact: same as above — changes real device state while Mock Sensors is enabled.",
-                        "Inject Firestore Mock Logs — Permanently deletes this device's existing Parameter and Fogging report history and replaces it with 30 days of randomly generated simulated data. When to use: only to populate Reports with sample data for a demonstration on a test device. Expected result: a destructive-action confirmation appears first, and the action only runs while Mock Sensors is enabled; afterward, Reports show simulated history instead of real data. Impact: destructive and irreversible from the app — it replaces real backend data. Never use this on a device with production history you need to keep."))
+                        "pH / EC / Air Temperature / Humidity / Water Temperature / Water Level fields and \"Push Mock Values to ESP32\" — Enter the values to simulate, then push them to the device. When to use: together with Enable Mock Data Override, to set specific test conditions. Expected result: a success message once the device confirms receipt, or a warning if confirmation doesn't arrive within about 15 seconds. Impact: same as above — changes real device state while Mock Sensors is enabled."))
                 .build());
 
         list.add(GuideSection.builder("Developer Options — Advanced & Maintenance")
                 .adminOnly(true)
                 .steps(Arrays.asList(
-                        "Water Refill Thresholds (Min/Max Water Level %) and \"Push Refill Thresholds to ESP32\" — Sets the water level percentages at which automatic refill starts and stops. When to use: to adjust real refill behavior for this device. Expected result: a confirmation message once the device receives the new thresholds. Impact: changes real device configuration — this is not test data, it directly changes when automatic refill activates.",
-                        "Wi-Fi Configuration fields and \"Send Wi-Fi Config Locally\" — The same local Wi-Fi setup workflow described in this guide's Wi-Fi Configuration section. Impact: changes the device's real Wi-Fi connection.",
                         "Enable Provisioning/AP Mode — Remotely tells an already-online device to start its local \"Basilience-Setup\" Wi-Fi network, without needing physical access to trigger it on the device. When to use: when a device's Wi-Fi needs to be reconfigured but it can't be physically reached. Expected result: a confirmation dialog explains no Wi-Fi credentials are sent through this step; afterward, connect to \"Basilience-Setup\" and send credentials as usual to finish. Impact: sends a real command that changes the device's Wi-Fi mode.",
                         "Disable Developer Mode — Turns off the developer-mode flag for this device and returns to Settings. When to use: when you're done with diagnostics and testing. Expected result: Developer Options no longer appears in Settings until the flag is turned on again. Impact: no data is changed; this only affects whether Developer Options is visible."))
                 .build());

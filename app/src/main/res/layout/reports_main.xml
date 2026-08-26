@@ -36,6 +36,7 @@
             android:paddingEnd="@dimen/container_side_padding"
             android:paddingBottom="@dimen/container_side_padding">
 
+
             <TextView
                 android:id="@+id/tvTitle"
                 android:layout_width="match_parent"
@@ -81,7 +82,7 @@
                     android:layout_marginStart="14dp"
                     android:text="Parameter Reports"
                     android:textSize="18sp"
-                    android:textColor="@color/onPrimary"/>
+                    android:textColor="@color/state_primary_text"/>
 
                 <FrameLayout
                     android:id="@+id/btnParameter"
@@ -96,7 +97,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:src="@drawable/enter_arrow"
-                        android:layout_gravity="center"/>
+                        android:layout_gravity="center"
+                        app:tint="@color/state_primary_text" />
                 </FrameLayout>
             </LinearLayout>
 
@@ -128,7 +130,7 @@
                     android:layout_marginStart="14dp"
                     android:text="Fogging Reports"
                     android:textSize="18sp"
-                    android:textColor="@color/onPrimary"/>
+                    android:textColor="@color/state_primary_text"/>
 
                 <FrameLayout
                     android:id="@+id/btnFoggingReports"
@@ -143,7 +145,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:src="@drawable/enter_arrow"
-                        android:layout_gravity="center"/>
+                        android:layout_gravity="center"
+                        app:tint="@color/state_primary_text"/>
                 </FrameLayout>
             </LinearLayout>
 

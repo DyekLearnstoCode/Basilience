@@ -65,7 +65,8 @@
                     android:layout_height="48dp"
                     android:padding="3dp"
                     android:scaleType="centerInside"
-                    android:src="@drawable/ic_hardware_guide"/>
+                    android:src="@drawable/ic_hardware_guide"
+                    />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -75,7 +76,7 @@
                     android:layout_marginTop="10dp"
                     android:textAlignment="center"
                     
-                    android:textColor="@color/onPrimary"/>
+                    android:textColor="@color/state_primary_text"/>
 
                 <FrameLayout
                     android:id="@+id/btnHardwareTutorial"
@@ -90,7 +91,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:src="@drawable/enter_arrow"
-                        android:layout_gravity="center"/>
+                        android:layout_gravity="center"
+                        app:tint="@color/state_primary_text"/>
                 </FrameLayout>
             </LinearLayout>
 
@@ -102,12 +104,12 @@
                 android:background="@drawable/input_card"
                 android:orientation="vertical"
                 android:gravity="center"
-                android:backgroundTint="@color/primary">
+                android:backgroundTint="@color/primary"
+                android:layout_marginBottom="16dp">
 
                 <ImageView
                     android:layout_width="48dp"
                     android:layout_height="48dp"
-                    android:padding="3dp"
                     android:scaleType="centerInside"
                     android:src="@drawable/ic_mobile_app_guide"/>
 
@@ -119,7 +121,7 @@
                     android:textAlignment="center"
                     android:textSize="18sp"
                     
-                    android:textColor="@color/onPrimary"/>
+                    android:textColor="@color/state_primary_text"/>
 
                 <FrameLayout
                     android:id="@+id/btnMobileTutorial"
@@ -134,7 +136,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:src="@drawable/enter_arrow"
-                        android:layout_gravity="center"/>
+                        android:layout_gravity="center"
+                        app:tint="@color/state_primary_text"/>
                 </FrameLayout>
             </LinearLayout>
 

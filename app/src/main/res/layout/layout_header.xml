@@ -28,6 +28,7 @@
         android:elevation="100dp"
         android:translationZ="100dp"
         android:visibility="gone"
+        android:contentDescription="@string/back"
         app:layout_collapseMode="pin" />
 
     <!-- SETTINGS GEAR (Pinned) -->
