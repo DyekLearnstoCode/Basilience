@@ -395,11 +395,24 @@ public class Database_Helper {
     }
 
     public Task<Void> updateActuatorState(String actuatorName, boolean isOn) {
+        return updateActuatorState(actuatorName, isOn, false);
+    }
+
+    /**
+     * @param overrideRequested true only when the user explicitly confirmed a
+     *                          Continue prompt raised by {@link ManualOverrideAdvisor}
+     *                          for THIS command. One-shot: firmware (see
+     *                          ActuatorManager::validateCommand) applies it only
+     *                          to the command it arrives on and never persists
+     *                          it as a standing setting.
+     */
+    public Task<Void> updateActuatorState(String actuatorName, boolean isOn, boolean overrideRequested) {
         if (selectedDeviceId == null || selectedDeviceId.isEmpty())
             return Tasks.forException(new Exception("No device selected"));
 
         final String deviceIdAtCallTime = selectedDeviceId;
         Log.d(TAG, "[MANUAL-APP] updateActuatorState actuator=" + actuatorName + " target=" + isOn
+                + " override=" + overrideRequested
                 + " uid=" + getCurrentUid() + " cachedRole=" + cachedRole + " deviceId=" + deviceIdAtCallTime);
 
         return checkAdminTask()
@@ -418,6 +431,7 @@ public class Database_Helper {
                         commandData.put("state", isOn);
                         commandData.put("source", "manual");
                         commandData.put("timestamp", ServerValue.TIMESTAMP);
+                        commandData.put("overrideRequested", overrideRequested);
 
                         String path = "devices/" + deviceIdAtCallTime + "/commands/" + actuatorName;
                         DatabaseReference commandRef = rtdb.getReference(path);

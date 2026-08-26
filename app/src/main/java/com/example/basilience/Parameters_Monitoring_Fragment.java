@@ -109,6 +109,10 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         String strategy;
         boolean manualIntent;
         String reason;
+        // Mirrors actuatorStatus/{key}/overrideActive - true only while this
+        // actuator is running under a confirmed manual override (see
+        // ManualOverrideAdvisor / ActuatorManager::validateCommand).
+        boolean overrideActive;
 
         Actuator(String name, String dbKey) {
             this.name = name;
@@ -695,6 +699,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             actuator.reason = stateSnap.hasChild("reason")
                     ? stateSnap.child("reason").getValue(String.class)
                     : null;
+            actuator.overrideActive = Boolean.TRUE.equals(
+                    stateSnap.child("overrideActive").getValue(Boolean.class));
             updateActuatorUI(card, actuator);
         }
     }
@@ -745,6 +751,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 : ("automatic".equalsIgnoreCase(growSource) || "automatic".equalsIgnoreCase(bloomSource)
                     ? "automatic" : "");
         nutrients.reason = combinedReason;
+        nutrients.overrideActive = Boolean.TRUE.equals(growSnap.child("overrideActive").getValue(Boolean.class))
+                || Boolean.TRUE.equals(bloomSnap.child("overrideActive").getValue(Boolean.class));
         updateActuatorUI(actNutrients, nutrients);
     }
 
@@ -855,13 +863,13 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                             "Continue", "Cancel",
                             () -> {
                                 Log.d("Monitoring", "[MANUAL-APP] Override confirmed actuator=" + actuator.dbKey + " target=ON");
-                                sendActuatorCommand(card, actuator, true);
+                                sendActuatorCommand(card, actuator, true, true);
                             });
                     return;
                 }
             }
 
-            sendActuatorCommand(card, actuator, checked);
+            sendActuatorCommand(card, actuator, checked, false);
         });
     }
 
@@ -884,12 +892,21 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     }
 
     /**
-     * Sends the manual actuator request. Unchanged from the original inline
-     * body of the toggle listener - extracted only so the confirmation above
-     * can defer it without duplicating the request path.
+     * Sends the manual actuator request.
+     *
+     * @param overrideRequested true only when the user pressed Continue on a
+     *                          ManualOverrideAdvisor confirmation for this
+     *                          exact command; always false for a direct
+     *                          PROCEED command or any OFF command. Threaded
+     *                          straight through to Database_Helper so
+     *                          firmware's soft-rule checks (already-in-range
+     *                          pH/EC, refill-not-needed, temp-in-range) can
+     *                          tell a confirmed override from an ordinary
+     *                          manual command - see ActuatorManager::validateCommand.
      */
-    private void sendActuatorCommand(View card, Actuator actuator, boolean checked) {
+    private void sendActuatorCommand(View card, Actuator actuator, boolean checked, boolean overrideRequested) {
             Log.d("Monitoring", "[MANUAL-APP] sendActuatorCommand actuator=" + actuator.dbKey + " target=" + checked
+                    + " override=" + overrideRequested
                     + " deviceId=" + selectedDeviceId + " isManualMode=" + isManualMode + " isCurrentlyOnline=" + isCurrentlyOnline);
 
             SwitchMaterial toggle = card.findViewById(R.id.switchActuator);
@@ -916,11 +933,11 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             com.google.android.gms.tasks.Task<Void> updateTask;
             if (actuator == nutrients) {
                 updateTask = com.google.android.gms.tasks.Tasks.whenAll(
-                        dbHelper.updateActuatorState("growPump", checked),
-                        dbHelper.updateActuatorState("bloomPump", checked)
+                        dbHelper.updateActuatorState("growPump", checked, overrideRequested),
+                        dbHelper.updateActuatorState("bloomPump", checked, overrideRequested)
                 );
             } else {
-                updateTask = dbHelper.updateActuatorState(actuator.dbKey, checked);
+                updateTask = dbHelper.updateActuatorState(actuator.dbKey, checked, overrideRequested);
             }
 
             final boolean targetState = checked;
@@ -1322,6 +1339,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
     private String runningActuatorSuffix(Actuator actuator) {
         String suffix = actuatorSourceSuffix(actuator);
+        if (actuator.overrideActive && "manual".equalsIgnoreCase(actuator.physicalSource)) {
+            suffix += " · Override";
+        }
         if ("automatic".equalsIgnoreCase(actuator.physicalSource)
                 && (actuator == fogger || actuator == reservoirFan)
                 && ("cold".equalsIgnoreCase(actuator.strategy)
