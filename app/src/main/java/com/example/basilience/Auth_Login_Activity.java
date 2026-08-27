@@ -8,6 +8,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -249,13 +250,22 @@ public class Auth_Login_Activity extends AppCompatActivity {
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
     }
 
+    private long layoutLoadingShownAt;
+
     private void showLoading(boolean show, String message) {
         if (isFinishing() || isDestroyed()) return;
         if (tvLoadingTitle != null && message != null) {
             tvLoadingTitle.setText(message);
         }
-        layoutLoading.setVisibility(show ? android.view.View.VISIBLE : android.view.View.GONE);
-        if (show) layoutLoading.bringToFront();
+        if (show) {
+            layoutLoadingShownAt = SystemClock.elapsedRealtime();
+            layoutLoading.setVisibility(android.view.View.VISIBLE);
+            layoutLoading.bringToFront();
+        } else if (layoutLoading.getVisibility() == android.view.View.VISIBLE) {
+            NotificationHelper.hideLoaderAfterMinimumDuration(layoutLoadingShownAt, () -> {
+                if (!isFinishing() && !isDestroyed()) layoutLoading.setVisibility(android.view.View.GONE);
+            });
+        }
         btnlogin.setEnabled(!show);
     }
 

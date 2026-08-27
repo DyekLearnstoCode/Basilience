@@ -6,6 +6,7 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.RelativeSizeSpan;
@@ -93,6 +94,7 @@ public class SystemReportsFragment extends Fragment {
     private String selectedDeviceId;
     private String userRole = RoleConstants.ROLE_FARMER;
     private long reportRequestGeneration = 0L;
+    private long layoutLoadingShownAt;
     // One settings mapping, read once in loadDeviceThresholds() from the
     // device's actual RTDB settings node, and used consistently everywhere
     // a threshold is needed: report compliance (isWithinTarget), the
@@ -361,10 +363,19 @@ public class SystemReportsFragment extends Fragment {
         if (reportContentContainer != null) reportContentContainer.setVisibility(View.GONE);
         if (noCyclesEmptyState != null) noCyclesEmptyState.setVisibility(View.VISIBLE);
         if (tvNoCyclesEmptyState != null) tvNoCyclesEmptyState.setText(message);
-        View layoutLoading = getView() != null ? getView().findViewById(R.id.layoutLoading) : null;
-        if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+        hideLayoutLoading();
         currentFilter = null;
         currentReadings = new ArrayList<>();
+    }
+
+    /** Hides the report loading overlay, never sooner than the minimum visible duration. */
+    private void hideLayoutLoading() {
+        View layoutLoading = getView() != null ? getView().findViewById(R.id.layoutLoading) : null;
+        if (layoutLoading == null || layoutLoading.getVisibility() != View.VISIBLE) return;
+        NotificationHelper.hideLoaderAfterMinimumDuration(layoutLoadingShownAt, () -> {
+            View overlay = getView() != null ? getView().findViewById(R.id.layoutLoading) : null;
+            if (overlay != null) overlay.setVisibility(View.GONE);
+        });
     }
 
     private void showReportContent() {
@@ -642,6 +653,7 @@ public class SystemReportsFragment extends Fragment {
         }
 
         View layoutLoading = getView() != null ? getView().findViewById(R.id.layoutLoading) : null;
+        layoutLoadingShownAt = SystemClock.elapsedRealtime();
         if (layoutLoading != null) {
             layoutLoading.setVisibility(View.VISIBLE);
             layoutLoading.bringToFront();
@@ -655,12 +667,12 @@ public class SystemReportsFragment extends Fragment {
         dbHelper.getParameterLogs(filter.effectiveStartMs, filter.effectiveEndMs)
                 .addOnSuccessListener(queryDocumentSnapshots -> {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
-                    if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                    hideLayoutLoading();
                     renderReport(filter, queryDocumentSnapshots);
                 })
                 .addOnFailureListener(e -> {
                     if (requestGeneration != reportRequestGeneration) return;
-                    if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                    hideLayoutLoading();
                     Log.e("CHART_FETCH_ERROR", "Failed to fetch logs", e);
                     currentFilter = null;
                     currentReadings = new ArrayList<>();
@@ -793,6 +805,12 @@ public class SystemReportsFragment extends Fragment {
         applyChartLegend(primaryColor, outOfRangeColor, anyOutOfRange);
         lineChart.getDescription().setEnabled(false);
         lineChart.getLegend().setEnabled(true);
+        // Without this, MPAndroidChart draws every legend entry starting at
+        // the same baseline when they don't all fit on one line - the two
+        // entries render on top of each other instead of wrapping. This is
+        // a real risk here: "Out of Range" only appears some of the time, so
+        // the legend's width isn't constant.
+        lineChart.getLegend().setWordWrapEnabled(true);
         lineChart.getLegend().setYOffset(8f);
         lineChart.setExtraBottomOffset(8f);
         lineChart.setHighlightPerTapEnabled(true);

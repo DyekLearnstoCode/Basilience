@@ -191,6 +191,7 @@ public class MainActivity extends AppCompatActivity {
                         // Hide settings button on settings-related screens
                         boolean isSettingsScreen = (id == R.id.settings || id == R.id.accountFragment ||
                                 id == R.id.aboutFragment || id == R.id.tosFragment ||
+                                id == R.id.privacyPolicyFragment || id == R.id.parameterTargetRangesFragment ||
                                 id == R.id.wifiConfigFragment || id == R.id.devOptionsFragment);
                         globalSettings.setVisibility(isSettingsScreen ? View.GONE : View.VISIBLE);
 

@@ -5,6 +5,7 @@ import android.content.Context;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -388,8 +389,11 @@ public class WifiConfigFragment extends Fragment {
         });
     }
 
+    private long wifiLoadingShownAt;
+
     private void showLoading(String title, String status) {
         if (isAdded() && wifiLoadingOverlay != null) {
+            wifiLoadingShownAt = SystemClock.elapsedRealtime();
             wifiLoadingOverlay.setVisibility(View.VISIBLE);
             wifiLoadingOverlay.bringToFront();
             if (tvWifiLoadingTitle != null) tvWifiLoadingTitle.setText(title);
@@ -401,8 +405,10 @@ public class WifiConfigFragment extends Fragment {
     }
 
     private void hideLoading() {
-        if (isAdded() && wifiLoadingOverlay != null) {
-            wifiLoadingOverlay.setVisibility(View.GONE);
+        if (isAdded() && wifiLoadingOverlay != null && wifiLoadingOverlay.getVisibility() == View.VISIBLE) {
+            NotificationHelper.hideLoaderAfterMinimumDuration(wifiLoadingShownAt, () -> {
+                if (isAdded() && wifiLoadingOverlay != null) wifiLoadingOverlay.setVisibility(View.GONE);
+            });
         }
     }
 

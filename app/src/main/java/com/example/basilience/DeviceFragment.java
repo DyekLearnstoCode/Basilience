@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -36,6 +37,7 @@ public class DeviceFragment extends Fragment {
     private View cardClaimDevice;
 
     private View layoutLoading;
+    private long layoutLoadingShownAt;
     private TextView tvLoadingTitle;
 
     private Database_Helper dbHelper;
@@ -121,6 +123,7 @@ public class DeviceFragment extends Fragment {
                 btnClaimDevice.setEnabled(false);
                 if (layoutLoading != null && tvLoadingTitle != null) {
                     tvLoadingTitle.setText("Claiming device...");
+                    layoutLoadingShownAt = SystemClock.elapsedRealtime();
                     layoutLoading.setVisibility(View.VISIBLE);
                     layoutLoading.bringToFront();
                 }
@@ -129,7 +132,7 @@ public class DeviceFragment extends Fragment {
                             if (!isAdded()) return;
                             deviceMutationInProgress = false;
                             btnClaimDevice.setEnabled(true);
-                            if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                            hideLayoutLoading();
                             NotificationHelper.showSuccess(requireContext(), "Device successfully claimed!");
                             etClaimToken.setText("");
                             loadDevices();
@@ -138,7 +141,7 @@ public class DeviceFragment extends Fragment {
                             if (!isAdded()) return;
                             deviceMutationInProgress = false;
                             btnClaimDevice.setEnabled(true);
-                            if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                            hideLayoutLoading();
                             Log.e(TAG, "Failed to claim device", e);
                             NotificationHelper.showError(requireContext(), "Unable to claim this device. Please check the token and try again.");
                         });
@@ -209,6 +212,7 @@ public class DeviceFragment extends Fragment {
         deviceMutationInProgress = true;
         if (layoutLoading != null && tvLoadingTitle != null) {
             tvLoadingTitle.setText(R.string.loading_saving);
+            layoutLoadingShownAt = SystemClock.elapsedRealtime();
             layoutLoading.setVisibility(View.VISIBLE);
             layoutLoading.bringToFront();
         }
@@ -217,7 +221,7 @@ public class DeviceFragment extends Fragment {
                 .addOnSuccessListener(aVoid -> {
                     if (!isAdded()) return;
                     deviceMutationInProgress = false;
-                    if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                    hideLayoutLoading();
                     clearSelectedDeviceIfUnclaimed(device.getDeviceId());
                     NotificationHelper.showSuccess(requireContext(), "Device unclaimed successfully!");
                     loadDevices(); // Refresh listahan
@@ -225,10 +229,18 @@ public class DeviceFragment extends Fragment {
                 .addOnFailureListener(e -> {
                     if (!isAdded()) return;
                     deviceMutationInProgress = false;
-                    if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                    hideLayoutLoading();
                             Log.e(TAG, "Failed to unclaim device", e);
                             NotificationHelper.showError(requireContext(), "Unable to unclaim this device. Please try again.");
                 });
+    }
+
+    /** Hides the claim/unclaim loading overlay, never sooner than the minimum visible duration. */
+    private void hideLayoutLoading() {
+        if (layoutLoading == null || layoutLoading.getVisibility() != View.VISIBLE) return;
+        NotificationHelper.hideLoaderAfterMinimumDuration(layoutLoadingShownAt, () -> {
+            if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+        });
     }
 
     private void clearSelectedDeviceIfUnclaimed(String deviceId) {

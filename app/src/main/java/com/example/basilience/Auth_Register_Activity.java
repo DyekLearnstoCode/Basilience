@@ -2,6 +2,7 @@ package com.example.basilience;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
@@ -71,11 +72,22 @@ public class Auth_Register_Activity extends AppCompatActivity {
         });
     }
 
+    private long layoutLoadingShownAt;
+
     private void showLoading(boolean show, String message) {
         if (isFinishing() || isDestroyed()) return;
         if (tvLoadingTitle != null && message != null) tvLoadingTitle.setText(message);
-        if (layoutLoading != null) layoutLoading.setVisibility(show ? View.VISIBLE : View.GONE);
-        if (show && layoutLoading != null) layoutLoading.bringToFront();
+        if (show) {
+            layoutLoadingShownAt = SystemClock.elapsedRealtime();
+            if (layoutLoading != null) {
+                layoutLoading.setVisibility(View.VISIBLE);
+                layoutLoading.bringToFront();
+            }
+        } else if (layoutLoading != null && layoutLoading.getVisibility() == View.VISIBLE) {
+            NotificationHelper.hideLoaderAfterMinimumDuration(layoutLoadingShownAt, () -> {
+                if (!isFinishing() && !isDestroyed() && layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+            });
+        }
         if (btnSignup != null) btnSignup.setEnabled(!show);
     }
 

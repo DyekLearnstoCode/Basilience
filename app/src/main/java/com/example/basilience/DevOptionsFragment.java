@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -353,6 +354,8 @@ public class DevOptionsFragment extends Fragment {
         });
     }
 
+    private long loadingShownAt;
+
     private void showLoading(String title, String status) {
         View view = getView();
         if (view == null || !isAdded()) return;
@@ -360,6 +363,7 @@ public class DevOptionsFragment extends Fragment {
         TextView tvTitle = view.findViewById(R.id.tvLoadingTitle);
         TextView tvStatus = view.findViewById(R.id.tvLoadingStatus);
 
+        loadingShownAt = SystemClock.elapsedRealtime();
         if (layoutLoading != null) {
             layoutLoading.setVisibility(View.VISIBLE);
             layoutLoading.bringToFront();
@@ -372,7 +376,13 @@ public class DevOptionsFragment extends Fragment {
         View view = getView();
         if (view == null || !isAdded()) return;
         View layoutLoading = view.findViewById(R.id.layoutLoading);
-        if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+        if (layoutLoading == null || layoutLoading.getVisibility() != View.VISIBLE) return;
+        NotificationHelper.hideLoaderAfterMinimumDuration(loadingShownAt, () -> {
+            if (isAdded() && getView() != null) {
+                View overlay = getView().findViewById(R.id.layoutLoading);
+                if (overlay != null) overlay.setVisibility(View.GONE);
+            }
+        });
     }
 
     private void pushMockValues() {

@@ -37,6 +37,11 @@ public class NotificationFragment extends Fragment {
 
     private RecyclerView recyclerView;
     private TextView tvEmptyState;
+    private android.widget.ProgressBar progressBar;
+    // Recorded fresh in onViewCreated() - not a field initializer - since the
+    // Fragment instance can be reused across multiple view creations (e.g.
+    // navigating away and back), and each one needs its own loading window.
+    private long viewShownAtElapsedRealtime;
     private NotificationAdapter adapter;
     private final List<NotificationAdapter.NotificationItem> notificationList = new ArrayList<>();
     private final List<NotificationAdapter.NotificationItem> allRawNotifications = new ArrayList<>();
@@ -64,9 +69,11 @@ public class NotificationFragment extends Fragment {
         dbHelper = new Database_Helper();
 
         currentUid = dbHelper.getCurrentUid();
+        viewShownAtElapsedRealtime = android.os.SystemClock.elapsedRealtime();
 
         recyclerView = view.findViewById(R.id.recyclerNotifications);
         tvEmptyState = view.findViewById(R.id.tvEmptyNotifications);
+        progressBar = view.findViewById(R.id.progressNotifications);
         btnFilterAll = view.findViewById(R.id.btnFilterAll);
         btnFilterUnread = view.findViewById(R.id.btnFilterUnread);
         btnFilterRead = view.findViewById(R.id.btnFilterRead);
@@ -336,12 +343,22 @@ public class NotificationFragment extends Fragment {
             notificationList.add(item);
         }
 
+        hideProgressBar();
         recyclerView.setVisibility(View.VISIBLE);
         if (tvEmptyState != null) tvEmptyState.setVisibility(View.GONE);
         adapter.notifyDataSetChanged();
     }
 
+    private void hideProgressBar() {
+        if (progressBar == null || progressBar.getVisibility() == View.GONE) return;
+        NotificationHelper.hideLoaderAfterMinimumDuration(viewShownAtElapsedRealtime,
+                () -> {
+                    if (isAdded() && progressBar != null) progressBar.setVisibility(View.GONE);
+                });
+    }
+
     private void showEmptyState(String message) {
+        hideProgressBar();
         notificationList.clear();
         adapter.notifyDataSetChanged();
         recyclerView.setVisibility(View.GONE);

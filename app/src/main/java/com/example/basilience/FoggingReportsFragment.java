@@ -8,6 +8,7 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -107,6 +108,7 @@ public class FoggingReportsFragment extends Fragment {
     private RecyclerView rvRecentActivity;
     private TextView tvEmptyActivity;
     private View layoutLoading;
+    private long layoutLoadingShownAt;
     private View reportContentContainer, noCyclesEmptyState;
     private TextView tvNoCyclesEmptyState;
     // The X-axis label strategy for the chart currently on screen - rebuilt
@@ -488,7 +490,7 @@ public class FoggingReportsFragment extends Fragment {
         if (reportContentContainer != null) reportContentContainer.setVisibility(View.GONE);
         if (noCyclesEmptyState != null) noCyclesEmptyState.setVisibility(View.VISIBLE);
         if (tvNoCyclesEmptyState != null) tvNoCyclesEmptyState.setText(message);
-        if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+        hideLayoutLoading();
         currentFilter = null;
         currentSummary = null;
         currentTotals = null;
@@ -752,6 +754,7 @@ public class FoggingReportsFragment extends Fragment {
         currentTotals = null;
         processedSessions = new ArrayList<>();
 
+        layoutLoadingShownAt = SystemClock.elapsedRealtime();
         if (layoutLoading != null) {
             layoutLoading.setVisibility(View.VISIBLE);
             layoutLoading.bringToFront();
@@ -787,7 +790,7 @@ public class FoggingReportsFragment extends Fragment {
                 .addOnFailureListener(e -> {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
                     Log.e("FoggingReports", "Error loading logs", e);
-                    if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                    hideLayoutLoading();
                     showReportUnavailable();
                     NotificationHelper.showError(getContext(), "Unable to load the fogging report. Check your connection and try again.");
                 });
@@ -1050,7 +1053,15 @@ public class FoggingReportsFragment extends Fragment {
 
         // Water Outlook is loaded independently (see loadWaterOutlook()) and
         // does not wait on or derive from this historical report render.
-        if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+        hideLayoutLoading();
+    }
+
+    /** Hides the report loading overlay, never sooner than the minimum visible duration. */
+    private void hideLayoutLoading() {
+        if (layoutLoading == null || layoutLoading.getVisibility() != View.VISIBLE) return;
+        NotificationHelper.hideLoaderAfterMinimumDuration(layoutLoadingShownAt, () -> {
+            if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+        });
     }
 
     private void showFoggingEmptyState(String status, String message) {
@@ -1077,7 +1088,7 @@ public class FoggingReportsFragment extends Fragment {
         tvEmptyActivity.setVisibility(View.VISIBLE);
         rvRecentActivity.setVisibility(View.GONE);
 
-        if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+        hideLayoutLoading();
     }
 
     // Distinct from showFoggingEmptyState's "NO FOGGING RECORDS" case: that

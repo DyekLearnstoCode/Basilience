@@ -1,6 +1,7 @@
 package com.example.basilience;
 
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -149,14 +150,19 @@ public class Personnel_Add_Fragment extends Fragment {
         if (layoutConfirm != null) layoutConfirm.setError(null);
     }
 
+    private long layoutLoadingShownAt;
+
     private void showLoading(boolean show, String title) {
         if (isAdded() && layoutLoading != null) {
             if (show) {
                 if (title != null && tvLoadingTitle != null) tvLoadingTitle.setText(title);
+                layoutLoadingShownAt = SystemClock.elapsedRealtime();
                 layoutLoading.setVisibility(View.VISIBLE);
                 layoutLoading.bringToFront();
-            } else {
-                layoutLoading.setVisibility(View.GONE);
+            } else if (layoutLoading.getVisibility() == View.VISIBLE) {
+                NotificationHelper.hideLoaderAfterMinimumDuration(layoutLoadingShownAt, () -> {
+                    if (isAdded() && layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                });
             }
         }
     }

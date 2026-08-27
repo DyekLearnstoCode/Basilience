@@ -4,6 +4,7 @@ import android.app.DatePickerDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -30,6 +31,7 @@ public class Cycle_Add_Fragment extends Fragment {
     private Button btnSave;
     private Database_Helper dbHelper;
     private View layoutLoading;
+    private long layoutLoadingShownAt;
     private TextView tvLoadingTitle;
 
     private int cycleNo = 1;
@@ -131,6 +133,7 @@ public class Cycle_Add_Fragment extends Fragment {
 
         if (layoutLoading != null) {
             tvLoadingTitle.setText(R.string.loading_saving);
+            layoutLoadingShownAt = SystemClock.elapsedRealtime();
             layoutLoading.setVisibility(View.VISIBLE);
             layoutLoading.bringToFront();
         }
@@ -139,14 +142,14 @@ public class Cycle_Add_Fragment extends Fragment {
         // Single Active Cycle Rule check
         dbHelper.getCycles(deviceId).addOnSuccessListener(queryDocumentSnapshots -> {
             if (CycleStatus.hasActive(queryDocumentSnapshots)) {
-                if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                hideLayoutLoading();
                 btnSave.setEnabled(true);
                 NotificationHelper.showWarning(requireContext(), "Active Cycle Exists", "A device can only have one ACTIVE cycle. Please complete the current cycle before starting a new one.");
             } else {
                 proceedWithSaving(view, deviceId);
             }
         }).addOnFailureListener(e -> {
-            if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+            hideLayoutLoading();
             btnSave.setEnabled(true);
             Log.e(TAG, "Active cycle verification failed", e);
             NotificationHelper.showError(requireContext(), "Unable to verify existing cycles. Please try again.");
@@ -162,14 +165,14 @@ public class Cycle_Add_Fragment extends Fragment {
                 frequency = Integer.parseInt(freqStr);
             } catch (NumberFormatException error) {
                 btnSave.setEnabled(true);
-                if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                hideLayoutLoading();
                 if (layoutHarvestFrequency != null) layoutHarvestFrequency.setError("Enter a valid number of days");
                 return;
             }
         }
         if (frequency <= 0 || frequency > 365) {
             btnSave.setEnabled(true);
-            if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+            hideLayoutLoading();
             if (layoutHarvestFrequency != null) layoutHarvestFrequency.setError("Frequency must be between 1 and 365 days");
             return;
         }
@@ -185,7 +188,7 @@ public class Cycle_Add_Fragment extends Fragment {
 
         dbHelper.setSelectedDeviceId(deviceId);
         dbHelper.addCycle(newCycle).addOnCompleteListener(task -> {
-            if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+            hideLayoutLoading();
             if (task.isSuccessful()) {
                 NotificationHelper.showSuccess(requireContext(), "Cycle saved successfully");
                 Navigation.findNavController(view).popBackStack();
@@ -193,6 +196,14 @@ public class Cycle_Add_Fragment extends Fragment {
                 btnSave.setEnabled(true);
                 NotificationHelper.showError(requireContext(), "Error saving cycle");
             }
+        });
+    }
+
+    /** Hides the loading overlay, never sooner than the minimum visible duration. */
+    private void hideLayoutLoading() {
+        if (layoutLoading == null || layoutLoading.getVisibility() != View.VISIBLE) return;
+        NotificationHelper.hideLoaderAfterMinimumDuration(layoutLoadingShownAt, () -> {
+            if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
         });
     }
 }

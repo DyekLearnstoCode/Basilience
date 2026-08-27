@@ -107,6 +107,7 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
     }
 
     public void setMarkAllReadState(boolean enabled, boolean loading) {
+        if (markAllEnabled == enabled && markingAllRead == loading) return;
         markAllEnabled = enabled;
         markingAllRead = loading;
         notifyItemRangeChanged(0, notifications.size());

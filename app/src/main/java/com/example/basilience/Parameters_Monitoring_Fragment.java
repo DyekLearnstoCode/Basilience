@@ -64,6 +64,10 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
     // Loading overlay views
     private View actuatorLoadingOverlay;
+    // Set only on the show-transition (hidden -> visible), not on every
+    // in-progress message update, so the minimum-visible-duration guard in
+    // hideActuatorLoading() measures from when the overlay actually appeared.
+    private long actuatorLoadingShownAt;
     private TextView tvActuatorLoadingTitle;
     private TextView tvActuatorLoadingStatus;
 
@@ -985,6 +989,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     /** Show the full-screen loading overlay with a title and optional subtitle */
     private void showActuatorLoading(String title, String subtitle) {
         if (actuatorLoadingOverlay == null || !isAdded()) return;
+        if (actuatorLoadingOverlay.getVisibility() != View.VISIBLE) {
+            actuatorLoadingShownAt = SystemClock.elapsedRealtime();
+        }
         actuatorLoadingOverlay.setVisibility(View.VISIBLE);
         actuatorLoadingOverlay.bringToFront();
         if (tvActuatorLoadingTitle != null) tvActuatorLoadingTitle.setText(title);
@@ -994,10 +1001,13 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
     }
 
-    /** Hide the overlay and unlock all switches */
+    /** Hide the overlay and unlock all switches, never sooner than the minimum visible duration */
     private void hideActuatorLoading() {
-        if (actuatorLoadingOverlay == null || !isAdded()) return;
-        actuatorLoadingOverlay.setVisibility(View.GONE);
+        if (actuatorLoadingOverlay == null || !isAdded()
+                || actuatorLoadingOverlay.getVisibility() != View.VISIBLE) return;
+        NotificationHelper.hideLoaderAfterMinimumDuration(actuatorLoadingShownAt, () -> {
+            if (isAdded() && actuatorLoadingOverlay != null) actuatorLoadingOverlay.setVisibility(View.GONE);
+        });
     }
 
     /**

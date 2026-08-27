@@ -114,6 +114,19 @@
                     android:text="Read" />
             </LinearLayout>
 
+            <!-- LOADING STATE: shown until the first snapshot resolves (either
+                 into a populated list or the empty state below), so opening
+                 the screen never reads as blank/broken while Firestore is
+                 still loading. -->
+            <ProgressBar
+                android:id="@+id/progressNotifications"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="48dp"
+                android:indeterminateTint="@color/primary"
+                android:visibility="visible" />
+
             <!-- SCROLL CONTENT -->
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/recyclerNotifications"

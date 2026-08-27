@@ -11,6 +11,7 @@ import android.content.res.ColorStateList;
 import android.graphics.PorterDuff;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -42,6 +43,12 @@ public class NotificationHelper {
     private static final String CLOUD_PRESENTATION_PREFIX = "cloud_connectivity_presentation_";
     private static final long LOCAL_AP_CONFIRMATION_VALID_MS = 30_000L;
     public static final long DEFAULT_LOADING_TIMEOUT_MS = 20_000L;
+    // A loading indicator that finishes almost instantly (cached data, a fast
+    // local operation) reads as a flicker rather than a loading state - it's
+    // on screen for less time than a person can consciously register it. This
+    // is the minimum time any loader started through this class stays visible
+    // once shown, regardless of how quickly the underlying work finishes.
+    public static final long MIN_LOADING_VISIBLE_MS = 2_000L;
     private static final WeakHashMap<Context, LoadingHandle> ACTIVE_LOADING = new WeakHashMap<>();
 
     public static final class LoadingHandle {
@@ -49,6 +56,8 @@ public class NotificationHelper {
         private final AlertDialog dialog;
         private final Handler handler = new Handler(Looper.getMainLooper());
         private final Runnable timeoutAction;
+        private final long shownAtElapsedRealtime = SystemClock.elapsedRealtime();
+        private boolean dismissRequested;
         private boolean finished;
 
         private LoadingHandle(Context context, AlertDialog dialog, long timeoutMs, Runnable onTimeout) {
@@ -63,10 +72,28 @@ public class NotificationHelper {
             handler.postDelayed(timeoutAction, timeoutMs);
         }
 
+        /**
+         * Requests dismissal. If the loader has been visible for less than
+         * {@link #MIN_LOADING_VISIBLE_MS}, the actual hide is deferred until
+         * that minimum is reached, so fast-resolving work never flickers.
+         * Idempotent - a second call while a deferred hide is pending is a
+         * no-op, not a second delay.
+         */
         public void dismiss() {
+            if (dismissRequested) return;
+            dismissRequested = true;
+            handler.removeCallbacks(timeoutAction);
+            long remaining = MIN_LOADING_VISIBLE_MS - (SystemClock.elapsedRealtime() - shownAtElapsedRealtime);
+            if (remaining > 0) {
+                handler.postDelayed(this::hideNow, remaining);
+            } else {
+                hideNow();
+            }
+        }
+
+        private void hideNow() {
             if (finished) return;
             finished = true;
-            handler.removeCallbacks(timeoutAction);
             if (dialog.isShowing()) dialog.dismiss();
             Context current = contextRef.get();
             synchronized (ACTIVE_LOADING) {
@@ -76,6 +103,23 @@ public class NotificationHelper {
 
         public boolean isShowing() {
             return !finished && dialog.isShowing();
+        }
+    }
+
+    /**
+     * Shared minimum-visible-duration guard for the bespoke loading overlays
+     * that don't go through {@link LoadingHandle} (each screen owns its own
+     * View, so there's no single dialog to wrap) - same rule as
+     * {@link LoadingHandle#dismiss()}: hide immediately once at least
+     * {@link #MIN_LOADING_VISIBLE_MS} has elapsed since shownAtElapsedRealtime,
+     * otherwise defer hideAction until that minimum is reached.
+     */
+    public static void hideLoaderAfterMinimumDuration(long shownAtElapsedRealtime, Runnable hideAction) {
+        long remaining = MIN_LOADING_VISIBLE_MS - (SystemClock.elapsedRealtime() - shownAtElapsedRealtime);
+        if (remaining > 0) {
+            new Handler(Looper.getMainLooper()).postDelayed(hideAction, remaining);
+        } else {
+            hideAction.run();
         }
     }
 

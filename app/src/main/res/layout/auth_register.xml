@@ -226,7 +226,8 @@
                     android:text="Creating account..."
                     android:textColor="@color/primary"
                     android:textSize="18sp"
-                    android:textStyle="bold" />
+                    android:textStyle="bold"
+                    android:gravity="center" />
 
                 <TextView
                     android:id="@+id/tvLoadingStatus"
@@ -235,7 +236,8 @@
                     android:layout_marginTop="4dp"
                     android:text="Please wait a moment"
                     android:textColor="@color/state_no_data"
-                    android:textSize="13sp" />
+                    android:textSize="13sp"
+                    android:gravity="center" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
     </RelativeLayout>

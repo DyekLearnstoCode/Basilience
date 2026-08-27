@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -260,11 +261,20 @@ public class AccountFragment extends Fragment {
                 });
     }
 
+    private long layoutLoadingShownAt;
+
     private void showLoading(boolean show, String title) {
         if (!isAdded() || layoutLoading == null) return;
-        if (show && title != null && tvLoadingTitle != null) tvLoadingTitle.setText(title);
-        layoutLoading.setVisibility(show ? View.VISIBLE : View.GONE);
-        if (show) layoutLoading.bringToFront();
+        if (show) {
+            if (title != null && tvLoadingTitle != null) tvLoadingTitle.setText(title);
+            layoutLoadingShownAt = SystemClock.elapsedRealtime();
+            layoutLoading.setVisibility(View.VISIBLE);
+            layoutLoading.bringToFront();
+        } else if (layoutLoading.getVisibility() == View.VISIBLE) {
+            NotificationHelper.hideLoaderAfterMinimumDuration(layoutLoadingShownAt, () -> {
+                if (isAdded() && layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+            });
+        }
     }
 
     private static String value(TextInputEditText input) {

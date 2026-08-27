@@ -85,7 +85,12 @@ public final class AdaptiveTimeAxisFormatter extends ValueFormatter {
     private static int targetLabelCount(float spanMinutes) {
         // Wider label text ("1:00 PM", "MMM d") at small/very-large spans
         // needs a little more breathing room than short hour-only labels.
-        if (spanMinutes <= 6 * HOUR_MINUTES) return 5;        // fine time
+        // Report charts render in a compact card, not a full-width chart, so
+        // a tightly-zoomed view (still using the widest "h:mm a" format) gets
+        // its own lower target - 5 (and even 4) was still crowding the
+        // labels together on a narrow card at that zoom level.
+        if (spanMinutes <= 2 * HOUR_MINUTES) return 2;        // tight zoom, fine time
+        if (spanMinutes <= 6 * HOUR_MINUTES) return 4;        // fine time
         if (spanMinutes <= 36 * HOUR_MINUTES) return 6;       // hour-of-day
         if (spanMinutes <= 10 * DAY_MINUTES) return 5;        // daily dates
         return 4;                                              // compact dates
