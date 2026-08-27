@@ -2,7 +2,7 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="80dp"
+    android:layout_height="wrap_content"
 
     app:cardCornerRadius="16dp"
     app:cardElevation="3dp"
@@ -13,34 +13,71 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
         android:padding="12dp">
 
-        <TextView
-            android:id="@+id/tvActuatorName"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:text="Pump"
-            android:textSize="14sp"
-            android:textColor="#000"
-            android:layout_height="wrap_content" />
-
-        <TextView
-            android:id="@+id/tvStatus"
-            android:layout_width="wrap_content"
-            android:text="OFF"
-            android:textStyle="bold"
-            android:textColor="@color/actuator_off"
-            android:layout_marginEnd="12dp"
-            android:layout_height="wrap_content" />
-
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switchActuator"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:saveEnabled="false" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tvActuatorName"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:text="Pump"
+                android:textSize="14sp"
+                android:textColor="#000"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="wrap_content"
+                android:text="OFF"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:textColor="@color/actuator_off"
+                android:layout_marginEnd="12dp"
+                android:layout_height="wrap_content" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchActuator"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:saveEnabled="false" />
+
+        </LinearLayout>
+
+        <!-- Variable-speed control - only shown for PWM-capable actuators
+             (Canopy Fan, Reservoir Fan). GONE by default; the fragment
+             reveals it per-card. -->
+        <LinearLayout
+            android:id="@+id/layoutSpeedControl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tvSpeedLabel"
+                android:layout_width="72dp"
+                android:layout_height="wrap_content"
+                android:text="Speed: 100%"
+                android:textSize="11sp"
+                android:textColor="@color/nav_inactive" />
+
+            <SeekBar
+                android:id="@+id/seekSpeed"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:max="100" />
+
+        </LinearLayout>
 
     </LinearLayout>
 

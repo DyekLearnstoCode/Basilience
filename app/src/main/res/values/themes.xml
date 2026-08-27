@@ -31,6 +31,13 @@
         <item name="boxBackgroundMode">outline</item>
         <item name="boxBackgroundColor">@android:color/white</item>
         <item name="boxStrokeColor">@color/primary</item>
+        <!-- boxStrokeColor above is a flat color, not a state list, so on its
+             own it never switches for setError() - the outline just stayed
+             green even while a field was invalid. boxStrokeErrorColor is the
+             dedicated Material attribute for this and takes priority whenever
+             the field is in an error state. -->
+        <item name="boxStrokeErrorColor">@color/state_critical</item>
+        <item name="errorTextColor">@color/state_critical</item>
         <item name="boxStrokeWidth">1dp</item>
         <item name="boxStrokeWidthFocused">1.5dp</item>
         <item name="hintTextColor">@color/primary</item>

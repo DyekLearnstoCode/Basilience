@@ -214,8 +214,12 @@ public class ParameterTargetRangesFragment extends Fragment {
     // ------------------------------------------------------------------
 
     private void updateDirtyState() {
+        // Always tappable once loaded, regardless of hasChanges() - a disabled
+        // button silently swallows a tap with no way to tell the user why
+        // nothing happened. save() itself gives the explicit "nothing to
+        // save" feedback when that's the case.
         if (btnSave == null || !canEdit) return;
-        btnSave.setEnabled(loaded && hasChanges());
+        btnSave.setEnabled(loaded);
     }
 
     private boolean hasChanges() {
@@ -251,6 +255,15 @@ public class ParameterTargetRangesFragment extends Fragment {
     // ------------------------------------------------------------------
 
     private void save() {
+        // A field the user left blank/invalid means hasChanges() already
+        // returns true (see its own "let Save surface the error" comment) -
+        // so this only fires when every field still matches what was loaded.
+        if (!hasChanges()) {
+            NotificationHelper.showInfo(requireContext(), "No Changes",
+                    "There are no changes to save.");
+            return;
+        }
+
         Map<String, Object> updates = new HashMap<>();
         boolean valid = true;
 
@@ -297,6 +310,13 @@ public class ParameterTargetRangesFragment extends Fragment {
             return;
         }
 
+        NotificationHelper.showConfirmation(requireContext(),
+                "Save Target Ranges?",
+                "This updates the acceptable ranges used for monitoring, alerts, and reports.",
+                "Continue", "Cancel", () -> performSave(updates));
+    }
+
+    private void performSave(Map<String, Object> updates) {
         btnSave.setEnabled(false);
         loadingHandle = NotificationHelper.showLoading(requireContext(),
                 "Saving target ranges...", () -> {

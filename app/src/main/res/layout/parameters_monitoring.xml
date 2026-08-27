@@ -199,16 +199,33 @@
                 layout="@layout/item_parameter" />
 
             <!-- ===== ACTUATORS SECTION ===== -->
-            <TextView
+            <RelativeLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="24dp"
-                android:layout_marginBottom="12dp"
-                android:gravity="center"
-                android:text="@string/feature1.1"
-                android:textColor="@android:color/black"
-                android:textSize="22sp"
-                android:textStyle="bold" />
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_centerInParent="true"
+                    android:text="@string/feature1.1"
+                    android:textColor="@android:color/black"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+
+                <ImageButton
+                    android:id="@+id/btnActuatorInfo"
+                    android:layout_width="@dimen/ds_header_icon_size"
+                    android:layout_height="@dimen/ds_header_icon_size"
+                    android:layout_alignParentEnd="true"
+                    android:layout_centerVertical="true"
+                    android:padding="9dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_info_outline"
+                    android:tint="@color/nav_inactive"
+                    android:contentDescription="How Actuator Control works" />
+            </RelativeLayout>
 
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/switchMode"

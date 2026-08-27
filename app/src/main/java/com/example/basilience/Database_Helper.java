@@ -407,12 +407,22 @@ public class Database_Helper {
      *                          it as a standing setting.
      */
     public Task<Void> updateActuatorState(String actuatorName, boolean isOn, boolean overrideRequested) {
+        return updateActuatorState(actuatorName, isOn, overrideRequested, null);
+    }
+
+    /**
+     * @param speedPercent 0-100 PWM duty for a variable-speed actuator (Canopy
+     *                     Fan / Reservoir Fan); null omits the field entirely
+     *                     so firmware falls back to its own default (100) -
+     *                     see FirebaseManager::consumeActuatorCommandSnapshot.
+     */
+    public Task<Void> updateActuatorState(String actuatorName, boolean isOn, boolean overrideRequested, Integer speedPercent) {
         if (selectedDeviceId == null || selectedDeviceId.isEmpty())
             return Tasks.forException(new Exception("No device selected"));
 
         final String deviceIdAtCallTime = selectedDeviceId;
         Log.d(TAG, "[MANUAL-APP] updateActuatorState actuator=" + actuatorName + " target=" + isOn
-                + " override=" + overrideRequested
+                + " override=" + overrideRequested + " speed=" + speedPercent
                 + " uid=" + getCurrentUid() + " cachedRole=" + cachedRole + " deviceId=" + deviceIdAtCallTime);
 
         return checkAdminTask()
@@ -432,6 +442,9 @@ public class Database_Helper {
                         commandData.put("source", "manual");
                         commandData.put("timestamp", ServerValue.TIMESTAMP);
                         commandData.put("overrideRequested", overrideRequested);
+                        if (speedPercent != null) {
+                            commandData.put("speed", speedPercent);
+                        }
 
                         String path = "devices/" + deviceIdAtCallTime + "/commands/" + actuatorName;
                         DatabaseReference commandRef = rtdb.getReference(path);

@@ -22,6 +22,8 @@ import androidx.core.content.ContextCompat;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.switchmaterial.SwitchMaterial;
+import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
@@ -40,8 +42,14 @@ public class DevOptionsFragment extends Fragment {
     private DatabaseReference sensorTestCommandRef;
     private DatabaseReference sensorTestStatusRef;
     private DatabaseReference diagnosticSensorsRef;
+    private DatabaseReference ignoreWaterLevelCommandRef;
+    private DatabaseReference ignoreWaterLevelStatusRef;
 
     private SwitchMaterial switchMockEnable;
+    private SwitchMaterial switchIgnoreWaterLevel;
+    private boolean loadingIgnoreWaterLevelState = true;
+    private boolean suppressIgnoreWaterLevelSwitchCallback = false;
+    private ValueEventListener ignoreWaterLevelStatusListener;
     private EditText etPh, etEc, etTemp, etHumidity, etWaterTemperature, etWaterLevel;
     private TextView tvSensorTestIndicator;
     private TextView tvDiagnosticPh, tvDiagnosticEc, tvDiagnosticAirTemperature;
@@ -49,9 +57,14 @@ public class DevOptionsFragment extends Fragment {
     private TextView tvDiagnosticWaterLevelDistance;
 
     private MaterialButton btnPush, btnEnableProvisioningAp, btnDisableDeveloperMode;
-    private MaterialButton btnFilterSensorTest, btnFilterMock, btnSensorTest;
+    private MaterialButton btnFilterSensorTest, btnFilterMock, btnFilterRefill, btnSensorTest;
+    private MaterialButton btnSaveRefillThresholds;
+    private TextInputLayout layoutRefillStart, layoutRefillStop;
+    private TextInputEditText etRefillStart, etRefillStop;
+    private float loadedRefillStart = 20.0f;
+    private float loadedRefillStop = 75.0f;
 
-    private View containerSensorTest, containerMockData;
+    private View containerSensorTest, containerMockData, containerRefill;
 
     private boolean loadingMockState = true;
     private boolean suppressMockSwitchCallback = false;
@@ -89,10 +102,15 @@ public class DevOptionsFragment extends Fragment {
         // Filter chips
         btnFilterSensorTest = view.findViewById(R.id.btnFilterSensorTest);
         btnFilterMock = view.findViewById(R.id.btnFilterMock);
+        btnFilterRefill = view.findViewById(R.id.btnFilterRefill);
 
         // Containers
         containerSensorTest = view.findViewById(R.id.containerSensorTest);
         containerMockData = view.findViewById(R.id.containerMockData);
+        containerRefill = view.findViewById(R.id.containerRefill);
+
+        // Water level automation override
+        switchIgnoreWaterLevel = view.findViewById(R.id.switchIgnoreWaterLevel);
 
         // Mock data components
         switchMockEnable = view.findViewById(R.id.switchMockEnable);
@@ -114,6 +132,13 @@ public class DevOptionsFragment extends Fragment {
         tvDiagnosticWaterTemperature = view.findViewById(R.id.tvDiagnosticWaterTemperature);
         tvDiagnosticWaterLevel = view.findViewById(R.id.tvDiagnosticWaterLevel);
         tvDiagnosticWaterLevelDistance = view.findViewById(R.id.tvDiagnosticWaterLevelDistance);
+
+        // Refill threshold components
+        layoutRefillStart = view.findViewById(R.id.layoutRefillStart);
+        layoutRefillStop = view.findViewById(R.id.layoutRefillStop);
+        etRefillStart = view.findViewById(R.id.etRefillStart);
+        etRefillStop = view.findViewById(R.id.etRefillStop);
+        btnSaveRefillThresholds = view.findViewById(R.id.btnSaveRefillThresholds);
 
         // Always-visible actions below the tabs
         btnEnableProvisioningAp = view.findViewById(R.id.btnEnableProvisioningAp);
@@ -138,8 +163,11 @@ public class DevOptionsFragment extends Fragment {
         sensorTestCommandRef = deviceRef.child("commands/sensorTest/enabled");
         sensorTestStatusRef = deviceRef.child("status/sensorTest");
         diagnosticSensorsRef = deviceRef.child("debug/physicalSensors");
+        ignoreWaterLevelCommandRef = deviceRef.child("commands/ignoreWaterLevelAutomation/enabled");
+        ignoreWaterLevelStatusRef = deviceRef.child("status/ignoreWaterLevelAutomation");
 
         loadCurrentValues();
+        loadRefillThresholds();
         switchMockEnable.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (suppressMockSwitchCallback || loadingMockState) return;
             if (isChecked) {
@@ -161,11 +189,30 @@ public class DevOptionsFragment extends Fragment {
             }
         });
 
+        switchIgnoreWaterLevel.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (suppressIgnoreWaterLevelSwitchCallback || loadingIgnoreWaterLevelState) return;
+            if (isChecked) {
+                suppressIgnoreWaterLevelSwitchCallback = true;
+                switchIgnoreWaterLevel.setChecked(false);
+                suppressIgnoreWaterLevelSwitchCallback = false;
+                NotificationHelper.showConfirmation(requireContext(),
+                        "Ignore Water Level Automation?",
+                        "Automatic refill and the low-water automation lock will be ignored while this developer override is enabled. The real water-level reading and alerts will remain active. Use this only for testing.",
+                        "Enable", "Cancel", () -> setIgnoreWaterLevelCommand(true));
+                return;
+            }
+            setIgnoreWaterLevelCommand(false);
+        });
+
         // Setup filter button listeners
         btnFilterSensorTest.setOnClickListener(v -> updateFilterSelection("Sensor"));
         btnFilterMock.setOnClickListener(v -> updateFilterSelection("Mock"));
+        btnFilterRefill.setOnClickListener(v -> updateFilterSelection("Refill"));
 
         btnPush.setOnClickListener(v -> pushMockValues());
+        if (btnSaveRefillThresholds != null) {
+            btnSaveRefillThresholds.setOnClickListener(v -> saveRefillThresholds());
+        }
         btnSensorTest.setOnClickListener(v -> handleSensorTestButton());
         if (btnEnableProvisioningAp != null) {
             btnEnableProvisioningAp.setOnClickListener(v -> enableProvisioningApMode());
@@ -175,6 +222,7 @@ public class DevOptionsFragment extends Fragment {
         }
 
         observeSensorTest();
+        observeIgnoreWaterLevelOverride();
         updateFilterSelection("Sensor");
     }
 
@@ -187,19 +235,23 @@ public class DevOptionsFragment extends Fragment {
      * now carried by the view's selected state and resolved by the colour state
      * lists on DeveloperFilterChip.
      *
-     * Only Sensor Test and Mock Data remain as tabs - Water Refill and Wi-Fi
-     * Config were removed from Developer Options (refill has no developer UI
-     * anymore; Wi-Fi Configuration moved to Device Management).
+     * Sensor Test, Mock Data, and Refill remain as tabs - Wi-Fi Config was
+     * removed from Developer Options (moved to Device Management). Refill
+     * threshold configuration was re-added here after previously having no
+     * developer UI.
      */
     private void updateFilterSelection(String selectedFilter) {
         boolean sensor = "Sensor".equalsIgnoreCase(selectedFilter);
-        boolean mock = !sensor;
+        boolean mock = "Mock".equalsIgnoreCase(selectedFilter);
+        boolean refill = "Refill".equalsIgnoreCase(selectedFilter);
 
         btnFilterSensorTest.setSelected(sensor);
         btnFilterMock.setSelected(mock);
+        btnFilterRefill.setSelected(refill);
 
         containerSensorTest.setVisibility(sensor ? View.VISIBLE : View.GONE);
         containerMockData.setVisibility(mock ? View.VISIBLE : View.GONE);
+        containerRefill.setVisibility(refill ? View.VISIBLE : View.GONE);
     }
 
     private void handleSensorTestButton() {
@@ -264,6 +316,53 @@ public class DevOptionsFragment extends Fragment {
             }
         });
         renderSensorTestState();
+    }
+
+    /**
+     * Writes the developer water-level override command and waits for the
+     * authoritative echo on {@code status/ignoreWaterLevelAutomation} -
+     * observeIgnoreWaterLevelOverride()'s listener is what actually flips the
+     * switch and hides the loading overlay on success, mirroring how
+     * setSensorTestCommand()/observeSensorTest() split the same two concerns.
+     * The switch is deliberately left unchanged on the optimistic path (not
+     * set true just because the user tapped "Enable") - only the confirmed
+     * Firebase value ever drives it, and a write failure explicitly restores
+     * the prior checked state.
+     */
+    private void setIgnoreWaterLevelCommand(boolean enabled) {
+        if (ignoreWaterLevelCommandRef == null) return;
+        showLoading(enabled ? "Enabling Override..." : "Disabling Override...",
+                "Waiting for ESP32 acknowledgement...");
+        ignoreWaterLevelCommandRef.setValue(enabled).addOnFailureListener(error -> {
+            hideLoading();
+            suppressIgnoreWaterLevelSwitchCallback = true;
+            switchIgnoreWaterLevel.setChecked(!enabled);
+            suppressIgnoreWaterLevelSwitchCallback = false;
+            if (isAdded()) {
+                NotificationHelper.showError(requireContext(), "Water Level Override Failed", error.getMessage());
+            }
+        });
+    }
+
+    private void observeIgnoreWaterLevelOverride() {
+        ignoreWaterLevelStatusListener = ignoreWaterLevelStatusRef.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                Boolean enabled = snapshot.getValue(Boolean.class);
+                loadingIgnoreWaterLevelState = false;
+                hideLoading();
+                if (switchIgnoreWaterLevel == null) return;
+                suppressIgnoreWaterLevelSwitchCallback = true;
+                switchIgnoreWaterLevel.setChecked(Boolean.TRUE.equals(enabled));
+                suppressIgnoreWaterLevelSwitchCallback = false;
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                loadingIgnoreWaterLevelState = false;
+                hideLoading();
+            }
+        });
     }
 
     private void renderSensorTestState() {
@@ -352,6 +451,98 @@ public class DevOptionsFragment extends Fragment {
                 }
             }
         });
+    }
+
+    /**
+     * Actuator hysteresis (when the solenoid opens/closes), not a target
+     * range - deliberately absent from ParameterTargetRangesFragment (see
+     * that class's own comment). A field missing from Firebase falls back to
+     * the same defaults firmware itself compiles with (Config.h's
+     * REFILL_START_LEVEL/REFILL_STOP_LEVEL) rather than showing a misleading 0.
+     */
+    private void loadRefillThresholds() {
+        if (settingsRef == null) return;
+        settingsRef.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!isAdded()) return;
+                Double start = snapshot.child("refillStartLevel").getValue(Double.class);
+                Double stop = snapshot.child("refillStopLevel").getValue(Double.class);
+                if (start != null) loadedRefillStart = start.floatValue();
+                if (stop != null) loadedRefillStop = stop.floatValue();
+                if (etRefillStart != null) etRefillStart.setText(String.format(Locale.US, "%.1f", loadedRefillStart));
+                if (etRefillStop != null) etRefillStop.setText(String.format(Locale.US, "%.1f", loadedRefillStop));
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                if (!isAdded()) return;
+                Toast.makeText(getContext(), "Failed to load refill thresholds", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private void saveRefillThresholds() {
+        if (settingsRef == null || etRefillStart == null || etRefillStop == null) return;
+
+        if (layoutRefillStart != null) layoutRefillStart.setError(null);
+        if (layoutRefillStop != null) layoutRefillStop.setError(null);
+
+        Float start = parsePositiveFloat(etRefillStart);
+        Float stop = parsePositiveFloat(etRefillStop);
+        boolean valid = true;
+
+        if (start == null || start < 0f || start > 100f) {
+            if (layoutRefillStart != null) layoutRefillStart.setError("Enter a value between 0 and 100");
+            valid = false;
+        }
+        if (stop == null || stop < 0f || stop > 100f) {
+            if (layoutRefillStop != null) layoutRefillStop.setError("Enter a value between 0 and 100");
+            valid = false;
+        }
+        if (valid && start >= stop) {
+            if (layoutRefillStart != null) layoutRefillStart.setError("Start must be lower than Stop");
+            valid = false;
+        }
+
+        if (!valid) {
+            Toast.makeText(getContext(), "Please correct the highlighted values", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final float finalStart = start;
+        final float finalStop = stop;
+
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("refillStartLevel", (double) finalStart);
+        updates.put("refillStopLevel", (double) finalStop);
+
+        showLoading("Saving Refill Thresholds...", "Writing values to ESP32...");
+        settingsRef.updateChildren(updates)
+                .addOnSuccessListener(unused -> {
+                    hideLoading();
+                    if (!isAdded()) return;
+                    loadedRefillStart = finalStart;
+                    loadedRefillStop = finalStop;
+                    NotificationHelper.showSuccess(requireContext(), "Refill thresholds saved");
+                })
+                .addOnFailureListener(error -> {
+                    hideLoading();
+                    if (isAdded()) NotificationHelper.showError(requireContext(), "Save Failed", error.getMessage());
+                });
+    }
+
+    private Float parsePositiveFloat(TextInputEditText field) {
+        if (field.getText() == null) return null;
+        String text = field.getText().toString().trim();
+        if (text.isEmpty()) return null;
+        try {
+            float value = Float.parseFloat(text);
+            if (Float.isNaN(value) || Float.isInfinite(value)) return null;
+            return value;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private long loadingShownAt;
@@ -487,6 +678,11 @@ public class DevOptionsFragment extends Fragment {
                 .putBoolean(KEY_DEVELOPER_MODE_ENABLED, false)
                 .apply();
         if (settingsRef != null) settingsRef.child("devModeEnabled").setValue(false);
+        // Best-effort safety net: a developer bypassing the water-level
+        // automation gate must not leave it silently enabled once they've
+        // exited Developer Mode. Fire-and-forget, matching devModeEnabled
+        // above - this screen is being torn down either way.
+        if (ignoreWaterLevelCommandRef != null) ignoreWaterLevelCommandRef.setValue(false);
         Toast.makeText(getContext(), "Developer Mode disabled", Toast.LENGTH_SHORT).show();
         navController.popBackStack();
     }
@@ -501,6 +697,9 @@ public class DevOptionsFragment extends Fragment {
         }
         if (diagnosticSensorsRef != null && diagnosticSensorsListener != null) {
             diagnosticSensorsRef.removeEventListener(diagnosticSensorsListener);
+        }
+        if (ignoreWaterLevelStatusRef != null && ignoreWaterLevelStatusListener != null) {
+            ignoreWaterLevelStatusRef.removeEventListener(ignoreWaterLevelStatusListener);
         }
         mainHandler.removeCallbacksAndMessages(null);
         super.onDestroyView();

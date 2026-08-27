@@ -92,6 +92,7 @@
                     android:layout_height="42dp"
                     android:layout_weight="1"
                     android:layout_marginStart="3dp"
+                    android:layout_marginEnd="3dp"
                     android:paddingStart="0dp"
                     android:paddingEnd="0dp"
                     app:iconPadding="0dp"
@@ -100,6 +101,23 @@
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
                     android:text="Mock Data"
+                    android:textSize="10sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnFilterRefill"
+                    style="@style/DeveloperFilterChip"
+                    android:layout_width="0dp"
+                    android:layout_height="42dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="3dp"
+                    android:paddingStart="0dp"
+                    android:paddingEnd="0dp"
+                    app:iconPadding="0dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:text="Refill"
                     android:textSize="10sp" />
             </LinearLayout>
 
@@ -445,6 +463,141 @@
 
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
+            <!-- 3. REFILL THRESHOLDS CONTAINER -->
+            <LinearLayout
+                android:id="@+id/containerRefill"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="2dp"
+                    app:strokeColor="#E0E0E0"
+                    app:strokeWidth="1dp"
+                    app:cardBackgroundColor="@android:color/white">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Refill Thresholds"
+                            android:fontFamily="sans-serif-bold"
+                            android:textColor="#212121"
+                            android:textSize="18sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:layout_marginBottom="16dp"
+                            android:text="Actuator hysteresis, not a target range: Start is the water level that opens the solenoid; Stop is the level that closes it again."
+                            android:textColor="#757575"
+                            android:textSize="13sp" />
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/layoutRefillStart"
+                            style="@style/InputFieldStyle"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="12dp"
+                            android:hint="Start % (e.g. 20.0)">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/etRefillStart"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="numberDecimal"
+                                android:textColor="@android:color/black"
+                                android:textCursorDrawable="@null" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/layoutRefillStop"
+                            style="@style/InputFieldStyle"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="20dp"
+                            android:hint="Stop % (e.g. 75.0)">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/etRefillStop"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="numberDecimal"
+                                android:textColor="@android:color/black"
+                                android:textCursorDrawable="@null" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSaveRefillThresholds"
+                            style="@style/BasilienceButton.Primary"
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:text="Save Refill Thresholds"
+                            app:cornerRadius="12dp"
+                            app:backgroundTint="@color/primary"
+                            android:textColor="@color/onPrimary"
+                            android:textStyle="bold" />
+
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
+            <!-- Developer testing override: bypasses ONLY the automatic
+                 water-level/refill gate. Physical water-level sensing, alerts,
+                 and manual refill are unaffected - see DevOptionsFragment's
+                 confirmation dialog for the exact scope shown to the user. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="12dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:background="@drawable/card_option"
+                    android:padding="14dp"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Ignore Water Level Automation"
+                        android:fontFamily="sans-serif-medium"
+                        android:textSize="15sp"
+                        android:textColor="#212121" />
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/switchIgnoreWaterLevel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:thumbTint="@color/switch_thumb_tint"
+                        android:trackTint="@color/switch_track_tint" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Bypasses automatic refill and the low-water lock for hardware testing. The real water level keeps reading, uploading, and alerting."
+                    android:textColor="#757575"
+                    android:textSize="12sp" />
             </LinearLayout>
 
             <!-- Always visible below either tab: developer/recovery actions that

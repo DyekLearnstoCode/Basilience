@@ -8,6 +8,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -119,6 +120,11 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         // actuator is running under a confirmed manual override (see
         // ManualOverrideAdvisor / ActuatorManager::validateCommand).
         boolean overrideActive;
+        // Mirrors actuatorStatus/{key}/speed (0-100 PWM duty). Only ever
+        // driven by firmware for PWM-capable actuators (Canopy Fan,
+        // Reservoir Fan - see ActuatorManager::isPwmActuator); every other
+        // actuator just carries firmware's constant default of 100.
+        int speed = 100;
 
         Actuator(String name, String dbKey) {
             this.name = name;
@@ -198,6 +204,11 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         // Initialize Views
         setupParameterCards(view);
         updateSensorUI();
+
+        ImageView btnActuatorInfo = view.findViewById(R.id.btnActuatorInfo);
+        if (btnActuatorInfo != null) {
+            btnActuatorInfo.setOnClickListener(v -> showActuatorInfoDialog());
+        }
 
         // ===== MODE SWITCH =====
         SwitchMaterial modeSwitch = view.findViewById(R.id.switchMode);
@@ -720,6 +731,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                     : null;
             actuator.overrideActive = Boolean.TRUE.equals(
                     stateSnap.child("overrideActive").getValue(Boolean.class));
+            Integer speed = stateSnap.child("speed").getValue(Integer.class);
+            actuator.speed = speed != null ? speed : 100;
             updateActuatorUI(card, actuator);
         }
     }
@@ -815,6 +828,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         // even though every command they sent was guaranteed to fail server-side.
         boolean isAdmin = isAdminUser();
 
+        setupSpeedControl(card, actuator, isAdmin);
+
         // Clear any previous listener first
         toggle.setOnCheckedChangeListener(null);
         // Confirmed firmware state is authoritative for both AUTO and MANUAL.
@@ -881,6 +896,63 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             }
 
             sendActuatorCommand(card, actuator, checked, false);
+        });
+    }
+
+    /**
+     * Variable-speed slider - only meaningful for the two PWM-capable
+     * actuators (Canopy Fan, Reservoir Fan; see firmware's
+     * ActuatorManager::isPwmActuator). Hidden for every other card.
+     * Only enabled while the fan is actually running under manual control -
+     * a command sent while off would be silently discarded by firmware (see
+     * ActuatorManager::requestCommand's no-op-OFF guard), so there is
+     * nothing useful to send until then.
+     */
+    private void setupSpeedControl(View card, Actuator actuator, boolean isAdmin) {
+        View layoutSpeed = card.findViewById(R.id.layoutSpeedControl);
+        SeekBar seekSpeed = card.findViewById(R.id.seekSpeed);
+        TextView tvSpeedLabel = card.findViewById(R.id.tvSpeedLabel);
+        if (layoutSpeed == null || seekSpeed == null || tvSpeedLabel == null) return;
+
+        boolean supportsSpeed = actuator == canopyFan || actuator == reservoirFan;
+        if (!supportsSpeed) {
+            layoutSpeed.setVisibility(View.GONE);
+            seekSpeed.setOnSeekBarChangeListener(null);
+            return;
+        }
+        layoutSpeed.setVisibility(View.VISIBLE);
+
+        seekSpeed.setOnSeekBarChangeListener(null);
+        seekSpeed.setProgress(actuator.speed);
+        tvSpeedLabel.setText("Speed: " + actuator.speed + "%");
+
+        boolean enabled = isAdmin && isManualMode && isCurrentlyOnline && !isSafetyLock
+                && !isActuatorBusy && actuator.physicalRunning;
+        seekSpeed.setEnabled(enabled);
+        seekSpeed.setAlpha(enabled ? 1.0f : 0.5f);
+
+        seekSpeed.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                tvSpeedLabel.setText("Speed: " + progress + "%");
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {}
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                int newSpeed = seekBar.getProgress();
+                Log.d("Monitoring", "[MANUAL-APP] Speed change actuator=" + actuator.dbKey + " speed=" + newSpeed);
+                dbHelper.updateActuatorState(actuator.dbKey, true, false, newSpeed)
+                        .addOnFailureListener(e -> {
+                            if (!isAdded()) return;
+                            NotificationHelper.showError(requireContext(), "Speed Change Failed",
+                                    e.getMessage() != null ? e.getMessage() : "Could not update fan speed.");
+                            seekBar.setProgress(actuator.speed);
+                            tvSpeedLabel.setText("Speed: " + actuator.speed + "%");
+                        });
+            }
         });
     }
 
@@ -1678,5 +1750,27 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             cycleListener = null;
         }
         super.onDestroyView();
+    }
+
+    private void showActuatorInfoDialog() {
+        if (getContext() == null) return;
+        String[][] sections = {
+                {"What does this section do?",
+                        "Shows every pump, fan, light, and valve the system controls, and whether each is currently running under the automatic system, a manual command from this app, or a physical override at the hardware."},
+                {"Automatic vs. Manual Mode",
+                        "By default every actuator runs automatically from sensor readings. Turning on 'Manual Mode' lets an Admin operate individual actuators by hand without disabling the automatic system underneath - toggle it back off to return everything to automatic control. Each status line shows the source: Auto, Manual, or App."},
+                {"Start Reservoir Refill",
+                        "Admin-only. Manually opens the water pump/valve to top up the reservoir, the same action the automatic system takes on its own when the water level runs low. Useful for topping off before a cycle or after inspecting the reservoir by hand."},
+                {"Reset Safety",
+                        "Admin-only. Clears an active safety lock (for example after a water-level or temperature limit tripped and stopped equipment) so the automatic system and manual controls can resume. Only use this after confirming the underlying issue is actually resolved."},
+                {"The other actuators",
+                        "Water Pump (Valve) refills the reservoir. Circulation Pump keeps nutrient solution mixed and readings representative. pH Up/pH Down and the Nutrients pumps dose small amounts to correct pH and EC. Fogger and Reservoir Fan (Blower) work together to raise humidity and cool the canopy. Peltier (Temp) cools the reservoir when water temperature runs high. Canopy Fan circulates air, and Grow Lights follow the automatic lighting schedule."},
+                {"Fan speed",
+                        "Canopy Fan and Reservoir Fan (Blower) also have a speed slider, which appears once Manual Mode is on and that fan is switched on. Drag and release to set a new speed - it takes effect immediately while the fan keeps running."},
+                {"Rejected / blocked status",
+                        "A 'Rejected' or 'blocked' status with a reason means the firmware refused that specific command - most often because a safety interlock is active, a sensor reading is invalid, or another operation currently owns that equipment. It clears on its own once the blocking condition ends; it does not mean the actuator is stuck."}
+        };
+        NotificationHelper.showGuideDialog(requireContext(), "How to use Actuator Control",
+                sections, "Got it");
     }
 }

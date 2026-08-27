@@ -1,6 +1,7 @@
 package com.example.basilience;
 
 import android.app.Activity;
+import android.app.Dialog;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -16,6 +17,8 @@ import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -53,14 +56,20 @@ public class NotificationHelper {
 
     public static final class LoadingHandle {
         private final WeakReference<Context> contextRef;
-        private final AlertDialog dialog;
+        // Plain Dialog, not AlertDialog: AlertDialog's own "alert" window theme
+        // enforces its own minimum width (windowMinWidthMajor/Minor) that
+        // Window.setLayout(WRAP_CONTENT, ...) cannot override, which is why the
+        // loading card was still rendering near full-width despite the content
+        // view itself being sized correctly. A bare Dialog carries no such
+        // minimum, so the window actually shrinks to the content.
+        private final Dialog dialog;
         private final Handler handler = new Handler(Looper.getMainLooper());
         private final Runnable timeoutAction;
         private final long shownAtElapsedRealtime = SystemClock.elapsedRealtime();
         private boolean dismissRequested;
         private boolean finished;
 
-        private LoadingHandle(Context context, AlertDialog dialog, long timeoutMs, Runnable onTimeout) {
+        private LoadingHandle(Context context, Dialog dialog, long timeoutMs, Runnable onTimeout) {
             contextRef = new WeakReference<>(context);
             this.dialog = dialog;
             timeoutAction = () -> {
@@ -137,7 +146,15 @@ public class NotificationHelper {
             View view = LayoutInflater.from(context).inflate(R.layout.dialog_loading, null);
             TextView messageView = view.findViewById(R.id.tvLoadingMessage);
             messageView.setText(message);
-            AlertDialog dialog = new AlertDialog.Builder(context).setView(view).create();
+            // A bare Dialog, not AlertDialog.Builder(...).create(): AlertDialog's
+            // "alert" window theme applies its own minimum width
+            // (windowMinWidthMajor/Minor) that Window.setLayout() cannot
+            // override, which is why the card kept rendering near full-width
+            // even after being told to wrap its content. Dialog carries no such
+            // minimum, so requesting WRAP_CONTENT here actually shrinks it.
+            Dialog dialog = new Dialog(context);
+            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            dialog.setContentView(view);
             dialog.setCancelable(false);
             dialog.setCanceledOnTouchOutside(false);
             dialog.setOnDismissListener(ignored -> {
@@ -149,6 +166,8 @@ public class NotificationHelper {
             dialog.show();
             if (dialog.getWindow() != null) {
                 dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+                dialog.getWindow().setLayout(
+                        WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT);
             }
             LoadingHandle handle = new LoadingHandle(context, dialog, Math.max(1_000L, timeoutMs), onTimeout);
             ACTIVE_LOADING.put(context, handle);
