@@ -41,11 +41,14 @@
 
         "commands": {
           ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()",
-          ".write": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN'"
+          ".write": "auth != null && (root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN' || root.child('deviceAccess').child($deviceId).child(auth.uid).child('developerTester').val() === true)"
         },
         "settings": {
           ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()",
-          ".write": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN'"
+          ".write": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN'",
+          "devModeEnabled": {
+            ".write": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).child('developerTester').val() === true"
+          }
         }
       }
     },

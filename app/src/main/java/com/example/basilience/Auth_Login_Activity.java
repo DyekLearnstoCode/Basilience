@@ -317,6 +317,8 @@ public class Auth_Login_Activity extends AppCompatActivity {
                                             .remove(KEY_IS_LOGGED_IN)
                                             .remove("user_role")
                                             .remove("owner_uid")
+                                            .remove(RoleConstants.PREF_DEVELOPER_TESTER)
+                                            .remove(RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID)
                                             .remove("selected_device_id")
                                             .apply();
                                     NotificationHelper.showInfo(this, "Account Profile Missing",
@@ -331,6 +333,8 @@ public class Auth_Login_Activity extends AppCompatActivity {
                                 editor.putBoolean(KEY_IS_LOGGED_IN, cbRemember.isChecked());
                                 editor.putString("user_role", role);
                                 editor.putString("owner_uid", ownerUid);
+                                editor.putBoolean(RoleConstants.PREF_DEVELOPER_TESTER,
+                                        Boolean.TRUE.equals(document.getBoolean("developerTester")));
                                 editor.apply();
 
                                 // Device assignments are established only by Admin assignment
@@ -370,6 +374,8 @@ public class Auth_Login_Activity extends AppCompatActivity {
             getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                     .putString("user_role", role)
                     .putString("owner_uid", document.getString("ownerAdminUid"))
+                    .putBoolean(RoleConstants.PREF_DEVELOPER_TESTER,
+                            Boolean.TRUE.equals(document.getBoolean("developerTester")))
                     .apply();
             navigateToMain();
         }, error -> {
@@ -388,6 +394,8 @@ public class Auth_Login_Activity extends AppCompatActivity {
                 .remove(KEY_IS_LOGGED_IN)
                 .remove("user_role")
                 .remove("owner_uid")
+                .remove(RoleConstants.PREF_DEVELOPER_TESTER)
+                .remove(RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID)
                 .remove("selected_device_id")
                 .apply();
         showLoading(false, null);

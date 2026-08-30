@@ -37,14 +37,18 @@ service cloud.firestore {
       // FARMER/PERSONNEL profiles are created by an authenticated Admin.
       allow create: if (isSignedIn() && request.auth.uid == uid &&
                         request.resource.data.role == 'ADMIN' &&
-                        request.resource.data.ownerAdminUid == null) ||
-        (isAdmin() && request.resource.data.role == 'FARMER' && request.resource.data.ownerAdminUid == request.auth.uid);
+                        request.resource.data.ownerAdminUid == null &&
+                        (!('developerTester' in request.resource.data) || request.resource.data.developerTester == false)) ||
+        (isAdmin() && request.resource.data.role == 'FARMER' &&
+         request.resource.data.ownerAdminUid == request.auth.uid &&
+         (!('developerTester' in request.resource.data) || request.resource.data.developerTester == false));
       // Personnel may maintain their contact profile only.  An admin can only link,
       // unlink, or edit a FARMER profile that is unlinked or already belongs to them.
       allow update: if (request.auth.uid == uid &&
                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName', 'phone', 'fcmToken']) &&
                         (!('fcmToken' in request.resource.data) || request.resource.data.fcmToken is string)) ||
         (isAdmin() && resource.data.role == 'FARMER' && request.resource.data.role == 'FARMER' &&
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['developerTester']) &&
          (resource.data.ownerAdminUid == null || resource.data.ownerAdminUid == request.auth.uid) &&
          (request.resource.data.ownerAdminUid == null || request.resource.data.ownerAdminUid == request.auth.uid));
       allow delete: if isAdmin() && resource.data.ownerAdminUid == request.auth.uid;

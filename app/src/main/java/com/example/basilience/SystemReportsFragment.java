@@ -130,6 +130,9 @@ public class SystemReportsFragment extends Fragment {
 
     private Double highWaterTempThreshold;
     private Double coolerOffTempThreshold;
+    // Must match firmware Config.h WATER_COOLING_HYSTERESIS. Firmware derives
+    // both effective cooling thresholds from maxWaterTemp on every control tick.
+    private static final double WATER_COOLING_HYSTERESIS_C = 2.5;
 
     // Water-depth model (centimeters) - see firmware Config.h's "Water
     // Reservoir Geometry". AUTHORITATIVE refill control thresholds; the
@@ -623,8 +626,12 @@ public class SystemReportsFragment extends Fragment {
                         highHumidityThreshold = numberValue(snapshot.child("highHumidity"));
                         humidityReleaseThreshold = numberValue(snapshot.child("humidityRelease"));
 
-                        highWaterTempThreshold = numberValue(snapshot.child("highWaterTemp"));
-                        coolerOffTempThreshold = numberValue(snapshot.child("coolerOffTemp"));
+                        // highWaterTemp/coolerOffTemp are legacy mirrored keys
+                        // and can lag after maxWaterTemp is edited. Report the
+                        // same effective thresholds the controller computes.
+                        highWaterTempThreshold = maxWaterTempTarget;
+                        coolerOffTempThreshold = maxWaterTempTarget == null
+                                ? null : maxWaterTempTarget - WATER_COOLING_HYSTERESIS_C;
 
                         refillStartThresholdCm = numberValue(snapshot.child("refillStartLevelCm"));
                         refillStopThresholdCm = numberValue(snapshot.child("refillStopLevelCm"));

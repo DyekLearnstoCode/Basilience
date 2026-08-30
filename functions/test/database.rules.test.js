@@ -38,8 +38,9 @@ test.beforeEach(async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
         const db = ctx.database();
         await db.ref("deviceAccess/device-A").set({
-            "admin-A": {role: "ADMIN"},
-            "farmer-A": {role: "FARMER"},
+            "admin-A": {role: "ADMIN", developerTester: false},
+            "farmer-A": {role: "FARMER", developerTester: false},
+            "developer-A": {role: "FARMER", developerTester: true},
         });
         await db.ref("devices/device-A/status").set({online: true, lastServerSeen: 1});
         await db.ref("devices/device-A/sensors").set({ph: 6.2});
@@ -134,6 +135,13 @@ test("personnel: can read whitelisted device paths", async () => {
 test("personnel: cannot write commands or settings", async () => {
     const db = ctxFor("farmer-A").database();
     await assertFails(db.ref("devices/device-A/commands/manualMode").set(true));
+    await assertFails(db.ref("devices/device-A/settings/minPH").set(6.0));
+});
+
+test("developer tester: can write commands and only the developer-mode setting", async () => {
+    const db = ctxFor("developer-A").database();
+    await assertSucceeds(db.ref("devices/device-A/commands/mockSensors/dynamic").set(true));
+    await assertSucceeds(db.ref("devices/device-A/settings/devModeEnabled").set(true));
     await assertFails(db.ref("devices/device-A/settings/minPH").set(6.0));
 });
 

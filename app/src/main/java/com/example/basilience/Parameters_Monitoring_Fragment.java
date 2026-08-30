@@ -45,6 +45,8 @@ import com.google.firebase.database.ValueEventListener;
 
 public class Parameters_Monitoring_Fragment extends Fragment {
 
+    private static final String SENSOR_UI_TAG = "SENSOR-UI";
+
     public Parameters_Monitoring_Fragment() {
         // Required empty public constructor
     }
@@ -99,7 +101,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     // the parameter is actually off target.
     private final ManualOverrideAdvisor.AlertFlags overrideFlags = new ManualOverrideAdvisor.AlertFlags();
     private boolean alertsLoaded = false;
-    /** Configured cooling ceiling from settings/highWaterTemp; null when not configured. */
+    /** Configured cooling ceiling from settings/maxWaterTemp; null when not configured. */
     private Double configuredHighWaterTemp = null;
     /** status/currentMode, phDirection, ecDirection and the subsystem/global locks - all from the same statusListener below. */
     private final ManualOverrideAdvisor.OperationContext operationContext = new ManualOverrideAdvisor.OperationContext();
@@ -184,7 +186,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private static final long SENSOR_STABILIZING_TIMEOUT_MS = 3_000L;
     private View sensorStabilizingOverlay;
     private boolean sensorsRevealed = false;
-    private final Runnable sensorStabilizingTimeoutRunnable = () -> revealSensors();
+    private Boolean lastLoggedSensorReady;
+    private final Runnable sensorStabilizingTimeoutRunnable =
+            () -> revealSensors("revealing after 3000ms fallback");
     private View layoutCultivationPaused;
     private com.google.firebase.firestore.ListenerRegistration cycleListener;
     private Long previousLastSeenValue = null;
@@ -332,11 +336,18 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 // before the first reveal is simply cached in
                 // sensorLiveData for revealSensors()/the bounded timeout to
                 // use later - never rendered piecemeal.
+                boolean ready = sensorData != null && sensorData.sensorState != null
+                        && Boolean.TRUE.equals(sensorData.sensorState.ready);
+                if (sensorData != null && (lastLoggedSensorReady == null
+                        || lastLoggedSensorReady != ready)) {
+                    Log.d(SENSOR_UI_TAG, "[SENSOR-UI] sensor snapshot received: ready="
+                            + ready + ", online=" + isCurrentlyOnline);
+                    lastLoggedSensorReady = ready;
+                }
+
                 if (!sensorsRevealed) {
-                    boolean ready = sensorData != null && sensorData.sensorState != null
-                            && Boolean.TRUE.equals(sensorData.sensorState.ready);
                     if (ready && isCurrentlyOnline) {
-                        revealSensors();
+                        revealSensors("revealing early: firmware ready");
                     }
                     return;
                 }
@@ -347,6 +358,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         sensorReadErrorLiveData.observe(getViewLifecycleOwner(), hasError -> {
             if (tvSensorDataNotice != null) {
                 tvSensorDataNotice.setVisibility(Boolean.TRUE.equals(hasError) ? View.VISIBLE : View.GONE);
+            }
+            if (Boolean.TRUE.equals(hasError) && !sensorsRevealed) {
+                revealSensors("sensor read failed; revealing cards with unavailable state");
             }
         });
 
@@ -505,24 +519,33 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         String deviceId = prefs.getString("selected_device_id", null);
         selectedDeviceId = deviceId;
 
-        if (deviceId == null) {
-            Log.e("Monitoring", "No device selected");
-            return;
-        }
-
-        dbHelper.setSelectedDeviceId(deviceId);
-
-        // Coherent initial reveal (see sensorsRevealed's own comment) -
-        // shown once, here, before the first Firebase read can possibly
-        // arrive; revealSensors() (via a ready snapshot or this bounded
-        // timeout) is the only thing that ever hides it again.
+        // The latch belongs to the Fragment's view, not the Fragment instance.
+        // A Fragment can retain its instance while Navigation destroys and
+        // recreates the view, so every new monitoring view needs a fresh reveal
+        // window and timeout. Arm it before validating the selected device so
+        // a missing selection cannot leave the layout's overlay up forever.
+        sensorsRevealed = false;
+        lastLoggedSensorReady = null;
+        Log.d(SENSOR_UI_TAG, "[SENSOR-UI] monitoring view created");
         if (sensorStabilizingOverlay != null) {
             sensorStabilizingOverlay.setVisibility(View.VISIBLE);
             sensorStabilizingOverlay.bringToFront();
         }
         mainHandler.removeCallbacks(sensorStabilizingTimeoutRunnable);
         mainHandler.postDelayed(sensorStabilizingTimeoutRunnable, SENSOR_STABILIZING_TIMEOUT_MS);
+        Log.d(SENSOR_UI_TAG, "[SENSOR-UI] stabilization fallback armed: 3000ms");
 
+        // Do not let a snapshot cached for a previous selected device satisfy
+        // this view's fresh reveal window.
+        sensorLiveData.setValue(null);
+        sensorReadErrorLiveData.setValue(false);
+
+        if (deviceId == null) {
+            Log.e("Monitoring", "No device selected");
+            return;
+        }
+
+        dbHelper.setSelectedDeviceId(deviceId);
         sensorRepository.startListening(deviceId, sensorLiveData, sensorReadErrorLiveData);
         if (!isCurrentlyOnline) confirmSetupApReachability(deviceId);
 
@@ -551,7 +574,11 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         // supply: waterTempOutOfRange carries no direction, so active cooling
         // needs the same ceiling the reports screen already reads. Nothing here
         // writes to settings.
-        highWaterTempRef = deviceRef.child("settings").child("highWaterTemp");
+        // Firmware derives its cooling ON threshold from maxWaterTemp on every
+        // control tick. highWaterTemp is a legacy mirrored field and can lag
+        // after target-range edits, so the advisor must read the authoritative
+        // setting the controller actually consumes.
+        highWaterTempRef = deviceRef.child("settings").child("maxWaterTemp");
         highWaterTempListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
@@ -1716,13 +1743,14 @@ public class Parameters_Monitoring_Fragment extends Fragment {
      * overlay is hidden the instant this runs, not after some minimum
      * shown duration.
      */
-    private void revealSensors() {
-        if (sensorsRevealed || !isAdded()) return;
+    private void revealSensors(String diagnostic) {
+        if (sensorsRevealed || !isAdded() || getView() == null) return;
         sensorsRevealed = true;
         mainHandler.removeCallbacks(sensorStabilizingTimeoutRunnable);
         if (sensorStabilizingOverlay != null) {
             sensorStabilizingOverlay.setVisibility(View.GONE);
         }
+        Log.d(SENSOR_UI_TAG, "[SENSOR-UI] " + diagnostic);
         updateSensorUI();
     }
 
@@ -1902,6 +1930,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             actuatorCommandRunnable = null;
         }
         mainHandler.removeCallbacksAndMessages(null);
+        sensorsRevealed = false;
+        lastLoggedSensorReady = null;
+        sensorStabilizingOverlay = null;
         if (connectivityExecutor != null) {
             connectivityExecutor.shutdownNow();
             connectivityExecutor = null;

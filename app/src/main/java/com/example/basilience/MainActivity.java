@@ -192,7 +192,8 @@ public class MainActivity extends AppCompatActivity {
                         boolean isSettingsScreen = (id == R.id.settings || id == R.id.accountFragment ||
                                 id == R.id.aboutFragment || id == R.id.tosFragment ||
                                 id == R.id.privacyPolicyFragment || id == R.id.parameterTargetRangesFragment ||
-                                id == R.id.wifiConfigFragment || id == R.id.devOptionsFragment);
+                                id == R.id.wifiConfigFragment || id == R.id.devOptionsFragment ||
+                                id == R.id.deviceMaintenanceFragment);
                         globalSettings.setVisibility(isSettingsScreen ? View.GONE : View.VISIBLE);
 
                         globalSettings.setOnClickListener(view -> {

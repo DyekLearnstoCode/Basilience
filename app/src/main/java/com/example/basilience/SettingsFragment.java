@@ -20,6 +20,7 @@ public class SettingsFragment extends Fragment {
     private static final String KEY_DEVELOPER_MODE_ENABLED = "developer_mode_enabled";
 
     private View devOptionsContainer;
+    private View deviceMaintenanceContainer;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -53,6 +54,10 @@ public class SettingsFragment extends Fragment {
         bindSettingsRow(view, R.id.rowTargetRanges, navController,
                 R.id.action_settings_to_targetRangesFragment);
 
+        deviceMaintenanceContainer = view.findViewById(R.id.deviceMaintenanceContainer);
+        bindSettingsRow(view, R.id.deviceMaintenanceContainer, navController,
+                R.id.action_settings_to_deviceMaintenanceFragment);
+
         // About Basilience
         bindSettingsRow(view, R.id.rowAbout, navController, R.id.action_settings_to_aboutFragment);
 
@@ -62,8 +67,8 @@ public class SettingsFragment extends Fragment {
         // Privacy Policy - sits with Terms; both render from LegalContent.
         bindSettingsRow(view, R.id.rowPrivacy, navController, R.id.action_settings_to_privacyPolicyFragment);
 
-        // Developer Options - the row is also the visibility container, so the
-        // admin/dev-mode gating below is unchanged.
+        // Developer Options is independently gated by the account's Developer
+        // Tester entitlement and the selected device's dev-mode switch.
         devOptionsContainer = view.findViewById(R.id.devOptionsContainer);
         bindSettingsRow(view, R.id.devOptionsContainer, navController, R.id.action_settings_to_devOptionsFragment);
         updateDeveloperOptionsVisibility();
@@ -93,22 +98,35 @@ public class SettingsFragment extends Fragment {
 
         SharedPreferences prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         boolean isAdmin = "ADMIN".equalsIgnoreCase(prefs.getString("user_role", ""));
-        if (!isAdmin) {
+        if (deviceMaintenanceContainer != null) {
+            deviceMaintenanceContainer.setVisibility(isAdmin ? View.VISIBLE : View.GONE);
+        }
+        boolean isDeveloperTester = RoleConstants.isDeveloperTester(prefs);
+        if (!isDeveloperTester) {
             devOptionsContainer.setVisibility(View.GONE);
             return;
         }
-        boolean developerModeEnabled = prefs.getBoolean(KEY_DEVELOPER_MODE_ENABLED, false);
+        String deviceId = prefs.getString("selected_device_id", null);
+        if (deviceId == null || deviceId.trim().isEmpty()) {
+            devOptionsContainer.setVisibility(View.GONE);
+            return;
+        }
+        boolean developerModeEnabled = prefs.getBoolean(KEY_DEVELOPER_MODE_ENABLED, false)
+                && deviceId.equals(prefs.getString(
+                        RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID, null));
         devOptionsContainer.setVisibility(developerModeEnabled ? View.VISIBLE : View.GONE);
 
-        String deviceId = prefs.getString("selected_device_id", null);
-        if (deviceId == null || deviceId.trim().isEmpty()) return;
         FirebaseDatabase.getInstance("https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app")
                 .getReference("devices").child(deviceId).child("settings").child("devModeEnabled")
                 .get().addOnSuccessListener(snapshot -> {
                     if (!isAdded() || devOptionsContainer == null) return;
                     boolean enabled = Boolean.TRUE.equals(snapshot.getValue(Boolean.class));
-                    prefs.edit().putBoolean(KEY_DEVELOPER_MODE_ENABLED, enabled).apply();
-                    devOptionsContainer.setVisibility(enabled ? View.VISIBLE : View.GONE);
+                    prefs.edit()
+                            .putBoolean(KEY_DEVELOPER_MODE_ENABLED, enabled)
+                            .putString(RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID, deviceId)
+                            .apply();
+                    devOptionsContainer.setVisibility(
+                            RoleConstants.isDeveloperTester(prefs) && enabled ? View.VISIBLE : View.GONE);
                 });
     }
 
@@ -126,6 +144,8 @@ public class SettingsFragment extends Fragment {
                         .remove("is_logged_in")
                         .remove("user_role")
                         .remove("owner_uid")
+                        .remove(RoleConstants.PREF_DEVELOPER_TESTER)
+                        .remove(RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID)
                         .remove("selected_device_id")
                         .apply();
 

@@ -1779,8 +1779,9 @@ function normalizePhilippineMobile(input) {
 // (devices.ownerUid + deviceAssignments, filtered by role/ownerAdminUid
 // linkage) - no second ownership model. smsRecipients carries only
 // phone/enabled/role (no email/password/other profile data); deviceAccess
-// carries only role, used exclusively as an RTDB-rules lookup table (Android
-// never reads it directly). One invalid/empty phone is skipped, never
+// carries only role plus the server-projected developerTester entitlement,
+// used exclusively as an RTDB-rules lookup table (Android never reads it
+// directly). One invalid/empty phone is skipped, never
 // blocking the rest of either projection. Both projections are written with
 // a single atomic .set() each - a fully recomputed snapshot with no
 // remaining members clears stale entries automatically (RTDB has no way to
@@ -1801,7 +1802,10 @@ async function regenerateSmsRecipients(db, deviceId) {
         if (ownerDoc.exists) {
             // Owner maps to ADMIN - canonical RoleConstants.ROLE_ADMIN value,
             // never a third/invented role.
-            access[ownerUid] = {role: "ADMIN"};
+            access[ownerUid] = {
+                role: "ADMIN",
+                developerTester: ownerDoc.data().developerTester === true
+            };
             const phone = normalizePhilippineMobile(ownerDoc.data().phone);
             if (phone) recipients[ownerUid] = {phone, enabled: true, role: "ADMIN"};
         }
@@ -1827,7 +1831,10 @@ async function regenerateSmsRecipients(db, deviceId) {
             // RoleConstants.ROLE_FARMER value, regardless of whether the
             // source profile says "FARMER" or the defensive legacy
             // "PERSONNEL" string.
-            access[userUid] = {role: "FARMER"};
+            access[userUid] = {
+                role: "FARMER",
+                developerTester: user.developerTester === true
+            };
             const phone = normalizePhilippineMobile(user.phone);
             if (phone) recipients[userUid] = {phone, enabled: true, role: user.role};
         }

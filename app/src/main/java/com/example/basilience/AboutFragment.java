@@ -64,11 +64,16 @@ public class AboutFragment extends Fragment {
         if (getContext() == null) return;
 
         SharedPreferences prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        if (!"ADMIN".equalsIgnoreCase(prefs.getString("user_role", ""))) {
+        if (!RoleConstants.isDeveloperTester(prefs)) {
             developerModeTapCount = 0;
             return;
         }
-        if (prefs.getBoolean(KEY_DEVELOPER_MODE_ENABLED, false)) {
+        String selectedDeviceId = prefs.getString("selected_device_id", null);
+        boolean enabledForSelectedDevice = prefs.getBoolean(KEY_DEVELOPER_MODE_ENABLED, false)
+                && selectedDeviceId != null
+                && selectedDeviceId.equals(prefs.getString(
+                        RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID, null));
+        if (enabledForSelectedDevice) {
             Toast.makeText(getContext(), "Developer Mode is already enabled", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -78,7 +83,7 @@ public class AboutFragment extends Fragment {
 
         if (remaining <= 0) {
             developerModeTapCount = 0;
-            String deviceId = prefs.getString("selected_device_id", null);
+            String deviceId = selectedDeviceId;
             if (deviceId == null || deviceId.trim().isEmpty()) {
                 Toast.makeText(getContext(), "Select a device before enabling Developer Mode", Toast.LENGTH_LONG).show();
                 return;
@@ -87,7 +92,10 @@ public class AboutFragment extends Fragment {
                     .getReference("devices").child(deviceId).child("settings").child("devModeEnabled")
                     .setValue(true)
                     .addOnSuccessListener(unused -> {
-                        prefs.edit().putBoolean(KEY_DEVELOPER_MODE_ENABLED, true).apply();
+                        prefs.edit()
+                                .putBoolean(KEY_DEVELOPER_MODE_ENABLED, true)
+                                .putString(RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID, deviceId)
+                                .apply();
                         if (isAdded()) Toast.makeText(getContext(), "Developer Mode enabled", Toast.LENGTH_LONG).show();
                     })
                     .addOnFailureListener(error -> {
