@@ -110,6 +110,7 @@
                     android:layout_height="42dp"
                     android:layout_weight="1"
                     android:layout_marginStart="3dp"
+                    android:layout_marginEnd="3dp"
                     android:paddingStart="0dp"
                     android:paddingEnd="0dp"
                     app:iconPadding="0dp"
@@ -118,6 +119,23 @@
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
                     android:text="Refill"
+                    android:textSize="10sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnFilterCanopyPwm"
+                    style="@style/DeveloperFilterChip"
+                    android:layout_width="0dp"
+                    android:layout_height="42dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="3dp"
+                    android:paddingStart="0dp"
+                    android:paddingEnd="0dp"
+                    app:iconPadding="0dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:text="Canopy PWM"
                     android:textSize="10sp" />
             </LinearLayout>
 
@@ -204,6 +222,18 @@
                                 android:textColor="@color/sensor_no_data" />
 
                             <TextView
+                                android:id="@+id/tvDiagnosticEcVoltage"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_columnWeight="1"
+                                android:layout_margin="4dp"
+                                android:background="@drawable/card_option"
+                                android:gravity="center"
+                                android:padding="12dp"
+                                android:text="EC Voltage\n--\nNO VALID READING"
+                                android:textColor="@color/sensor_no_data" />
+
+                            <TextView
                                 android:id="@+id/tvDiagnosticAirTemperature"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
@@ -261,6 +291,18 @@
                                 android:gravity="center"
                                 android:padding="12dp"
                                 android:text="Water Level Distance\n--\nNO VALID READING"
+                                android:textColor="@color/sensor_no_data" />
+
+                            <TextView
+                                android:id="@+id/tvDiagnosticWaterDepth"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_columnWeight="1"
+                                android:layout_margin="4dp"
+                                android:background="@drawable/card_option"
+                                android:gravity="center"
+                                android:padding="12dp"
+                                android:text="Water Depth\n--\nNO VALID READING"
                                 android:textColor="@color/sensor_no_data" />
                         </GridLayout>
 
@@ -502,7 +544,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:layout_marginBottom="16dp"
-                            android:text="Actuator hysteresis, not a target range: Start is the water level that opens the solenoid; Stop is the level that closes it again."
+                            android:text="Actuator hysteresis, not a target range: Start is the water depth that opens the solenoid; Stop is the depth that closes it again. Working depth is 0-6 cm."
                             android:textColor="#757575"
                             android:textSize="13sp" />
 
@@ -512,7 +554,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginBottom="12dp"
-                            android:hint="Start % (e.g. 20.0)">
+                            android:hint="Start cm (e.g. 2.0)">
 
                             <com.google.android.material.textfield.TextInputEditText
                                 android:id="@+id/etRefillStart"
@@ -529,7 +571,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginBottom="20dp"
-                            android:hint="Stop % (e.g. 75.0)">
+                            android:hint="Stop cm (e.g. 3.0)">
 
                             <com.google.android.material.textfield.TextInputEditText
                                 android:id="@+id/etRefillStop"
@@ -554,6 +596,234 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
+
+            <!-- 4. CANOPY FAN PWM TEST CONTAINER -->
+            <LinearLayout
+                android:id="@+id/containerCanopyPwm"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="2dp"
+                    app:strokeColor="#E0E0E0"
+                    app:strokeWidth="1dp"
+                    app:cardBackgroundColor="@android:color/white">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Canopy Fan PWM Test"
+                            android:fontFamily="sans-serif-bold"
+                            android:textColor="#212121"
+                            android:textSize="18sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="Commands the Canopy Fan directly at a fixed percentage, independent of temperature/humidity automation. Requires Manual Mode (enable it on the Monitoring screen first). This verifies the commanded PWM output only - the ESP32 Serial log shows the resulting [CANOPY-PWM] duty value. The hardware has no tachometer, so actual physical RPM can never be confirmed from software."
+                            android:textColor="#757575"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/tvCanopyPwmManualModeWarning"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:gravity="center"
+                            android:padding="10dp"
+                            android:text="MANUAL MODE IS OFF - enable it on the Monitoring screen to send test commands"
+                            android:textColor="@color/state_warning"
+                            android:textStyle="bold" />
+
+                        <GridLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:columnCount="3"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnCanopyPwm0"
+                                style="@style/BasilienceButton.Primary"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_columnWeight="1"
+                                android:layout_margin="4dp"
+                                android:text="0%"
+                                android:textSize="13sp"
+                                app:cornerRadius="10dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnCanopyPwm30"
+                                style="@style/BasilienceButton.Primary"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_columnWeight="1"
+                                android:layout_margin="4dp"
+                                android:text="30%"
+                                android:textSize="13sp"
+                                app:cornerRadius="10dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnCanopyPwm50"
+                                style="@style/BasilienceButton.Primary"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_columnWeight="1"
+                                android:layout_margin="4dp"
+                                android:text="50%"
+                                android:textSize="13sp"
+                                app:cornerRadius="10dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnCanopyPwm75"
+                                style="@style/BasilienceButton.Primary"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_columnWeight="1"
+                                android:layout_margin="4dp"
+                                android:text="75%"
+                                android:textSize="13sp"
+                                app:cornerRadius="10dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnCanopyPwm100"
+                                style="@style/BasilienceButton.Primary"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_columnWeight="1"
+                                android:layout_margin="4dp"
+                                android:text="100%"
+                                android:textSize="13sp"
+                                app:cornerRadius="10dp" />
+                        </GridLayout>
+
+                        <TextView
+                            android:id="@+id/tvCanopyPwmStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="No test command sent yet."
+                            android:textColor="#757575"
+                            android:textSize="12sp" />
+
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="12dp"
+                app:cardCornerRadius="14dp"
+                app:cardElevation="1dp"
+                app:strokeColor="#E0E0E0"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Automation Test Mode"
+                        android:textColor="#212121"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <Spinner
+                        android:id="@+id/spinnerAutomationTestMode"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/card_option"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp" />
+
+                    <TextView
+                        android:id="@+id/tvAutomationTestModeStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Firmware confirmed: waiting for device"
+                        android:textColor="@color/primary"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Developer testing only. Selecting a subsystem pauses unrelated automatic controllers. Real sensors, actuators, safety checks, and manual controls remain active."
+                        android:textColor="#757575"
+                        android:textSize="12sp" />
+
+                    <!-- Grow Light Schedule test mode only: lets a developer
+                         test the 06:00-22:00 style schedule deterministically
+                         without waiting for real clock time to reach a target
+                         minute. Never touches the physical RTC - see
+                         DevOptionsFragment's write to
+                         commands/automationTestMode/mockGrowLightMinutes. -->
+                    <LinearLayout
+                        android:id="@+id/containerMockGrowLightTime"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_marginTop="12dp"
+                        android:visibility="gone">
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginBottom="12dp"
+                            android:background="#E0E0E0" />
+
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switchMockGrowLightTime"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Mock Grow Light Time" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnMockGrowLightTime"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Test Time: 06:00"
+                            android:enabled="false"
+                            app:cornerRadius="12dp"
+                            app:backgroundTint="@color/primary"
+                            android:textColor="@color/onPrimary"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Overrides only the current time Grow Light scheduling sees while Grow Light Schedule test mode is selected. The real clock/RTC is never modified, and this has no effect once test mode is switched away."
+                            android:textColor="#757575"
+                            android:textSize="12sp" />
+
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
             <!-- Developer testing override: bypasses ONLY the automatic
                  water-level/refill gate. Physical water-level sensing, alerts,
@@ -595,9 +865,21 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="Bypasses automatic refill and the low-water lock for hardware testing. The real water level keeps reading, uploading, and alerting."
+                    android:text="The system temporarily ignores automatic refill and low-water actuator safety while continuing to monitor and report the real water level."
                     android:textColor="#757575"
                     android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/tvIgnoreWaterLevelIndicator"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center"
+                    android:padding="10dp"
+                    android:text="LOW-WATER SAFETY OVERRIDE ACTIVE"
+                    android:textColor="@color/state_warning"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- Always visible below either tab: developer/recovery actions that

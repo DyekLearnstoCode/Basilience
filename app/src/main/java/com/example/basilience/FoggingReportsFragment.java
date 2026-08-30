@@ -82,9 +82,25 @@ public class FoggingReportsFragment extends Fragment {
     // uses this fixed rolling window ending now, never
     // FoggingReportFilter.effectiveStartMs/effectiveEndMs.
     private static final int WATER_OUTLOOK_LOOKBACK_DAYS = 7;
-    // Estimation assumptions, not measured device configuration - see the
+    // Water-depth model (see firmware Config.h's "Water Reservoir
+    // Geometry"): working capacity is MAX_WORKING_WATER_CM (6.0cm) of depth
+    // over the reservoir's actual measured base area, not the tank's full
+    // physical height (~29cm) - matches the same reference value firmware
+    // publishes as waterVolumeLiters at 100%. Superseded the old 61.7L
+    // assumption, which predated the water-depth model and did not match
+    // either the old or new reservoir interpretation.
+    private static final float WATER_OUTLOOK_TANK_CAPACITY_CM = 6.0f;
+    private static final float WATER_OUTLOOK_TANK_CAPACITY_LITERS = 10.608f;
+    // Physical plausibility ceiling for a raw depth READING (not the working
+    // percentage) - the installed sensor-to-bottom calibration distance
+    // (firmware Config.h's WATER_LEVEL_EMPTY_DISTANCE_CM default), never
+    // WATER_OUTLOOK_TANK_CAPACITY_CM above, which is only the 100%
+    // working-capacity ceiling used for the liters conversion ratio. A depth
+    // above 6cm is a legitimate overfill, not invalid data - see the static
+    // automation integration audit, part 2.
+    private static final float MAX_PHYSICAL_WATER_DEPTH_CM = 28.67f;
+    // Estimation assumption, not measured device configuration - see the
     // "Estimated ..." UI wording that makes clear this is a rough forecast.
-    private static final float WATER_OUTLOOK_TANK_CAPACITY_LITERS = 61.7f;
     private static final float WATER_OUTLOOK_CONSUMPTION_RATE_L_PER_HOUR = 4.8f;
     // Mirrors functions/index.js's SENSOR_LOG_INTERVAL_MS (5 minutes) - the
     // backend throttles new parameterLogs writes to at most one per that
@@ -133,7 +149,11 @@ public class FoggingReportsFragment extends Fragment {
 
     private FirebaseFirestore db;
     private Database_Helper dbHelper;
-    private double refillStartLevel = 0.0;
+    // Water-depth model (centimeters) - see firmware Config.h's "Water
+    // Reservoir Geometry". AUTHORITATIVE refill control threshold; the
+    // legacy refillStartLevel percentage field is no longer read by any
+    // firmware control path.
+    private double refillStartLevelCm = 0.0;
 
     private final List<Cycle> cycles = new ArrayList<>();
     private Cycle selectedCycle;
@@ -708,24 +728,26 @@ public class FoggingReportsFragment extends Fragment {
 
     private void fetchRefillThreshold() {
         if (selectedDeviceId == null || selectedDeviceId.isEmpty()) return;
-        FirebaseDatabase.getInstance("https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("devices").child(selectedDeviceId).child("settings").child("refillStartLevel")
+        FirebaseDatabase.getInstance("https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("devices").child(selectedDeviceId).child("settings").child("refillStartLevelCm")
             .addListenerForSingleValueEvent(new ValueEventListener() {
                 @Override
                 public void onDataChange(@NonNull DataSnapshot snapshot) {
                     if (snapshot.exists()) {
                         Double val = snapshot.getValue(Double.class);
-                        if (val != null) refillStartLevel = val;
+                        if (val != null) refillStartLevelCm = val;
                     } else {
-                        refillStartLevel = 25.0; // Fallback
+                        refillStartLevelCm = 2.0; // Fallback - matches firmware Config.h's REFILL_START_CM
                     }
-                    tvRefillThreshold.setText("Refill threshold: " + refillStartLevel + "%");
+                    tvRefillThreshold.setText(String.format(Locale.getDefault(),
+                            "Refill threshold: %.1f cm", refillStartLevelCm));
                     loadWaterOutlook();
                 }
 
                 @Override
                 public void onCancelled(@NonNull DatabaseError error) {
-                    refillStartLevel = 25.0; // Fallback
-                    tvRefillThreshold.setText("Refill threshold: " + refillStartLevel + "% (Offline Fallback)");
+                    refillStartLevelCm = 2.0; // Fallback - matches firmware Config.h's REFILL_START_CM
+                    tvRefillThreshold.setText(String.format(Locale.getDefault(),
+                            "Refill threshold: %.1f cm (Offline Fallback)", refillStartLevelCm));
                     loadWaterOutlook();
                 }
             });
@@ -1467,6 +1489,7 @@ public class FoggingReportsFragment extends Fragment {
                 .addOnSuccessListener(snapshots -> {
                     if (!isAdded() || requestGeneration != waterOutlookRequestGeneration) return;
                     Double waterLevelPct = null;
+                    Double waterLevelCm = null;
                     Long latestTimestampMs = null;
                     if (!snapshots.isEmpty()) {
                         DocumentSnapshot latest = snapshots.getDocuments().get(0);
@@ -1474,14 +1497,19 @@ public class FoggingReportsFragment extends Fragment {
                         if (waterLevelPct == null) {
                             waterLevelPct = latest.getDouble("waterLevel");
                         }
+                        // Water-depth model (see firmware Config.h's "Water
+                        // Reservoir Geometry") - absent on records written
+                        // before the firmware update; never fabricated from
+                        // the legacy percentage (see renderWaterOutlook()).
+                        waterLevelCm = latest.getDouble("water_level_cm");
                         latestTimestampMs = latest.getLong("timestamp");
                     }
-                    renderWaterOutlook(waterLevelPct, latestTimestampMs, recentTotalFoggingDurationMs, observationDays);
+                    renderWaterOutlook(waterLevelPct, waterLevelCm, latestTimestampMs, recentTotalFoggingDurationMs, observationDays);
                 })
                 .addOnFailureListener(e -> {
                     if (!isAdded() || requestGeneration != waterOutlookRequestGeneration) return;
                     Log.e("FoggingReports", "Failed to load current water level for Water Outlook", e);
-                    renderWaterOutlook(null, null, recentTotalFoggingDurationMs, observationDays);
+                    renderWaterOutlook(null, null, null, recentTotalFoggingDurationMs, observationDays);
                 });
     }
 
@@ -1491,7 +1519,17 @@ public class FoggingReportsFragment extends Fragment {
         return waterLevelPct >= 0 && waterLevelPct <= 100;
     }
 
-    private void renderWaterOutlook(Double waterLevelPct, Long latestTimestampMs, long recentTotalFoggingDurationMs, int observationDays) {
+    private boolean isValidWaterDepthReading(Double waterLevelCm) {
+        if (waterLevelCm == null) return false;
+        if (waterLevelCm.isNaN() || waterLevelCm.isInfinite()) return false;
+        // Physical plausibility, not the 100%-working ceiling - a reading
+        // above WATER_OUTLOOK_TANK_CAPACITY_CM (6cm) is a real overfill and
+        // must still be accepted; see MAX_PHYSICAL_WATER_DEPTH_CM's own
+        // comment.
+        return waterLevelCm >= 0 && waterLevelCm <= MAX_PHYSICAL_WATER_DEPTH_CM;
+    }
+
+    private void renderWaterOutlook(Double waterLevelPct, Double waterLevelCm, Long latestTimestampMs, long recentTotalFoggingDurationMs, int observationDays) {
         if (!isAdded()) return;
 
         // Missing, non-finite, or out-of-physical-range readings are never
@@ -1518,15 +1556,44 @@ public class FoggingReportsFragment extends Fragment {
         // Valid and fresh: show the reservoir value, and decide below
         // whether a refill estimate can honestly be offered alongside it.
         showWaterOutlookValueState();
-        tvWaterLevel.setText(String.format(Locale.getDefault(), "%.0f%%", waterLevelPct));
+
+        // water_level_cm is only present on records written after the
+        // water-depth-model firmware update - a record from before that
+        // update carries only the legacy percentage, which must never be
+        // silently treated as though it came from the new depth-based
+        // formula (different physical meaning, different reservoir
+        // interpretation). Show the percentage either way; only show cm/L
+        // and compute the refill-time estimate when the authoritative depth
+        // reading is actually present.
+        boolean hasDepth = isValidWaterDepthReading(waterLevelCm);
+        if (hasDepth) {
+            float liters = waterLevelCm.floatValue() * WATER_OUTLOOK_TANK_CAPACITY_LITERS / WATER_OUTLOOK_TANK_CAPACITY_CM;
+            tvWaterLevel.setText(String.format(Locale.getDefault(),
+                    "%.0f%% (%.1f cm, %.2f L)", waterLevelPct, waterLevelCm, liters));
+        } else {
+            tvWaterLevel.setText(String.format(Locale.getDefault(), "%.0f%%", waterLevelPct));
+        }
+
+        if (!hasDepth) {
+            // Legacy record: percentage shown above, but a liters-based
+            // estimate would require reinterpreting an old-model percentage
+            // under the new model's capacity - not done. See this method's
+            // own comment.
+            if (refillColumn != null) refillColumn.setVisibility(View.GONE);
+            if (tvWaterOutlookMessage != null) {
+                tvWaterOutlookMessage.setVisibility(View.VISIBLE);
+                tvWaterOutlookMessage.setText("Refill estimate needs an updated firmware reading (depth-based).");
+            }
+            return;
+        }
 
         if (observationDays <= 0) observationDays = 1;
         float hoursFogged = recentTotalFoggingDurationMs / (1000f * 60f * 60f);
         float avgHoursPerDay = hoursFogged / observationDays;
         float estimatedDailyConsumptionLiters = avgHoursPerDay * WATER_OUTLOOK_CONSUMPTION_RATE_L_PER_HOUR;
 
-        float currentLiters = WATER_OUTLOOK_TANK_CAPACITY_LITERS * (waterLevelPct.floatValue() / 100f);
-        float thresholdLiters = WATER_OUTLOOK_TANK_CAPACITY_LITERS * ((float) refillStartLevel / 100f);
+        float currentLiters = waterLevelCm.floatValue() * WATER_OUTLOOK_TANK_CAPACITY_LITERS / WATER_OUTLOOK_TANK_CAPACITY_CM;
+        float thresholdLiters = (float) refillStartLevelCm * WATER_OUTLOOK_TANK_CAPACITY_LITERS / WATER_OUTLOOK_TANK_CAPACITY_CM;
         float consumableLiters = currentLiters - thresholdLiters;
 
         if (consumableLiters <= 0) {

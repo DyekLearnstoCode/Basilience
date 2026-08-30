@@ -131,8 +131,12 @@ public class SystemReportsFragment extends Fragment {
     private Double highWaterTempThreshold;
     private Double coolerOffTempThreshold;
 
-    private Double refillStartThreshold;
-    private Double refillStopThreshold;
+    // Water-depth model (centimeters) - see firmware Config.h's "Water
+    // Reservoir Geometry". AUTHORITATIVE refill control thresholds; the
+    // legacy refillStartLevel/refillStopLevel percentage fields are no
+    // longer read by any firmware control path.
+    private Double refillStartThresholdCm;
+    private Double refillStopThresholdCm;
 
     private final List<Cycle> cycles = new ArrayList<>();
     private Cycle selectedCycle;
@@ -622,8 +626,8 @@ public class SystemReportsFragment extends Fragment {
                         highWaterTempThreshold = numberValue(snapshot.child("highWaterTemp"));
                         coolerOffTempThreshold = numberValue(snapshot.child("coolerOffTemp"));
 
-                        refillStartThreshold = numberValue(snapshot.child("refillStartLevel"));
-                        refillStopThreshold = numberValue(snapshot.child("refillStopLevel"));
+                        refillStartThresholdCm = numberValue(snapshot.child("refillStartLevelCm"));
+                        refillStopThresholdCm = numberValue(snapshot.child("refillStopLevelCm"));
 
                         if (selectedCycle != null && spinnerParameter.getSelectedItem() != null) {
                             loadReportData();
@@ -1200,11 +1204,12 @@ public class SystemReportsFragment extends Fragment {
     // Returns null when no threshold is configured for this parameter,
     // meaning it can't be assessed. Compliance always uses the wider
     // ACCEPTABLE/ALERT threshold (minPH/maxPH, minEC/maxEC, highAirTemp,
-    // highHumidity, highWaterTemp, refillStartLevel) - never the narrower
-    // dosing correction targets (phTargetMin/Max, ecTargetMin/Max) or the
-    // actuator-release hysteresis values (airTempRelease, humidityRelease,
-    // coolerOffTemp, refillStopLevel), which describe when automation kicks
-    // in/out, not what counts as an acceptable reading for this report.
+    // highHumidity, highWaterTemp, minWaterLevel/maxWaterLevel) - never the
+    // narrower dosing correction targets (phTargetMin/Max, ecTargetMin/Max)
+    // or the actuator-release/control hysteresis values (airTempRelease,
+    // humidityRelease, coolerOffTemp, refillStartLevelCm/refillStopLevelCm),
+    // which describe when automation kicks in/out, not what counts as an
+    // acceptable reading for this report.
     private Boolean isWithinTarget(String canonicalParameter, float value) {
         Float min = configuredRangeMin(canonicalParameter);
         Float max = configuredRangeMax(canonicalParameter);
@@ -1269,10 +1274,10 @@ public class SystemReportsFragment extends Fragment {
                     " (cooling runs above %.1f\u00B0C, off again at %.1f\u00B0C)",
                     highWaterTempThreshold, coolerOffTempThreshold);
         } else if (canonicalParameter.equalsIgnoreCase("Water Level")
-                && refillStartThreshold != null && refillStopThreshold != null) {
+                && refillStartThresholdCm != null && refillStopThresholdCm != null) {
             text += String.format(Locale.getDefault(),
-                    " (refill starts at %.1f%%, fills to %.1f%%)",
-                    refillStartThreshold, refillStopThreshold);
+                    " (refill starts at %.1f cm, fills to %.1f cm)",
+                    refillStartThresholdCm, refillStopThresholdCm);
         }
 
         return text;

@@ -106,6 +106,18 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private DatabaseReference highWaterTempRef;
     private ValueEventListener highWaterTempListener;
 
+    /**
+     * Live pH candidate straight from the ADC sampler (debug/physicalSensors/ph
+     * - the same source Developer Options' Sensor Test reads), independent of
+     * whether the pH stability window has accepted it yet. UI status only -
+     * see updateSensorUI()'s own comment. null when no candidate has ever
+     * been produced (e.g. sensor genuinely unavailable), never used for any
+     * automation/control decision.
+     */
+    private Double physicalPhCandidate = null;
+    private DatabaseReference physicalSensorsPhRef;
+    private ValueEventListener physicalSensorsPhListener;
+
     // ===== ACTUATORS =====
     class Actuator {
         String name;
@@ -154,6 +166,25 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private final MutableLiveData<SensorData> sensorLiveData = new MutableLiveData<>();
     private final MutableLiveData<Boolean> sensorReadErrorLiveData = new MutableLiveData<>();
     private TextView tvSensorDataNotice;
+
+    // Coherent initial sensor snapshot (see the real-time sensor
+    // presentation task report). Individual sensor cards are withheld from
+    // updateSensorUI() until the first reveal, so the screen never shows
+    // pH/EC/temperature/humidity appearing one at a time as separate
+    // Firebase reads settle - see sensorLiveData.observe()'s callback.
+    // sensorsRevealed latches true permanently on the first reveal for this
+    // fragment view's lifetime; later per-sensor staleness is handled by
+    // updateSensorUI()'s own existing per-field "--"/"Stabilizing..." logic,
+    // never by re-showing this overlay.
+    // Quick-response refinement task: was 8s - firmware readiness no longer
+    // waits out SENSOR_STABILIZATION_TIME (10s), so a fresh boot now
+    // normally reports ready within ~1-2s (SENSOR_READY_MIN_MS/MAX_MS on
+    // the firmware side); this is now purely the hard UI fallback for a
+    // missing/stuck snapshot, not the expected normal wait.
+    private static final long SENSOR_STABILIZING_TIMEOUT_MS = 3_000L;
+    private View sensorStabilizingOverlay;
+    private boolean sensorsRevealed = false;
+    private final Runnable sensorStabilizingTimeoutRunnable = () -> revealSensors();
     private View layoutCultivationPaused;
     private com.google.firebase.firestore.ListenerRegistration cycleListener;
     private Long previousLastSeenValue = null;
@@ -251,6 +282,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         tvConnectionStatus = view.findViewById(R.id.tvConnectionStatus);
         tvConnectionDetail = view.findViewById(R.id.tvConnectionDetail);
         tvSensorDataNotice = view.findViewById(R.id.tvSensorDataNotice);
+        sensorStabilizingOverlay = view.findViewById(R.id.sensorStabilizingOverlay);
         layoutCultivationPaused = view.findViewById(R.id.layoutCultivationPaused);
         observeCultivationState();
         btnRetryWifiConfiguration = view.findViewById(R.id.btnRetryWifiConfiguration);
@@ -288,6 +320,26 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         sensorLiveData.observe(getViewLifecycleOwner(), new Observer<SensorData>() {
             @Override
             public void onChanged(SensorData sensorData) {
+                // Coherent initial reveal (see sensorsRevealed's own
+                // comment): before the first reveal, a snapshot only
+                // triggers updateSensorUI() if it is itself the coherent
+                // "ready" snapshot AND the device is actually online right
+                // now - reusing the existing connectivity signal rather
+                // than trying to judge freshness from firmware's
+                // device-uptime updatedAt value on the app's own wall
+                // clock (see Part G of the task report: no second,
+                // competing freshness system). Any other incoming snapshot
+                // before the first reveal is simply cached in
+                // sensorLiveData for revealSensors()/the bounded timeout to
+                // use later - never rendered piecemeal.
+                if (!sensorsRevealed) {
+                    boolean ready = sensorData != null && sensorData.sensorState != null
+                            && Boolean.TRUE.equals(sensorData.sensorState.ready);
+                    if (ready && isCurrentlyOnline) {
+                        revealSensors();
+                    }
+                    return;
+                }
                 updateSensorUI();
             }
         });
@@ -459,6 +511,18 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
 
         dbHelper.setSelectedDeviceId(deviceId);
+
+        // Coherent initial reveal (see sensorsRevealed's own comment) -
+        // shown once, here, before the first Firebase read can possibly
+        // arrive; revealSensors() (via a ready snapshot or this bounded
+        // timeout) is the only thing that ever hides it again.
+        if (sensorStabilizingOverlay != null) {
+            sensorStabilizingOverlay.setVisibility(View.VISIBLE);
+            sensorStabilizingOverlay.bringToFront();
+        }
+        mainHandler.removeCallbacks(sensorStabilizingTimeoutRunnable);
+        mainHandler.postDelayed(sensorStabilizingTimeoutRunnable, SENSOR_STABILIZING_TIMEOUT_MS);
+
         sensorRepository.startListening(deviceId, sensorLiveData, sensorReadErrorLiveData);
         if (!isCurrentlyOnline) confirmSetupApReachability(deviceId);
 
@@ -503,6 +567,29 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             }
         };
         highWaterTempRef.addValueEventListener(highWaterTempListener);
+
+        // Part B (real-hardware pre-integration follow-up): lets the pH card
+        // show "Stabilizing..." instead of an indistinguishable "--" while a
+        // live candidate exists but hasn't been accepted into /sensors/ph
+        // yet - see updateSensorUI()'s own comment. Read-only, UI status
+        // only; automation continues to use only /sensors/ph.
+        physicalSensorsPhRef = deviceRef.child("debug").child("physicalSensors").child("ph");
+        physicalSensorsPhListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!isAdded()) return;
+                Object value = snapshot.getValue();
+                physicalPhCandidate = value instanceof Number ? ((Number) value).doubleValue() : null;
+                updateSensorUI();
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("RTDB", "physicalSensors/ph listener cancelled: " + error.getMessage());
+                physicalPhCandidate = null;
+            }
+        };
+        physicalSensorsPhRef.addValueEventListener(physicalSensorsPhListener);
 
         alertsRef = deviceRef.child("alerts");
         alertsListener = new ValueEventListener() {
@@ -1037,6 +1124,17 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                         dbHelper.updateActuatorState("growPump", checked, overrideRequested),
                         dbHelper.updateActuatorState("bloomPump", checked, overrideRequested)
                 );
+            } else if (actuator == canopyFan || actuator == reservoirFan) {
+                // PWM actuators: the ON toggle used to omit speed entirely,
+                // which firmware then defaulted to 100% (see
+                // FirebaseManager::consumeActuatorCommandSnapshot) regardless
+                // of whatever speed was last shown on this card's slider -
+                // "speed selection does not work" was this: turning the fan
+                // on always jumped to 100% and silently discarded the
+                // selected/last-known speed. Sending the actuator's current
+                // speed on every command (ON or OFF, harmless either way -
+                // OFF ignores it) makes ON resume at that speed instead.
+                updateTask = dbHelper.updateActuatorState(actuator.dbKey, checked, overrideRequested, actuator.speed);
             } else {
                 updateTask = dbHelper.updateActuatorState(actuator.dbKey, checked, overrideRequested);
             }
@@ -1523,12 +1621,43 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         NotificationHelper.showWarning(requireContext(), "System Alert", msg.toString());
     }
 
-    /** Updates all sensor TextViews from the current sensorLiveData value. */
+    /**
+     * Updates all sensor TextViews from the current sensorLiveData value.
+     *
+     * pH is a special case (quick-response refinement task; originally Part
+     * B, real-hardware pre-integration follow-up). Firmware's pH temporal
+     * step filter now publishes /sensors/ph as FAST TELEMETRY - the last
+     * TRUSTED reading, held steady through an in-progress confirmation
+     * (never blanked to hide it, never replaced by the unconfirmed
+     * candidate) - so a present data.ph is shown directly even while a new
+     * level is still being confirmed; data.phConfirming (always published,
+     * see FirebaseManager::writeSensors()) is the primary signal for the
+     * one remaining ambiguous case, "genuinely no sensor signal at all"
+     * (data.ph absent) vs "a first reading is still being confirmed"
+     * (phConfirming=true, "Stabilizing..."). physicalPhCandidate
+     * (debug/physicalSensors/ph, only ever populated while Developer Sensor
+     * Test is active) is kept as a secondary fallback for that same absent
+     * case, preserving the original mechanism unchanged. This is display
+     * status only - it never feeds automation, which continues to use only
+     * the accepted /sensors/ph value and the existing stricter stability
+     * gate exactly as before.
+     */
     private void updateSensorUI() {
         if (!isAdded() || getView() == null) return;
         SensorData data = sensorLiveData.getValue();
-        if (tvPH != null) tvPH.setText(formatSensor(
-                data != null ? data.ph : null, 0.0, 14.0, 2, "", null));
+        if (tvPH != null) {
+            boolean phAccepted = data != null && data.ph != null
+                    && !data.ph.isNaN() && !data.ph.isInfinite();
+            boolean phBeingConfirmed = data != null && Boolean.TRUE.equals(data.phConfirming);
+            boolean physicalCandidateLive = physicalPhCandidate != null
+                    && !physicalPhCandidate.isNaN() && !physicalPhCandidate.isInfinite();
+            if (!phAccepted && (phBeingConfirmed || physicalCandidateLive)) {
+                tvPH.setText("Stabilizing…");
+            } else {
+                tvPH.setText(formatSensor(
+                        data != null ? data.ph : null, 0.0, 14.0, 2, "", null));
+            }
+        }
         if (tvEC != null) tvEC.setText(formatSensor(
                 data != null ? data.ec : null, 0.0, Double.MAX_VALUE, 2, " mS/cm", null));
         if (tvTemp != null) tvTemp.setText(formatSensor(
@@ -1537,8 +1666,30 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 data != null ? data.humidity : null, 0.0, 100.0, 1, "%", null));
         if (tvWaterTemp != null) tvWaterTemp.setText(formatSensor(
                 data != null ? data.waterTemperature : null, -55.0, 125.0, 1, "°C", -127.0));
-        if (tvWaterLevel != null) tvWaterLevel.setText(formatSensor(
-                data != null ? data.waterLevel : null, 0.0, 100.0, 1, "%", null));
+        if (tvWaterLevel != null) {
+            CharSequence waterLevelText = formatSensor(
+                    data != null ? data.waterLevel : null, 0.0, 100.0, 1, "%", null);
+
+            // Water-depth model: percentage stays the primary value in this
+            // compact card, with the authoritative depth (cm) shown right
+            // alongside it - never derived independently, always the same
+            // published waterLevelCm control automation itself uses. Null
+            // on pre-update records or an invalid sensor reading, in which
+            // case only the percentage (or "--") is shown, same as before.
+            Double waterLevelCm = data != null ? data.waterLevelCm : null;
+            boolean percentValid = data != null && data.waterLevel != null
+                    && !data.waterLevel.isNaN() && !data.waterLevel.isInfinite()
+                    && data.waterLevel >= 0.0 && data.waterLevel <= 100.0;
+            boolean depthValid = waterLevelCm != null
+                    && !waterLevelCm.isNaN() && !waterLevelCm.isInfinite();
+
+            if (percentValid && depthValid) {
+                waterLevelText = new android.text.SpannableStringBuilder(waterLevelText)
+                        .append(String.format(java.util.Locale.US, " (%.1f cm)", waterLevelCm));
+            }
+
+            tvWaterLevel.setText(waterLevelText);
+        }
 
         applyParameterStateColor(tvPH, tvPHStatus, phAlertActive, phBelowRange, phAboveRange);
         applyParameterStateColor(tvEC, tvECStatus, ecAlertActive, ecBelowRange, ecAboveRange);
@@ -1551,6 +1702,28 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 waterTempBelowRange, waterTempAboveRange);
         applyParameterStateColor(tvWaterLevel, tvWaterLevelStatus, waterLevelAlertActive,
                 waterLevelBelowRange, waterLevelAboveRange);
+    }
+
+    /**
+     * Reveals every sensor card together, once, for this fragment view's
+     * lifetime - see sensorsRevealed's own comment. Called either by a
+     * coherent ready snapshot arriving (sensorLiveData.observe()) or by
+     * SENSOR_STABILIZING_TIMEOUT_MS elapsing with no such snapshot yet; in
+     * the timeout case updateSensorUI() below renders whatever is currently
+     * cached in sensorLiveData - a sensor with no trustworthy value yet
+     * falls through to its own existing "--" state (formatSensor()), never
+     * a fabricated number. No artificial delay is added beyond this: the
+     * overlay is hidden the instant this runs, not after some minimum
+     * shown duration.
+     */
+    private void revealSensors() {
+        if (sensorsRevealed || !isAdded()) return;
+        sensorsRevealed = true;
+        mainHandler.removeCallbacks(sensorStabilizingTimeoutRunnable);
+        if (sensorStabilizingOverlay != null) {
+            sensorStabilizingOverlay.setVisibility(View.GONE);
+        }
+        updateSensorUI();
     }
 
     private boolean isAlertActive(DataSnapshot alerts, String key) {
@@ -1572,7 +1745,14 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (valueView == null) return;
         final int colorRes;
         final String statusText;
-        if ("--".contentEquals(valueView.getText())) {
+        if ("Stabilizing…".contentEquals(valueView.getText())) {
+            // See updateSensorUI()'s own comment - a live pH candidate is
+            // actively being gathered/reconfirmed, distinct from "No Data"
+            // (no candidate at all) and from a real out-of-range/warning
+            // reading.
+            colorRes = R.color.state_warning;
+            statusText = "Stabilizing";
+        } else if ("--".contentEquals(valueView.getText())) {
             colorRes = R.color.state_no_data;
             statusText = "No Data";
         } else if (belowRange) {
@@ -1744,6 +1924,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
         if (highWaterTempRef != null && highWaterTempListener != null) {
             highWaterTempRef.removeEventListener(highWaterTempListener);
+        }
+        if (physicalSensorsPhRef != null && physicalSensorsPhListener != null) {
+            physicalSensorsPhRef.removeEventListener(physicalSensorsPhListener);
         }
         if (cycleListener != null) {
             cycleListener.remove();

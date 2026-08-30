@@ -572,8 +572,13 @@ exports.onAutomaticOperationLifecycleUpdated = onValueWritten({
     const [episodeDocument, sensorsSnapshot, settingsSnapshot, targetSettingsSnapshot] = await Promise.all([
         episodeRef.get(),
         admin.database().ref(`/devices/${deviceId}/sensors`).once("value"),
+        // Water-depth model (see firmware Config.h's "Water Reservoir
+        // Geometry"): refillStopLevelCm is what firmware's refill control
+        // actually stops at now - the legacy refillStopLevel percentage
+        // field is no longer read by any firmware control path, so gating
+        // this notification on it would desync from real refill completion.
         operation === "REFILL"
-            ? admin.database().ref(`/devices/${deviceId}/settings/refillStopLevel`).once("value")
+            ? admin.database().ref(`/devices/${deviceId}/settings/refillStopLevelCm`).once("value")
             : Promise.resolve(null),
         (operation === "PH_UP" || operation === "PH_DOWN" || operation === "EC_CORRECTION")
             ? admin.database().ref(`/devices/${deviceId}/settings`).once("value")
@@ -599,17 +604,26 @@ exports.onAutomaticOperationLifecycleUpdated = onValueWritten({
     }
 
     const sensors = sensorsSnapshot.val() || {};
+    // REFILL reads waterLevelCm (water-depth model, AUTHORITATIVE - see
+    // firmware Config.h's "Water Reservoir Geometry"), never the legacy
+    // waterLevel percentage, so this stays in sync with what firmware's
+    // refill control itself actually compares against.
     const sensorValue = operation === "PH_UP" || operation === "PH_DOWN"
         ? sensors.ph
-        : operation === "EC_CORRECTION" ? sensors.ec : sensors.waterLevel;
+        : operation === "EC_CORRECTION" ? sensors.ec : sensors.waterLevelCm;
     const sensorValid = typeof sensorValue === "number"
         && Number.isFinite(sensorValue)
         && ((operation === "PH_UP" || operation === "PH_DOWN")
             ? sensorValue >= 0 && sensorValue <= 14
             : operation === "EC_CORRECTION"
                 ? sensorValue >= 0
-                : sensorValue >= 0 && sensorValue <= 100);
-    const refillStopLevel = settingsSnapshot ? settingsSnapshot.val() : null;
+                // Physical depth ceiling, not MAX_WORKING_WATER_CM (6.0) - the
+                // live waterLevelCm reading at refill completion can
+                // legitimately sit above the 100%-working-capacity ceiling
+                // (overfill), and that must not suppress this notification.
+                // See the static automation integration audit, part 2.
+                : sensorValue >= 0 && sensorValue <= MAX_PHYSICAL_WATER_DEPTH_CM);
+    const refillStopLevelCm = settingsSnapshot ? settingsSnapshot.val() : null;
     const targetContext = {deviceId, requestId, operation, variant};
     const phTargetMin = operation === "PH_UP"
         ? resolveTargetSetting(targetSettingsSnapshot, "phTargetMin", 5.8, targetContext)
@@ -629,11 +643,11 @@ exports.onAutomaticOperationLifecycleUpdated = onValueWritten({
         || (operation === "EC_CORRECTION" && variant === "LOW" && sensorValue >= ecTargetMin)
         || (operation === "EC_CORRECTION" && variant === "HIGH" && sensorValue <= ecTargetMax)
         || (operation === "REFILL"
-            && typeof refillStopLevel === "number"
-            && Number.isFinite(refillStopLevel)
-            && refillStopLevel >= 0
-            && refillStopLevel <= 100
-            && sensorValue >= refillStopLevel)
+            && typeof refillStopLevelCm === "number"
+            && Number.isFinite(refillStopLevelCm)
+            && refillStopLevelCm >= 0
+            && refillStopLevelCm <= MAX_WORKING_WATER_CM
+            && sensorValue >= refillStopLevelCm)
     );
 
     if (!targetSatisfied) {
@@ -643,7 +657,7 @@ exports.onAutomaticOperationLifecycleUpdated = onValueWritten({
             operation,
             variant,
             sensorValue: sensorValid ? sensorValue : null,
-            refillStopLevel: operation === "REFILL" ? refillStopLevel : null
+            refillStopLevelCm: operation === "REFILL" ? refillStopLevelCm : null
         });
         return;
     }
@@ -759,6 +773,51 @@ async function emitWaterTemperatureCoolingSuccess(db, deviceId, notificationId) 
     }
 }
 
+function automationTestSubsystemFromStatus(status) {
+    const mode = status && status.automationTestMode;
+    if (!mode || mode.enabled !== true || typeof mode.subsystem !== "string") return "OFF";
+    return mode.subsystem.trim().toUpperCase();
+}
+
+function automationTestAlertPushAllowed(alertKey, status) {
+    if (alertKey === "sensorFault") return true;
+
+    const subsystem = automationTestSubsystemFromStatus(status);
+    if ((alertKey === "lowWater" || alertKey === "criticalLowWater"
+            || alertKey === "waterLevelLow" || alertKey === "waterLevelHigh")
+        && status.ignoreWaterLevelAutomation === true) {
+        return false;
+    }
+    if (subsystem === "OFF") return true;
+
+    const allowedBySubsystem = {
+        STARTUP: new Set(["lowWater", "criticalLowWater"]),
+        REFILL: new Set(["lowWater", "criticalLowWater", "waterLevelLow", "waterLevelHigh"]),
+        PH: new Set(["phLow", "phHigh"]),
+        EC: new Set(["ecLow", "ecHigh"]),
+        COOLING: new Set(["waterTempOutOfRange", "waterTempLow"]),
+        FOGGING: new Set(["lowWater", "criticalLowWater", "lowAirTemperature", "highTemperature"]),
+        CANOPY: new Set(["lowAirTemperature", "highTemperature", "humidityLow", "humidityHigh"]),
+        GROW_LIGHT: new Set([])
+    };
+
+    return allowedBySubsystem[subsystem]
+        ? allowedBySubsystem[subsystem].has(alertKey)
+        : false;
+}
+
+function automationTestStatusPushAllowed(statusKey, status) {
+    if (statusKey === "safetyLock") return true;
+
+    const subsystem = automationTestSubsystemFromStatus(status);
+    if (subsystem === "OFF") return true;
+
+    return (subsystem === "PH" && statusKey === "phSubsystemLocked")
+        || (subsystem === "EC" && statusKey === "ecSubsystemLocked")
+        || (subsystem === "REFILL" && statusKey === "refillSubsystemLocked")
+        || (subsystem === "COOLING" && statusKey === "coolingSubsystemLocked");
+}
+
 exports.onAlertUpdated = onValueUpdated({
     ref: "/devices/{deviceId}/alerts",
     instance: "basilience-database-default-rtdb",
@@ -769,11 +828,21 @@ exports.onAlertUpdated = onValueUpdated({
     const deviceId = event.params.deviceId;
 
     const db = admin.firestore();
+    const statusSnapshot = await admin.database()
+        .ref(`/devices/${deviceId}/status`).once("value");
+    const notificationStatus = statusSnapshot.val() || {};
 
     await handleWaterTemperatureCoolingEpisodeStart(db, event, deviceId, alertsBefore, alertsAfter);
 
     const alertKeys = [
         { key: "lowWater", title: "Water level is low", message: "The reservoir water level is low. Basilience will refill it automatically when safe.", type: "parameter" },
+        // Severity escalation on top of lowWater (water-depth model - see
+        // firmware Config.h's "Water Reservoir Geometry" and the static
+        // automation integration audit) - fires separately, later, as the
+        // level keeps falling past criticalLowWaterCm. No new actuator
+        // behavior: the operational block (pH/EC dosing, fogging, cooling)
+        // is already fully in effect by the time this can ever fire.
+        { key: "criticalLowWater", title: "Critical low water level", message: "The reservoir water level is critically low. Refill is in progress; dependent automation remains paused until it recovers.", type: "parameter" },
         { key: "ecLow", title: "Nutrient level is too low", message: "The nutrient level is below the proper range. Basilience will correct it automatically when safe.", type: "parameter" },
         { key: "ecHigh", title: "Nutrient level is too high", message: "The nutrient level is above the proper range. Basilience will correct it automatically when safe.", type: "parameter" },
         { key: "phLow", title: "pH is too low", message: "The pH level is below the proper range. Basilience will correct it automatically when safe.", type: "parameter" },
@@ -803,13 +872,18 @@ exports.onAlertUpdated = onValueUpdated({
         const wasActive = alertsBefore[alert.key] === true;
         const isActive = alertsAfter[alert.key] === true;
 
-        // lowWater (refill control threshold) and waterLevelLow (target-range
-        // minimum) both default to 20%, so they normally go true in the same
-        // write and would push two notifications for one physical event. The
-        // operational one wins: it already tells the farmer the level is low
-        // AND that a refill is coming. waterLevelLow still notifies on its own
-        // whenever it is the only one active - which is exactly the case that
-        // matters, an admin setting the target minimum above the refill level.
+        // lowWater (refill control threshold, water-depth model - see
+        // firmware Config.h's "Water Reservoir Geometry") trips at a higher
+        // water level than waterLevelLow (target-range minimum, still
+        // percentage-based) by default, and stays true continuously while
+        // the level keeps falling - so by the time waterLevelLow's own
+        // threshold is crossed, lowWater is already active and this still
+        // dedupes the pair into one notification for one physical event.
+        // The operational one wins: it already tells the farmer the level
+        // is low AND that a refill is coming. waterLevelLow still notifies
+        // on its own whenever it is the only one active - which is exactly
+        // the case that matters, an admin setting the target minimum above
+        // the refill level.
         if (alert.key === "waterLevelLow" && alertsAfter.lowWater === true) {
             continue;
         }
@@ -839,6 +913,15 @@ exports.onAlertUpdated = onValueUpdated({
             }
             
             logger.info(`Alert generated and saved to Firestore for ${deviceId}: ${alert.key}`);
+
+            if (!automationTestAlertPushAllowed(alert.key, notificationStatus)) {
+                logger.info("Automation Test Mode suppressed unrelated alert push", {
+                    deviceId,
+                    alertKey: alert.key,
+                    subsystem: automationTestSubsystemFromStatus(notificationStatus)
+                });
+                continue;
+            }
 
             const userTokens = await getDeviceUserTokens(db, deviceId);
 
@@ -1160,10 +1243,24 @@ exports.onHarvestCreated = onDocumentCreated("devices/{deviceId}/cycles/{cycleId
 //   timestamp: number (epoch ms, server time)
 //   ph: number, ec: number
 //   air_temp: number, humidity: number, water_temp: number, water_level: number
+//   water_level_cm: number, water_volume_liters: number (water-depth model -
+//   see firmware Config.h's "Water Reservoir Geometry"; absent on records
+//   from before the firmware update - Android must never treat a missing
+//   water_level_cm as though the legacy water_level percentage on that same
+//   record came from the new depth-based formula)
 // Source RTDB fields (written by FirebaseManager::writeSensors) are camelCase
 // and use device-uptime millis() for their own timestamp, so we re-stamp with
 // Date.now() here rather than trusting the RTDB value.
 const SENSOR_LOG_INTERVAL_MS = 5 * 60 * 1000;
+const MAX_WORKING_WATER_CM = 6.0; // Mirrors firmware Config.h's constant.
+// Physical plausibility ceiling for a LOGGED depth reading - the installed
+// sensor-to-bottom calibration distance (firmware Config.h's
+// WATER_LEVEL_EMPTY_DISTANCE_CM default), not MAX_WORKING_WATER_CM (6.0),
+// which is only the 100% WORKING-capacity ceiling for the derived
+// percentage. A depth above 6cm is a legitimate overfill reading, not
+// invalid data, and must not be silently dropped from history - see the
+// static automation integration audit, part 2.
+const MAX_PHYSICAL_WATER_DEPTH_CM = 28.67;
 
 exports.logSensorData = onValueWritten({
     ref: "/devices/{deviceId}/sensors",
@@ -1188,6 +1285,8 @@ exports.logSensorData = onValueWritten({
     addValid("humidity", data.humidity, 0, 100);
     addValid("water_temp", data.waterTemperature, -55, 125, -127);
     addValid("water_level", data.waterLevel, 0, 100);
+    addValid("water_level_cm", data.waterLevelCm, 0, MAX_PHYSICAL_WATER_DEPTH_CM);
+    addValid("water_volume_liters", data.waterVolumeLiters, 0, Number.MAX_VALUE);
     if (Object.keys(logEntry).length === 1) return;
 
     const db = admin.firestore();
@@ -1598,6 +1697,15 @@ exports.onStatusUpdated = onValueUpdated({
             }
             
             logger.info(`Status alert generated and saved to Firestore for ${deviceId}: ${status.key}`);
+
+            if (!automationTestStatusPushAllowed(status.key, statusAfter)) {
+                logger.info("Automation Test Mode suppressed unrelated subsystem push", {
+                    deviceId,
+                    statusKey: status.key,
+                    subsystem: automationTestSubsystemFromStatus(statusAfter)
+                });
+                continue;
+            }
 
             const userTokens = await getDeviceUserTokens(db, deviceId);
 

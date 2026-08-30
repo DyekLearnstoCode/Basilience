@@ -297,6 +297,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
 
     private boolean isParameterAlert(String type) {
         return "lowWater".equalsIgnoreCase(type)
+                || "criticalLowWater".equalsIgnoreCase(type)
                 || "ecLow".equalsIgnoreCase(type)
                 || "ecHigh".equalsIgnoreCase(type)
                 || "phLow".equalsIgnoreCase(type)

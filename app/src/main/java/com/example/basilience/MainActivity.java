@@ -805,6 +805,8 @@ public class MainActivity extends AppCompatActivity {
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 currentParameterAlertStates.put("lowWater",
                         Boolean.TRUE.equals(snapshot.child("lowWater").getValue(Boolean.class)));
+                currentParameterAlertStates.put("criticalLowWater",
+                        Boolean.TRUE.equals(snapshot.child("criticalLowWater").getValue(Boolean.class)));
                 currentParameterAlertStates.put("ecLow",
                         Boolean.TRUE.equals(snapshot.child("ecLow").getValue(Boolean.class)));
                 currentParameterAlertStates.put("ecHigh",
@@ -881,6 +883,7 @@ public class MainActivity extends AppCompatActivity {
         if (activeParameterAlerts.size() == 1) {
             String only = activeParameterAlerts.values().iterator().next();
             if ("Water Level — Low".equals(only)) return "Water Level is below the configured threshold.";
+            if ("Water Level — Critical".equals(only)) return "Reservoir water level is critically low. Refill is in progress; dependent automation remains paused until it recovers.";
             if ("EC — Low".equals(only)) return "EC is below the configured range.";
             if ("EC — High".equals(only)) return "Electrical conductivity is above the acceptable range.";
             if ("pH — Low".equals(only)) return "pH is below the configured range.";
@@ -951,6 +954,7 @@ public class MainActivity extends AppCompatActivity {
 
     private static String parameterLabel(String type) {
         if ("lowWater".equalsIgnoreCase(type)) return "Water Level — Low";
+        if ("criticalLowWater".equalsIgnoreCase(type)) return "Water Level — Critical";
         if ("ecLow".equalsIgnoreCase(type)) return "EC — Low";
         if ("ecHigh".equalsIgnoreCase(type)) return "EC — High";
         if ("phLow".equalsIgnoreCase(type)) return "pH — Low";
