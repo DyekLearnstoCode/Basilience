@@ -54,6 +54,7 @@ public class DevOptionsFragment extends Fragment {
     private ValueEventListener manualModeStatusListener;
 
     private SwitchMaterial switchMockEnable;
+    private SwitchMaterial switchDynamicMock;
     private SwitchMaterial switchIgnoreWaterLevel;
     private boolean loadingIgnoreWaterLevelState = true;
     private boolean suppressIgnoreWaterLevelSwitchCallback = false;
@@ -114,6 +115,7 @@ public class DevOptionsFragment extends Fragment {
     private TextView tvDiagnosticEcVoltage;
 
     private View containerSensorTest, containerMockData, containerRefill, containerCanopyPwm;
+    private View cardAutomationTestMode, containerIgnoreWaterLevel;
     private MaterialButton btnFilterCanopyPwm;
 
     // Isolated Canopy Fan PWM diagnostic (real-hardware Canopy/Blower PWM
@@ -154,6 +156,7 @@ public class DevOptionsFragment extends Fragment {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private static final String PREFS_NAME = "basilience_prefs";
     private static final String KEY_DEVELOPER_MODE_ENABLED = "developer_mode_enabled";
+    private boolean maintenanceMode;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -167,8 +170,20 @@ public class DevOptionsFragment extends Fragment {
 
         NavController navController = Navigation.findNavController(view);
         SharedPreferences accessPrefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        if (!"ADMIN".equalsIgnoreCase(accessPrefs.getString("user_role", ""))) {
-            Toast.makeText(requireContext(), "Developer Mode is available to Admin users only", Toast.LENGTH_SHORT).show();
+        maintenanceMode = getArguments() != null
+                && getArguments().getBoolean("maintenanceMode", false);
+        boolean isAdmin = RoleConstants.ROLE_ADMIN.equalsIgnoreCase(
+                accessPrefs.getString("user_role", ""));
+        String authorizedDeviceId = accessPrefs.getString("selected_device_id", null);
+        boolean developerAuthorized = RoleConstants.isDeveloperTester(accessPrefs)
+                && accessPrefs.getBoolean(KEY_DEVELOPER_MODE_ENABLED, false)
+                && authorizedDeviceId != null
+                && authorizedDeviceId.equals(accessPrefs.getString(
+                        RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID, null));
+        if ((maintenanceMode && !isAdmin) || (!maintenanceMode && !developerAuthorized)) {
+            Toast.makeText(requireContext(), maintenanceMode
+                    ? "Device Maintenance is available to Admin users only"
+                    : "Developer Tester access is required", Toast.LENGTH_SHORT).show();
             navController.popBackStack();
             return;
         }
@@ -190,22 +205,8 @@ public class DevOptionsFragment extends Fragment {
         containerMockData = view.findViewById(R.id.containerMockData);
         containerRefill = view.findViewById(R.id.containerRefill);
         containerCanopyPwm = view.findViewById(R.id.containerCanopyPwm);
-        containerAutomationTestMode = view.findViewById(R.id.containerAutomationTestMode);
+        cardAutomationTestMode = view.findViewById(R.id.cardAutomationTestMode);
         containerIgnoreWaterLevel = view.findViewById(R.id.containerIgnoreWaterLevel);
-
-        // Developer-only tools are hidden outright (not just disabled) for an
-        // Admin without the isDeveloper flag - Mock Sensors can feed fabricated
-        // readings into live automation, Automation Test Mode pauses every
-        // other subsystem, the water-level override removes a physical-damage
-        // safety, and Canopy PWM sends raw actuator commands. Sensor Test and
-        // Refill thresholds are unaffected - see the field-level comment on
-        // isDeveloper above for the full reasoning.
-        if (!isDeveloper) {
-            if (btnFilterMock != null) btnFilterMock.setVisibility(View.GONE);
-            if (btnFilterCanopyPwm != null) btnFilterCanopyPwm.setVisibility(View.GONE);
-            if (containerAutomationTestMode != null) containerAutomationTestMode.setVisibility(View.GONE);
-            if (containerIgnoreWaterLevel != null) containerIgnoreWaterLevel.setVisibility(View.GONE);
-        }
 
         // Canopy Fan PWM test components
         btnCanopyPwm0 = view.findViewById(R.id.btnCanopyPwm0);
@@ -227,6 +228,7 @@ public class DevOptionsFragment extends Fragment {
 
         // Mock data components
         switchMockEnable = view.findViewById(R.id.switchMockEnable);
+        switchDynamicMock = view.findViewById(R.id.switchDynamicMock);
         etPh = view.findViewById(R.id.etPh);
         etEc = view.findViewById(R.id.etEc);
         etTemp = view.findViewById(R.id.etTemp);
@@ -260,6 +262,8 @@ public class DevOptionsFragment extends Fragment {
         // Always-visible actions below the tabs
         btnEnableProvisioningAp = view.findViewById(R.id.btnEnableProvisioningAp);
         btnDisableDeveloperMode = view.findViewById(R.id.btnDisableDeveloperMode);
+
+        configureAccessMode(view);
 
         Database_Helper helper = new Database_Helper();
         dbHelper = helper;
@@ -358,7 +362,52 @@ public class DevOptionsFragment extends Fragment {
             });
         }
 
-        loadRefillThresholds();
+        if (maintenanceMode) {
+            loadingMockState = false;
+            loadRefillThresholds();
+        } else {
+            loadCurrentValues();
+            loadMockGrowLightTime();
+        }
+        switchMockEnable.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (suppressMockSwitchCallback || loadingMockState) return;
+            if (isChecked) {
+                suppressMockSwitchCallback = true;
+                switchMockEnable.setChecked(false);
+                suppressMockSwitchCallback = false;
+                NotificationHelper.showConfirmation(requireContext(),
+                        "Enable Mock Sensors?",
+                        "Mock values will replace physical sensor readings used by automatic control until Mock Sensors are disabled.",
+                        "Enable", "Cancel", () -> {
+                            suppressMockSwitchCallback = true;
+                            switchMockEnable.setChecked(true);
+                            suppressMockSwitchCallback = false;
+                        });
+                return;
+            }
+            if (!loadingMockState && !isChecked) {
+                disableMockMode();
+            }
+        });
+        switchDynamicMock.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (loadingMockState || maintenanceMode) return;
+            pushMockValues();
+        });
+
+        switchIgnoreWaterLevel.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (suppressIgnoreWaterLevelSwitchCallback || loadingIgnoreWaterLevelState) return;
+            if (isChecked) {
+                suppressIgnoreWaterLevelSwitchCallback = true;
+                switchIgnoreWaterLevel.setChecked(false);
+                suppressIgnoreWaterLevelSwitchCallback = false;
+                NotificationHelper.showConfirmation(requireContext(),
+                        "Ignore Water Level Safety?",
+                        "Developer testing only. Automatic refill and low-water actuator protection will be ignored while enabled. The real water level and alerts will remain active. Running pumps, fogger, or dosing actuators with insufficient water may damage equipment or produce invalid results.",
+                        "Enable", "Cancel", () -> setIgnoreWaterLevelCommand(true));
+                return;
+            }
+            setIgnoreWaterLevelCommand(false);
+        });
 
         // Setup filter button listeners
         btnFilterSensorTest.setOnClickListener(v -> updateFilterSelection("Sensor"));
@@ -387,13 +436,38 @@ public class DevOptionsFragment extends Fragment {
             btnDisableDeveloperMode.setOnClickListener(v -> disableDeveloperMode(navController));
         }
 
-        observeSensorTest();
-        if (isDeveloper) {
+        if (maintenanceMode) {
+            observeSensorTest();
+            updateFilterSelection("Sensor");
+        } else {
             observeIgnoreWaterLevelOverride();
             observeAutomationTestMode();
             observeManualModeForCanopyPwm();
+            updateFilterSelection("Mock");
         }
-        updateFilterSelection("Sensor");
+    }
+
+    private void configureAccessMode(View view) {
+        TextView title = view.findViewById(R.id.tvToolsTitle);
+        TextView subtitle = view.findViewById(R.id.tvToolsSubtitle);
+
+        if (maintenanceMode) {
+            if (title != null) title.setText("Device Maintenance");
+            if (subtitle != null) subtitle.setText("Safe device diagnostics and production settings.");
+            btnFilterMock.setVisibility(View.GONE);
+            btnFilterCanopyPwm.setVisibility(View.GONE);
+            containerMockData.setVisibility(View.GONE);
+            containerCanopyPwm.setVisibility(View.GONE);
+            cardAutomationTestMode.setVisibility(View.GONE);
+            containerIgnoreWaterLevel.setVisibility(View.GONE);
+            btnEnableProvisioningAp.setVisibility(View.GONE);
+            btnDisableDeveloperMode.setVisibility(View.GONE);
+        } else {
+            btnFilterSensorTest.setVisibility(View.GONE);
+            btnFilterRefill.setVisibility(View.GONE);
+            containerSensorTest.setVisibility(View.GONE);
+            containerRefill.setVisibility(View.GONE);
+        }
     }
 
     private void setAutomationTestModeCommand(String subsystem) {
@@ -554,12 +628,15 @@ public class DevOptionsFragment extends Fragment {
      * now carried by the view's selected state and resolved by the colour state
      * lists on DeveloperFilterChip.
      *
-     * Sensor Test, Mock Data, and Refill remain as tabs - Wi-Fi Config was
-     * removed from Developer Options (moved to Device Management). Refill
-     * threshold configuration was re-added here after previously having no
-     * developer UI.
+     * The shared layout has two authorized presentations: Device Maintenance
+     * permits only Sensor Test/Refill, while Developer Options permits only
+     * Mock Data/Canopy PWM. Wi-Fi Configuration remains in Device Management.
      */
     private void updateFilterSelection(String selectedFilter) {
+        if (maintenanceMode && !"Sensor".equalsIgnoreCase(selectedFilter)
+                && !"Refill".equalsIgnoreCase(selectedFilter)) return;
+        if (!maintenanceMode && ("Sensor".equalsIgnoreCase(selectedFilter)
+                || "Refill".equalsIgnoreCase(selectedFilter))) return;
         boolean sensor = "Sensor".equalsIgnoreCase(selectedFilter);
         boolean mock = "Mock".equalsIgnoreCase(selectedFilter);
         boolean refill = "Refill".equalsIgnoreCase(selectedFilter);
@@ -836,6 +913,8 @@ public class DevOptionsFragment extends Fragment {
                 if (snapshot.exists()) {
                     Boolean enabled = snapshot.child("enabled").getValue(Boolean.class);
                     if (enabled != null) switchMockEnable.setChecked(enabled);
+                    Boolean dynamic = snapshot.child("dynamic").getValue(Boolean.class);
+                    switchDynamicMock.setChecked(Boolean.TRUE.equals(dynamic));
                     
                     Double ph = snapshot.child("ph").getValue(Double.class);
                     if (ph != null) etPh.setText(String.valueOf(ph));
@@ -1006,6 +1085,7 @@ public class DevOptionsFragment extends Fragment {
     private void pushMockValues() {
         Map<String, Object> updates = new HashMap<>();
         updates.put("enabled", switchMockEnable.isChecked());
+        updates.put("dynamic", switchDynamicMock.isChecked());
         
         try {
             if (!etPh.getText().toString().isEmpty()) updates.put("ph", Double.parseDouble(etPh.getText().toString()));
@@ -1026,7 +1106,8 @@ public class DevOptionsFragment extends Fragment {
             showLoading("Pushing Mock Data...", "Writing values to ESP32...");
 
             mockSensorsRef.updateChildren(updates).addOnSuccessListener(unused ->
-                    waitForMockAcknowledgement(switchMockEnable.isChecked()))
+                    waitForMockAcknowledgement(
+                            switchMockEnable.isChecked(), switchDynamicMock.isChecked()))
                     .addOnFailureListener(error -> {
                         hideLoading();
                         if (isAdded()) NotificationHelper.showError(requireContext(), "Mock Data Failed", error.getMessage());
@@ -1040,15 +1121,15 @@ public class DevOptionsFragment extends Fragment {
     private void disableMockMode() {
         showLoading("Disabling Mock Data...", "Returning firmware to physical sensors...");
         mockSensorsRef.child("enabled").setValue(false)
-                .addOnSuccessListener(unused -> waitForMockAcknowledgement(false))
+                .addOnSuccessListener(unused -> waitForMockAcknowledgement(false, false))
                 .addOnFailureListener(error -> {
                     hideLoading();
                     if (isAdded()) NotificationHelper.showError(requireContext(), "Mock Data Failed", error.getMessage());
                 });
     }
 
-    private void waitForMockAcknowledgement(boolean expectedEnabled) {
-        DatabaseReference ackRef = deviceRef.child("status").child("mockData");
+    private void waitForMockAcknowledgement(boolean expectedEnabled, boolean expectedDynamic) {
+        DatabaseReference ackRef = deviceRef.child("status");
         final ValueEventListener[] listenerHolder = new ValueEventListener[1];
         Runnable timeout = () -> {
             if (listenerHolder[0] != null) ackRef.removeEventListener(listenerHolder[0]);
@@ -1060,14 +1141,19 @@ public class DevOptionsFragment extends Fragment {
         listenerHolder[0] = ackRef.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
-                Boolean acknowledged = snapshot.getValue(Boolean.class);
+                Boolean acknowledged = snapshot.child("mockData").getValue(Boolean.class);
+                Boolean dynamicAcknowledged = snapshot.child("mockDataDynamic").getValue(Boolean.class);
                 if (acknowledged == null || acknowledged != expectedEnabled) return;
+                if (expectedEnabled
+                        && Boolean.TRUE.equals(dynamicAcknowledged) != expectedDynamic) return;
                 ackRef.removeEventListener(this);
                 mainHandler.removeCallbacks(timeout);
                 hideLoading();
                 if (!isAdded()) return;
                 if (expectedEnabled) {
-                    NotificationHelper.showSuccess(requireContext(), "ESP32 mock mode is active and automation is using the supplied sensor values.");
+                    NotificationHelper.showSuccess(requireContext(), expectedDynamic
+                            ? "ESP32 Dynamic Mock is active and automation is using the drifting effective values."
+                            : "ESP32 static mock mode is active and automation is using the supplied sensor values.");
                 } else {
                     NotificationHelper.showSuccess(requireContext(), "ESP32 mock mode is off and physical sensors are authoritative.");
                 }
@@ -1111,6 +1197,7 @@ public class DevOptionsFragment extends Fragment {
                 .getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean(KEY_DEVELOPER_MODE_ENABLED, false)
+                .remove(RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID)
                 .apply();
         if (settingsRef != null) settingsRef.child("devModeEnabled").setValue(false);
         // Best-effort safety net: a developer bypassing the water-level

@@ -21,8 +21,8 @@ import java.util.List;
  * {@code lowWater}) - the same flags the Monitoring screen already uses to
  * colour each reading. Cooling is the one case those flags cannot answer,
  * because {@code waterTempOutOfRange} carries no direction; it uses the
- * configured {@code settings/highWaterTemp} value, which is the same
- * configured ceiling the System Reports screen already reads. When a value
+ * configured {@code settings/maxWaterTemp} value, which is the same
+ * configured ceiling firmware uses to start cooling. When a value
  * needed for the decision is missing, the answer is {@link Advice#CONFIRM_UNKNOWN}
  * rather than an assumption that the action is safe.
  */

@@ -317,6 +317,8 @@ public class Auth_Login_Activity extends AppCompatActivity {
                                             .remove(KEY_IS_LOGGED_IN)
                                             .remove("user_role")
                                             .remove("owner_uid")
+                                            .remove(RoleConstants.PREF_DEVELOPER_TESTER)
+                                            .remove(RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID)
                                             .remove("selected_device_id")
                                             .remove("is_developer")
                                             .apply();
@@ -339,6 +341,8 @@ public class Auth_Login_Activity extends AppCompatActivity {
                                 editor.putString("user_role", role);
                                 editor.putString("owner_uid", ownerUid);
                                 editor.putBoolean("is_developer", isDeveloper);
+                                editor.putBoolean(RoleConstants.PREF_DEVELOPER_TESTER,
+                                        Boolean.TRUE.equals(document.getBoolean("developerTester")));
                                 editor.apply();
 
                                 // Device assignments are established only by Admin assignment
@@ -379,6 +383,8 @@ public class Auth_Login_Activity extends AppCompatActivity {
                     .putString("user_role", role)
                     .putString("owner_uid", document.getString("ownerAdminUid"))
                     .putBoolean("is_developer", Boolean.TRUE.equals(document.getBoolean("isDeveloper")))
+                    .putBoolean(RoleConstants.PREF_DEVELOPER_TESTER,
+                            Boolean.TRUE.equals(document.getBoolean("developerTester")))
                     .apply();
             navigateToMain();
         }, error -> {
@@ -397,6 +403,8 @@ public class Auth_Login_Activity extends AppCompatActivity {
                 .remove(KEY_IS_LOGGED_IN)
                 .remove("user_role")
                 .remove("owner_uid")
+                .remove(RoleConstants.PREF_DEVELOPER_TESTER)
+                .remove(RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID)
                 .remove("selected_device_id")
                 .remove("is_developer")
                 .apply();
