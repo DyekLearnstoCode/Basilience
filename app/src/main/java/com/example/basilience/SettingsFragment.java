@@ -127,6 +127,7 @@ public class SettingsFragment extends Fragment {
                         .remove("user_role")
                         .remove("owner_uid")
                         .remove("selected_device_id")
+                        .remove("is_developer")
                         .apply();
 
                 android.content.Intent intent = new android.content.Intent(getActivity(), Auth_Login_Activity.class);

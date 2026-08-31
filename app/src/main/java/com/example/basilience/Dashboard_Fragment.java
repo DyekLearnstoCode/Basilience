@@ -74,8 +74,17 @@ public class Dashboard_Fragment extends Fragment {
         // Device status (reuses the same DeviceConnectionManager state Monitoring shows)
         SharedPreferences statusPrefs = requireContext().getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
         TextView tvDeviceStatus = view.findViewById(R.id.tvDashboardDeviceStatus);
-        if (tvDeviceStatus != null && statusPrefs.getString("selected_device_id", null) != null) {
+        String dashboardDeviceId = statusPrefs.getString("selected_device_id", null);
+        if (tvDeviceStatus != null && dashboardDeviceId != null) {
             tvDeviceStatus.setVisibility(View.VISIBLE);
+            // Defensive, not redundant - see the matching call/comment in
+            // Parameters_Monitoring_Fragment.startRealTimeMonitoring(). This
+            // screen only ever observed the singleton before, with nothing of
+            // its own to (re-)establish monitoring if MainActivity's central
+            // trigger was ever missed - confirmed live bug: this label was
+            // observed stuck on RECONNECTING while Device Management's own
+            // listener already showed the device correctly online/offline.
+            DeviceConnectionManager.getInstance().monitorDevice(dashboardDeviceId);
             DeviceConnectionManager.getInstance().getConnectivityState().observe(
                     getViewLifecycleOwner(), state -> {
                         DeviceConnectivityState displayState = state == null

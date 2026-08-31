@@ -394,6 +394,111 @@ public class Database_Helper {
         return sensorsRef;
     }
 
+    /**
+     * Pairs (scaleDeviceId non-empty) or unpairs (null/empty) a Basilience
+     * Harvest Scale with this grow-chamber device. Each physical scale is
+     * its own separately provisioned unit dedicated to one device when
+     * reproduced across multiple installs - never a single shared/global
+     * scale - so this is per-device data on the devices/{deviceId}
+     * document, not a fixed app-wide value.
+     */
+    public Task<Void> setHarvestScaleId(String deviceId, String scaleDeviceId) {
+        if (deviceId == null) return Tasks.forException(new Exception("No device selected"));
+        String trimmed = scaleDeviceId == null ? null : scaleDeviceId.trim();
+        String normalized = (trimmed == null || trimmed.isEmpty()) ? null : trimmed;
+
+        return checkAdminTask().onSuccessTask(aVoid ->
+                db.collection("devices").document(deviceId).update("harvestScaleId", normalized));
+    }
+
+    /**
+     * Reads the harvestScaleId paired with a device (see
+     * setHarvestScaleId()), or null if unpaired. Resolves to null rather
+     * than failing on a read error too - callers use this only to decide
+     * whether to offer the "Read from Harvest Scale" control, so a
+     * transient failure should just hide that control, not surface an
+     * error for a secondary, non-essential lookup.
+     */
+    public Task<String> getHarvestScaleId(String deviceId) {
+        if (deviceId == null) return Tasks.forResult(null);
+        return db.collection("devices").document(deviceId).get()
+                .continueWith(task -> {
+                    if (!task.isSuccessful() || task.getResult() == null || !task.getResult().exists()) {
+                        return null;
+                    }
+                    return task.getResult().getString("harvestScaleId");
+                });
+    }
+
+    /**
+     * One-shot read of the MOST RECENT entry under
+     * devices/{scaleDeviceId}/harvestScale/harvests - the standalone
+     * BasilienceHarvestScale firmware's stability-CONFIRMED reading (see
+     * FirebaseManager::uploadWeight() in that firmware: it only pushes an
+     * entry once weight has held stable for STABLE_HOLD_MS across
+     * STABLE_READINGS consecutive samples). Deliberately NOT
+     * harvestScale/liveWeight, which the scale overwrites every 5 seconds
+     * unconditionally - a raw in-flux reading, not a trustworthy one to
+     * log a harvest with.
+     *
+     * A separate deviceId parameter (not this class's own
+     * selectedDeviceId-scoped grow-chamber references above) because the
+     * scale is its own device, not one of the grow-chamber devices this
+     * class is normally scoped to.
+     */
+    public Task<Double> readLatestHarvestScaleReading(String scaleDeviceId) {
+        TaskCompletionSource<Double> completion = new TaskCompletionSource<>();
+
+        // addListenerForSingleValueEvent has no built-in timeout: if this
+        // phone has no path to Firebase at all (airplane mode, no data
+        // signal), neither onDataChange nor onCancelled ever fires, and the
+        // caller's button would stay disabled indefinitely with no error
+        // shown. This bounded fallback guarantees the caller always hears
+        // back one way or another.
+        Handler timeoutHandler = new Handler(Looper.getMainLooper());
+        Runnable timeoutRunnable = () -> completion.setException(
+                new java.util.concurrent.TimeoutException("Timed out waiting for harvest scale reading"));
+        timeoutHandler.postDelayed(timeoutRunnable, 10000);
+
+        rtdb.getReference("devices")
+                .child(scaleDeviceId)
+                .child("harvestScale")
+                .child("harvests")
+                // Firebase push IDs sort chronologically, so limitToLast(1)
+                // is the most recently confirmed stable weighing.
+                .orderByKey()
+                .limitToLast(1)
+                .addListenerForSingleValueEvent(new com.google.firebase.database.ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        timeoutHandler.removeCallbacks(timeoutRunnable);
+                        if (completion.getTask().isComplete()) return; // already timed out
+
+                        if (!snapshot.exists() || !snapshot.hasChildren()) {
+                            completion.setException(new IllegalStateException("Harvest scale has no confirmed reading yet"));
+                            return;
+                        }
+
+                        DataSnapshot latest = snapshot.getChildren().iterator().next();
+                        Double grams = latest.child("grams").getValue(Double.class);
+                        if (grams == null) {
+                            completion.setException(new IllegalStateException("Harvest scale reading is missing a weight value"));
+                        } else {
+                            completion.setResult(grams);
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull com.google.firebase.database.DatabaseError error) {
+                        timeoutHandler.removeCallbacks(timeoutRunnable);
+                        if (completion.getTask().isComplete()) return; // already timed out
+                        completion.setException(error.toException());
+                    }
+                });
+
+        return completion.getTask();
+    }
+
     public Task<Void> updateActuatorState(String actuatorName, boolean isOn) {
         return updateActuatorState(actuatorName, isOn, false);
     }
@@ -903,7 +1008,18 @@ public class Database_Helper {
             DocumentReference cycleRef = db.collection("devices").document(selectedDeviceId)
                     .collection("cycles").document(cycleId);
             DocumentReference harvestRef = cycleRef.collection("harvestLogs").document(harvestId);
+            boolean harvestDateChanged = updates.containsKey("harvestDate");
 
+            // The harvestDate edit + weight/count adjustment above must be
+            // atomic, so it stays inside the transaction. Recomputing
+            // lastHarvestDate/nextHarvestDate needs a query the Firestore
+            // transaction API can't track; it used to run here via a blocking
+            // Tasks.await() inline, which could hang this transaction
+            // indefinitely under poor connectivity (and Firestore retries
+            // transactions on contention, compounding the wait). It now runs
+            // as a best-effort follow-up after this transaction commits, the
+            // same pattern deleteHarvestTransaction/recomputeHarvestSchedulingMetadata
+            // already use below.
             return db.runTransaction(transaction -> {
                 DocumentSnapshot cycleSnap = transaction.get(cycleRef);
 
@@ -921,51 +1037,19 @@ public class Database_Helper {
                 }
 
                 transaction.update(harvestRef, updates);
-
-                Map<String, Object> cycleUpdates = new HashMap<>();
-                cycleUpdates.put("totalHarvestWeight", currentTotalWeight - oldWeight + newWeight);
-
-                // If the harvestDate is being updated, we need to update lastHarvestDate and nextHarvestDate
-                if (updates.containsKey("harvestDate")) {
-                    try {
-                        QuerySnapshot qSnap = Tasks.await(cycleRef.collection("harvestLogs")
-                                .orderBy("harvestDate", Query.Direction.DESCENDING)
-                                .limit(2)
-                                .get());
-
-                        List<Timestamp> candidates = new ArrayList<>();
-                        candidates.add((Timestamp) updates.get("harvestDate"));
-
-                        if (qSnap != null) {
-                            for (DocumentSnapshot doc : qSnap.getDocuments()) {
-                                if (!doc.getId().equals(harvestId)) {
-                                    candidates.add(doc.getTimestamp("harvestDate"));
-                                }
-                            }
-                        }
-
-                        Timestamp latestDate = Collections.max(candidates);
-                        cycleUpdates.put("lastHarvestDate", latestDate);
-
-                        // Recalculate nextHarvestDate
-                        int frequency = 5;
-                        if (cycleSnap.contains("harvestFrequencyDays") && cycleSnap.get("harvestFrequencyDays") != null) {
-                            frequency = cycleSnap.getLong("harvestFrequencyDays").intValue();
-                        }
-
-                        if (latestDate != null) {
-                            java.util.Calendar cal = java.util.Calendar.getInstance();
-                            cal.setTime(latestDate.toDate());
-                            cal.add(java.util.Calendar.DAY_OF_YEAR, frequency);
-                            cycleUpdates.put("nextHarvestDate", new Timestamp(cal.getTime()));
-                        }
-                    } catch (Exception e) {
-                        throw new RuntimeException("Failed to update cycle summary", e);
-                    }
-                }
-
-                transaction.update(cycleRef, cycleUpdates);
+                transaction.update(cycleRef, "totalHarvestWeight", currentTotalWeight - oldWeight + newWeight);
                 return null;
+            }).continueWithTask(task -> {
+                if (!task.isSuccessful()) {
+                    return Tasks.forException(task.getException());
+                }
+                // Best-effort: the harvestDate edit and weight decrement above
+                // already committed and must not be rolled back by a failure
+                // here.
+                if (harvestDateChanged) {
+                    recomputeHarvestSchedulingMetadataAfterUpdate(cycleRef, harvestId);
+                }
+                return Tasks.forResult(null);
             });
         });
     }
@@ -1067,6 +1151,54 @@ public class Database_Helper {
                             + "failed to query remaining harvestLogs to recompute scheduling metadata for cycle "
                             + cycleRef.getId(), e));
         }).addOnFailureListener(e -> Log.w(TAG, "Harvest " + deletedHarvestId + " deleted and totals updated, but failed to "
+                + "read cycle " + cycleRef.getId() + " to recompute scheduling metadata", e));
+    }
+
+    // Same rationale as recomputeHarvestSchedulingMetadata above (delete
+    // path): a fresh recompute from an authoritative query, run after
+    // updateHarvestTransaction's transaction commits instead of blocking it
+    // on a non-transactional network call. The edited harvest's own new
+    // harvestDate is already reflected in this query - transaction.update()
+    // on harvestRef has committed by the time this runs - so no special-cased
+    // candidate list (comparing the in-flight edit against existing entries)
+    // is needed here, unlike the previous in-transaction version of this
+    // logic.
+    private void recomputeHarvestSchedulingMetadataAfterUpdate(DocumentReference cycleRef, String updatedHarvestId) {
+        cycleRef.get().addOnSuccessListener(cycleSnap -> {
+            int frequency = 5;
+            if (cycleSnap.contains("harvestFrequencyDays") && cycleSnap.get("harvestFrequencyDays") != null) {
+                frequency = cycleSnap.getLong("harvestFrequencyDays").intValue();
+            }
+            final int finalFrequency = frequency;
+
+            cycleRef.collection("harvestLogs")
+                    .orderBy("harvestDate", Query.Direction.DESCENDING)
+                    .limit(1)
+                    .get()
+                    .addOnSuccessListener(qSnap -> {
+                        Timestamp latestDate = null;
+                        Timestamp nextHarvestDate = null;
+                        if (!qSnap.isEmpty()) {
+                            latestDate = qSnap.getDocuments().get(0).getTimestamp("harvestDate");
+                            if (latestDate != null) {
+                                java.util.Calendar cal = java.util.Calendar.getInstance();
+                                cal.setTime(latestDate.toDate());
+                                cal.add(java.util.Calendar.DAY_OF_YEAR, finalFrequency);
+                                nextHarvestDate = new Timestamp(cal.getTime());
+                            }
+                        }
+
+                        Map<String, Object> metadataUpdate = new HashMap<>();
+                        metadataUpdate.put("lastHarvestDate", latestDate);
+                        metadataUpdate.put("nextHarvestDate", nextHarvestDate);
+                        cycleRef.update(metadataUpdate).addOnFailureListener(e ->
+                                Log.w(TAG, "Harvest " + updatedHarvestId + " updated and totals adjusted, but failed to write "
+                                        + "recomputed lastHarvestDate/nextHarvestDate for cycle " + cycleRef.getId(), e));
+                    })
+                    .addOnFailureListener(e -> Log.w(TAG, "Harvest " + updatedHarvestId + " updated and totals adjusted, but "
+                            + "failed to query harvestLogs to recompute scheduling metadata for cycle "
+                            + cycleRef.getId(), e));
+        }).addOnFailureListener(e -> Log.w(TAG, "Harvest " + updatedHarvestId + " updated and totals adjusted, but failed to "
                 + "read cycle " + cycleRef.getId() + " to recompute scheduling metadata", e));
     }
 
@@ -1332,9 +1464,22 @@ public class Database_Helper {
      * Writes a new notification document to Firestore under devices/{deviceId}/notifications.
      * Called by AlertManager when an alert transitions from false → true.
      */
+    // Live window size for listenToNotifications() below - kept small
+    // deliberately, since every listener callback re-reads this many
+    // documents from the server on each (re)connect. Older history beyond
+    // this window is fetched on demand via loadOlderNotifications() instead
+    // of being kept live-synced, which is what makes browsing further back
+    // cheap regardless of how much total history a device has accumulated.
+    public static final int NOTIFICATIONS_LIVE_PAGE_SIZE = 50;
+    public static final int NOTIFICATIONS_OLDER_PAGE_SIZE = 50;
+
     /**
      * Attaches a real-time Firestore listener to devices/{deviceId}/notifications,
-     * ordered by timestamp descending, limited to the most recent 50 entries.
+     * ordered by timestamp descending, limited to the most recent
+     * {@link #NOTIFICATIONS_LIVE_PAGE_SIZE} entries - new notifications and
+     * read-state changes within this window appear immediately. Older
+     * history is not part of this live window at all; see
+     * loadOlderNotifications() for fetching it on demand.
      */
     public ListenerRegistration listenToNotifications(EventListener<QuerySnapshot> listener) {
         if (selectedDeviceId == null || selectedDeviceId.isEmpty()) return null;
@@ -1343,8 +1488,31 @@ public class Database_Helper {
                 .document(selectedDeviceId)
                 .collection("notifications")
                 .orderBy("timestamp", Query.Direction.DESCENDING)
-                .limit(50)
+                .limit(NOTIFICATIONS_LIVE_PAGE_SIZE)
                 .addSnapshotListener(listener);
+    }
+
+    /**
+     * One-time (not live) fetch of the next {@link #NOTIFICATIONS_OLDER_PAGE_SIZE}
+     * notifications strictly older than startAfterDoc, for "Load Older
+     * Notifications" pagination. startAfterDoc must be the DocumentSnapshot
+     * of the oldest notification currently loaded (from either the live
+     * listener's own snapshot or a previous call to this method) - Firestore
+     * cursors are anchored to a real document position, not an offset, so
+     * this stays correct even while the live page above keeps shifting as
+     * new notifications arrive.
+     */
+    public Task<QuerySnapshot> loadOlderNotifications(DocumentSnapshot startAfterDoc) {
+        if (selectedDeviceId == null || selectedDeviceId.isEmpty() || startAfterDoc == null) {
+            return Tasks.forException(new Exception("No device selected or no pagination cursor"));
+        }
+        return db.collection("devices")
+                .document(selectedDeviceId)
+                .collection("notifications")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .startAfter(startAfterDoc)
+                .limit(NOTIFICATIONS_OLDER_PAGE_SIZE)
+                .get();
     }
 
     public Task<Void> markNotificationsRead(String deviceId, List<String> notificationIds) {

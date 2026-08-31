@@ -416,6 +416,23 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             btnResetSafety.setOnClickListener(v -> {
                 if (isActuatorBusy) return;
                 if (isCurrentlyOnline) {
+                    // Mirrors firmware's own reset-safety validation
+                    // (FirebaseManager.cpp's operation-request validator,
+                    // OperationType::RESET_SAFETY case) so a request firmware
+                    // will predictably reject - because nothing is actually
+                    // locked - never gets sent at all. Confirmed live bug:
+                    // firmware correctly returns REJECTED with "No safety
+                    // subsystem is locked.", but the app never checked this
+                    // client-side, so the confirmation dialog and loading
+                    // spinner appeared for a reset there was nothing to do.
+                    if (!isSafetyLock && !operationContext.phSubsystemLocked
+                            && !operationContext.ecSubsystemLocked
+                            && !operationContext.refillSubsystemLocked
+                            && !operationContext.coolingSubsystemLocked) {
+                        NotificationHelper.showInfo(requireContext(), "Nothing to Reset",
+                                "No safety subsystem is currently locked.");
+                        return;
+                    }
                     NotificationHelper.showConfirmation(requireContext(),
                             "Reset Safety Lock",
                             "Are you sure you want to reset the FSM safety lock? This will return the system to normal operations.",
@@ -511,6 +528,18 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
 
         dbHelper.setSelectedDeviceId(deviceId);
+
+        // Defensive, not redundant: monitorDevice() only ever gets triggered
+        // centrally from MainActivity (on its own onCreate() and on a
+        // selected_device_id SharedPreferences change) - this screen has no
+        // other way to (re-)establish it if that trigger was ever missed, and
+        // no way to detect that it was. The call is a same-device no-op when
+        // monitoring is already correctly running (see monitorDevice()'s own
+        // guard), so this can never duplicate or restart a healthy listener -
+        // it only self-heals a stuck one. Confirmed live-bug fix: this screen
+        // was observed stuck on RECONNECTING while Device Management's own,
+        // independent per-row listener already showed the true state.
+        DeviceConnectionManager.getInstance().monitorDevice(deviceId);
 
         // Coherent initial reveal (see sensorsRevealed's own comment) -
         // shown once, here, before the first Firebase read can possibly
@@ -1362,7 +1391,16 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     }
 
     private void pollOperationUntilDone(int requestId, String opName, int attempt) {
-        final int MAX_ATTEMPTS = 60; // 60 * 1000ms = 60 seconds timeout
+        // 300 * 1000ms = 5 minutes, matching firmware's own OPERATION_TIMEOUT_MS
+        // (Config.h) - a legitimately in-progress operation cannot still be
+        // RUNNING/ACCEPTED past that, since firmware itself would have already
+        // failed/completed it. Sized to the firmware's authoritative bound
+        // (rather than the previous 60s) so this timeout can never clip a real
+        // operation while still guaranteeing the spinner cannot hang forever
+        // if firmware genuinely gets stuck - see the attempt-increment fix
+        // below, which used to reset to 0 on every RUNNING/ACCEPTED tick and
+        // so never reached this bound at all.
+        final int MAX_ATTEMPTS = 300;
         if (!isAdded()) return;
 
         mainHandler.postDelayed(() -> {
@@ -1426,12 +1464,11 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 // In progress
                 if ("RUNNING".equals(state)) {
                     showActuatorLoading("Running...", opName + " is in progress");
-                    // Do not increment attempt if it's actively running to prevent timeout
-                    pollOperationUntilDone(requestId, opName, 0); 
+                    pollOperationUntilDone(requestId, opName, attempt + 1);
                     return;
                 } else if ("ACCEPTED".equals(state)) {
                     showActuatorLoading("Accepted", "Starting " + opName + "...");
-                    pollOperationUntilDone(requestId, opName, 0); 
+                    pollOperationUntilDone(requestId, opName, attempt + 1);
                     return;
                 } else {
                     showActuatorLoading("Validating...", "Waiting for ESP32 to validate");
@@ -1895,6 +1932,17 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
     @Override
     public void onDestroyView() {
+        // Confirmed live bug: this Fragment INSTANCE survives navigating away
+        // and back (Jetpack Navigation keeps it on the back stack, only its
+        // view gets destroyed/recreated), but sensorsRevealed is a plain
+        // instance field with no per-view reset - so a stale true here made
+        // revealSensors() early-return on the very first line for the entire
+        // life of the next view, silently defeating BOTH the normal
+        // ready-snapshot reveal AND its own 3-second hard-timeout fallback.
+        // Reset here so every fresh view gets its own honest "not yet
+        // revealed" state, matching sensorsRevealed's own doc comment ("this
+        // fragment view's lifetime") instead of contradicting it.
+        sensorsRevealed = false;
         actuatorCommandFinished = true;
         actuatorCommandGeneration++;
         if (actuatorCommandRunnable != null) {

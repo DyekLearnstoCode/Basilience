@@ -288,7 +288,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginStart="12dp"
                         android:layout_weight="1"
-                        android:text="Terms and Agreements" />
+                        android:text="Terms and Conditions" />
 
                     <FrameLayout
                         android:id="@+id/btnTerms"

@@ -68,7 +68,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="end"
         android:layout_marginBottom="16dp"
-        android:text="Read from Sensor"
+        android:text="Read from Harvest Scale"
         android:textColor="@color/primary"
         app:icon="@android:drawable/ic_menu_rotate"
         app:iconTint="@color/primary" />

@@ -110,7 +110,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
             }
 
             if (isAutomationLifecycleEvent(notificationType)) {
-                showNotification(title, body, eventId, null);
+                showNotification(title, body, eventId, null, deviceId);
                 Log.d(TAG, "POPUP_ATTEMPT type=" + notificationType);
                 boolean shown = MainActivity.showForegroundAutomationLifecycle(
                         title,
@@ -124,7 +124,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
             // Notification payloads are automatically posted by FCM only while the
             // app is backgrounded. Foreground delivery always posts exactly one tray
             // card here; only explicitly critical types also receive one popup.
-            showNotification(title, body, eventId, null);
+            showNotification(title, body, eventId, null, deviceId);
             if (isCriticalAlert(notificationType)) {
                 Log.d(TAG, "POPUP_ATTEMPT type=" + notificationType);
                 boolean shown = MainActivity.showForegroundAlert(title, body, eventId);
@@ -217,7 +217,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                         NotificationHelper.recordCloudConnectivityPresentation(
                                 MyFirebaseMessagingService.this, deviceId, isOffline);
 
-                        showNotification(title, body, eventId, deviceId);
+                        showNotification(title, body, eventId, deviceId, deviceId);
                         Log.d(TAG, "POPUP_ATTEMPT type=" + type);
                         boolean shown;
                         if (isOffline) {
@@ -266,7 +266,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                         }
 
                         Log.d(TAG, "VALIDATION_PASS type=" + alertKey + " deviceId=" + deviceId);
-                        showNotification(title, body, eventId, null);
+                        showNotification(title, body, eventId, null, deviceId);
                         Log.d(TAG, "POPUP_ATTEMPT type=" + alertKey);
                         boolean shown = MainActivity.showForegroundParameterAlert(
                                 alertKey, eventId, deviceId);
@@ -342,7 +342,8 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                 : "START";
     }
 
-    private void showNotification(String title, String messageBody, String eventId, String connectivityDeviceId) {
+    private void showNotification(String title, String messageBody, String eventId, String connectivityDeviceId,
+                                   String readMarkDeviceId) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
                 && androidx.core.content.ContextCompat.checkSelfPermission(
                         this, android.Manifest.permission.POST_NOTIFICATIONS)
@@ -355,10 +356,35 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
         Log.d(TAG, "TRAY_ATTEMPT eventId=" + eventId
                 + " connectivityDeviceId=" + connectivityDeviceId);
 
+        // Computed here (not just below, where the original code only used it
+        // for notify()) and reused as the PendingIntent's own request code.
+        // Every prior notification shared request code 0, which made every
+        // FLAG_IMMUTABLE PendingIntent "the same" to Android regardless of
+        // this Intent's own extras - tapping any tray entry reopened
+        // whichever Intent happened to be built first. That already meant
+        // taps could silently launch a stale destination; it would also have
+        // made the new mark-read extras below apply to the wrong
+        // notification (or never update past the first one shown).
+        int notificationId = connectivityDeviceId != null && !connectivityDeviceId.isEmpty()
+                ? ("device_connectivity_" + connectivityDeviceId).hashCode()
+                : eventId != null && !eventId.isEmpty()
+                    ? eventId.hashCode()
+                    : (title + "|" + messageBody).hashCode();
+
         android.content.Intent intent = new android.content.Intent(this, MainActivity.class);
         intent.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        android.app.PendingIntent pendingIntent = android.app.PendingIntent.getActivity(this, 0, intent,
-                android.app.PendingIntent.FLAG_IMMUTABLE);
+        // Kept separate from connectivityDeviceId (which only drives the
+        // notificationId collapsing scheme above) so marking a tapped
+        // notification read never changes which tray entries collapse into
+        // which - see MainActivity.markNotificationReadIfRequested().
+        if (readMarkDeviceId != null && !readMarkDeviceId.isEmpty()
+                && eventId != null && !eventId.isEmpty()) {
+            intent.putExtra(MainActivity.EXTRA_MARK_READ_DEVICE_ID, readMarkDeviceId);
+            intent.putExtra(MainActivity.EXTRA_MARK_READ_NOTIFICATION_ID, eventId);
+        }
+        android.app.PendingIntent pendingIntent = android.app.PendingIntent.getActivity(
+                this, notificationId, intent,
+                android.app.PendingIntent.FLAG_IMMUTABLE | android.app.PendingIntent.FLAG_UPDATE_CURRENT);
 
         String channelId = "alerts";
         android.net.Uri defaultSoundUri = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION);
@@ -383,11 +409,6 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
             notificationManager.createNotificationChannel(channel);
         }
 
-        int notificationId = connectivityDeviceId != null && !connectivityDeviceId.isEmpty()
-                ? ("device_connectivity_" + connectivityDeviceId).hashCode()
-                : eventId != null && !eventId.isEmpty()
-                    ? eventId.hashCode()
-                    : (title + "|" + messageBody).hashCode();
         notificationManager.notify(notificationId, notificationBuilder.build());
         Log.d(TAG, "TRAY_POSTED notificationId=" + notificationId);
     }

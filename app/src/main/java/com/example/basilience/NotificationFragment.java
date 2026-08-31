@@ -15,6 +15,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.firebase.Timestamp;
+import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.FieldPath;
 import com.google.firebase.firestore.FieldValue;
@@ -45,9 +46,25 @@ public class NotificationFragment extends Fragment {
     private NotificationAdapter adapter;
     private final List<NotificationAdapter.NotificationItem> notificationList = new ArrayList<>();
     private final List<NotificationAdapter.NotificationItem> allRawNotifications = new ArrayList<>();
-    
+    // allRawNotifications is rebuilt from these two on every change: liveNotifications
+    // tracks the live-synced recent window (replaced wholesale on each snapshot),
+    // olderNotifications accumulates pages fetched on demand via "Load Older".
+    private final List<NotificationAdapter.NotificationItem> liveNotifications = new ArrayList<>();
+    private final List<NotificationAdapter.NotificationItem> olderNotifications = new ArrayList<>();
+
     private Database_Helper dbHelper;
     private ListenerRegistration notificationListener;
+
+    private MaterialButton btnLoadMore;
+    private android.widget.ProgressBar progressLoadMore;
+    // Cursor for the next "Load Older" fetch. Only moved by the live listener
+    // while no pagination has happened yet (paginationStarted == false) - once
+    // the user has paginated, the live window's churn must not disturb where
+    // the next older page picks up.
+    private DocumentSnapshot oldestLoadedDoc;
+    private boolean paginationStarted;
+    private boolean hasMoreOlderNotifications;
+    private boolean loadingOlderNotifications;
 
     private MaterialButton btnFilterAll, btnFilterUnread, btnFilterRead;
     private boolean markingAllRead;
@@ -77,6 +94,9 @@ public class NotificationFragment extends Fragment {
         btnFilterAll = view.findViewById(R.id.btnFilterAll);
         btnFilterUnread = view.findViewById(R.id.btnFilterUnread);
         btnFilterRead = view.findViewById(R.id.btnFilterRead);
+        btnLoadMore = view.findViewById(R.id.btnLoadMore);
+        progressLoadMore = view.findViewById(R.id.progressLoadMore);
+        if (btnLoadMore != null) btnLoadMore.setOnClickListener(v -> loadOlderNotifications());
 
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
         
@@ -195,6 +215,14 @@ public class NotificationFragment extends Fragment {
     private void startListeningToNotifications() {
         if (notificationListener != null) notificationListener.remove();
 
+        paginationStarted = false;
+        olderNotifications.clear();
+        oldestLoadedDoc = null;
+        hasMoreOlderNotifications = false;
+        loadingOlderNotifications = false;
+        if (btnLoadMore != null) btnLoadMore.setVisibility(View.GONE);
+        if (progressLoadMore != null) progressLoadMore.setVisibility(View.GONE);
+
         notificationListener = dbHelper.listenToNotifications((value, error) -> {
             if (!isAdded()) return;
             if (error != null) {
@@ -212,50 +240,120 @@ public class NotificationFragment extends Fragment {
                 return;
             }
 
-            allRawNotifications.clear();
-            for (QueryDocumentSnapshot doc : value) {
-                try {
-                    String docId     = doc.getId();
-                    String message   = doc.getString("message");
-                    String type      = doc.getString("type");
-                    Long   timestamp = readTimestampMillis(doc);
-                    // Per-user read state. The legacy document-wide isRead field is
-                    // deliberately not consulted: it is shared by everyone assigned
-                    // to the device and is what made one user's tap clear the badge
-                    // for the whole farm. A document with no readBy entry for this
-                    // user - including every historical one - is unread.
-                    boolean readForCurrentUser = currentUid != null
-                            && doc.get(FieldPath.of("readBy", currentUid)) != null;
-                    // Only present on a notification tied to an actual stored
-                    // harvest record (see functions/onHarvestCreated) - absent
-                    // for the pre-harvest reminder, which must never show one.
-                    String recorderName = doc.getString("recorderName");
-                    String recorderUid  = doc.getString("recorderUid");
-                    // Only present on an event replayed from the firmware's
-                    // offline queue (see functions/onNotificationQueued) -
-                    // absent for every normal real-time notification.
-                    Boolean offlineRecorded = doc.getBoolean("offlineRecorded");
-                    Boolean smsFallbackUsed = doc.getBoolean("smsFallbackUsed");
+            List<QueryDocumentSnapshot> docs = new ArrayList<>();
+            for (QueryDocumentSnapshot doc : value) docs.add(doc);
 
-                    if (message != null && type != null && timestamp != null) {
-                        NotificationAdapter.NotificationItem item = new NotificationAdapter.NotificationItem(
-                                docId, message, timestamp, type, readForCurrentUser,
-                                recorderName, recorderUid
-                        );
-                        item.offlineRecorded = offlineRecorded != null && offlineRecorded;
-                        item.smsFallbackUsed = smsFallbackUsed != null && smsFallbackUsed;
-                        allRawNotifications.add(item);
-                    } else {
-                        Log.w(TAG, "Skipping malformed notification document: " + doc.getReference().getPath());
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "Skipping malformed notification document: " + doc.getReference().getPath(), e);
-                }
+            liveNotifications.clear();
+            for (QueryDocumentSnapshot doc : docs) {
+                NotificationAdapter.NotificationItem item = parseNotificationItem(doc);
+                if (item != null) liveNotifications.add(item);
+            }
+            mergeRawNotifications();
+
+            if (!paginationStarted) {
+                oldestLoadedDoc = docs.isEmpty() ? null : docs.get(docs.size() - 1);
+                hasMoreOlderNotifications = docs.size() >= Database_Helper.NOTIFICATIONS_LIVE_PAGE_SIZE;
+                updateLoadMoreButtonVisibility();
             }
 
             applyFilterAndRender();
             updateMarkAllReadState();
         });
+    }
+
+    private NotificationAdapter.NotificationItem parseNotificationItem(QueryDocumentSnapshot doc) {
+        try {
+            String docId     = doc.getId();
+            String message   = doc.getString("message");
+            String type      = doc.getString("type");
+            Long   timestamp = readTimestampMillis(doc);
+            // Per-user read state. The legacy document-wide isRead field is
+            // deliberately not consulted: it is shared by everyone assigned
+            // to the device and is what made one user's tap clear the badge
+            // for the whole farm. A document with no readBy entry for this
+            // user - including every historical one - is unread.
+            boolean readForCurrentUser = currentUid != null
+                    && doc.get(FieldPath.of("readBy", currentUid)) != null;
+            // Only present on a notification tied to an actual stored
+            // harvest record (see functions/onHarvestCreated) - absent
+            // for the pre-harvest reminder, which must never show one.
+            String recorderName = doc.getString("recorderName");
+            String recorderUid  = doc.getString("recorderUid");
+            // Only present on an event replayed from the firmware's
+            // offline queue (see functions/onNotificationQueued) -
+            // absent for every normal real-time notification.
+            Boolean offlineRecorded = doc.getBoolean("offlineRecorded");
+            Boolean smsFallbackUsed = doc.getBoolean("smsFallbackUsed");
+
+            if (message == null || type == null || timestamp == null) {
+                Log.w(TAG, "Skipping malformed notification document: " + doc.getReference().getPath());
+                return null;
+            }
+            NotificationAdapter.NotificationItem item = new NotificationAdapter.NotificationItem(
+                    docId, message, timestamp, type, readForCurrentUser,
+                    recorderName, recorderUid
+            );
+            item.offlineRecorded = offlineRecorded != null && offlineRecorded;
+            item.smsFallbackUsed = smsFallbackUsed != null && smsFallbackUsed;
+            return item;
+        } catch (Exception e) {
+            Log.w(TAG, "Skipping malformed notification document: " + doc.getReference().getPath(), e);
+            return null;
+        }
+    }
+
+    private void mergeRawNotifications() {
+        allRawNotifications.clear();
+        allRawNotifications.addAll(liveNotifications);
+        allRawNotifications.addAll(olderNotifications);
+    }
+
+    private void loadOlderNotifications() {
+        if (loadingOlderNotifications || oldestLoadedDoc == null || !isAdded()) return;
+
+        loadingOlderNotifications = true;
+        paginationStarted = true;
+        if (btnLoadMore != null) btnLoadMore.setVisibility(View.GONE);
+        if (progressLoadMore != null) progressLoadMore.setVisibility(View.VISIBLE);
+
+        dbHelper.loadOlderNotifications(oldestLoadedDoc)
+                .addOnSuccessListener(snapshot -> {
+                    if (!isAdded()) return;
+                    loadingOlderNotifications = false;
+                    if (progressLoadMore != null) progressLoadMore.setVisibility(View.GONE);
+
+                    List<QueryDocumentSnapshot> docs = new ArrayList<>();
+                    for (QueryDocumentSnapshot doc : snapshot) docs.add(doc);
+
+                    for (QueryDocumentSnapshot doc : docs) {
+                        NotificationAdapter.NotificationItem item = parseNotificationItem(doc);
+                        if (item != null) olderNotifications.add(item);
+                    }
+                    if (!docs.isEmpty()) {
+                        oldestLoadedDoc = docs.get(docs.size() - 1);
+                    }
+                    hasMoreOlderNotifications = docs.size() >= Database_Helper.NOTIFICATIONS_OLDER_PAGE_SIZE;
+
+                    mergeRawNotifications();
+                    applyFilterAndRender();
+                    updateMarkAllReadState();
+                    updateLoadMoreButtonVisibility();
+                })
+                .addOnFailureListener(e -> {
+                    if (!isAdded()) return;
+                    loadingOlderNotifications = false;
+                    if (progressLoadMore != null) progressLoadMore.setVisibility(View.GONE);
+                    Log.e(TAG, "Failed to load older notifications", e);
+                    NotificationHelper.showError(requireContext(),
+                            "Unable to load older notifications. Please try again.");
+                    updateLoadMoreButtonVisibility();
+                });
+    }
+
+    private void updateLoadMoreButtonVisibility() {
+        if (btnLoadMore == null) return;
+        btnLoadMore.setVisibility(hasMoreOlderNotifications && !loadingOlderNotifications
+                ? View.VISIBLE : View.GONE);
     }
 
     private void markAllAsRead() {

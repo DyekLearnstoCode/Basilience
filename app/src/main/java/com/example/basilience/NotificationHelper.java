@@ -33,6 +33,10 @@ import androidx.core.app.NotificationCompat;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.snackbar.Snackbar;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.firestore.FieldPath;
+import com.google.firebase.firestore.FieldValue;
+import com.google.firebase.firestore.FirebaseFirestore;
 
 import java.lang.ref.WeakReference;
 import java.util.WeakHashMap;
@@ -53,6 +57,35 @@ public class NotificationHelper {
     // once shown, regardless of how quickly the underlying work finishes.
     public static final long MIN_LOADING_VISIBLE_MS = 2_000L;
     private static final WeakHashMap<Context, LoadingHandle> ACTIVE_LOADING = new WeakHashMap<>();
+
+    /**
+     * Marks one Firestore notification document read for the current user,
+     * the same write NotificationFragment's own list already does
+     * (devices/{deviceId}/notifications/{notificationId}, readBy.{uid}).
+     * Reused so acknowledging a notification anywhere it can appear - the
+     * in-app list, a foreground popup's "Got it", or opening the app from
+     * the system tray notification - has the same effect on history, not
+     * just the list screen. Best-effort and silent: every caller is a
+     * dismiss/tap action with no dedicated UI to surface a failure through,
+     * and a missed read-mark here is not worth interrupting the user for.
+     */
+    static void markNotificationRead(String deviceId, String notificationId) {
+        String currentUid = FirebaseAuth.getInstance().getUid();
+        if (deviceId == null || deviceId.isEmpty()
+                || notificationId == null || notificationId.isEmpty()
+                || currentUid == null) {
+            return;
+        }
+        FirebaseFirestore.getInstance()
+                .collection("devices")
+                .document(deviceId)
+                .collection("notifications")
+                .document(notificationId)
+                .update(FieldPath.of("readBy", currentUid), FieldValue.serverTimestamp())
+                .addOnFailureListener(e ->
+                        android.util.Log.w("NotificationHelper",
+                                "Failed to mark notification as read: " + notificationId, e));
+    }
 
     public static final class LoadingHandle {
         private final WeakReference<Context> contextRef;
@@ -89,14 +122,34 @@ public class NotificationHelper {
          * no-op, not a second delay.
          */
         public void dismiss() {
-            if (dismissRequested) return;
+            dismiss(null);
+        }
+
+        /**
+         * Same contract as {@link #dismiss()}, but afterHidden runs only once
+         * the loader has ACTUALLY disappeared - not when dismiss() was merely
+         * called. Confirmed live bug this fixes: a caller that showed a
+         * success/result notification immediately after calling dismiss()
+         * (rather than from this callback) could have it appear while the
+         * loader was still on-screen, mid-deferral, whenever the underlying
+         * request resolved faster than {@link #MIN_LOADING_VISIBLE_MS}.
+         */
+        public void dismiss(Runnable afterHidden) {
+            if (dismissRequested) {
+                if (afterHidden != null) afterHidden.run();
+                return;
+            }
             dismissRequested = true;
             handler.removeCallbacks(timeoutAction);
+            Runnable hideThenNotify = () -> {
+                hideNow();
+                if (afterHidden != null) afterHidden.run();
+            };
             long remaining = MIN_LOADING_VISIBLE_MS - (SystemClock.elapsedRealtime() - shownAtElapsedRealtime);
             if (remaining > 0) {
-                handler.postDelayed(this::hideNow, remaining);
+                handler.postDelayed(hideThenNotify, remaining);
             } else {
-                hideNow();
+                hideThenNotify.run();
             }
         }
 

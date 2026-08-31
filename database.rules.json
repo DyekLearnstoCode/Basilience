@@ -26,6 +26,9 @@
         "alerts": {
           ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()"
         },
+        "harvestScale": {
+          ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()"
+        },
         "debug": {
           "physicalSensors": {
             ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()"

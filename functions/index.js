@@ -446,11 +446,24 @@ async function createHarvestReminder(db, deviceId, cycleId, nextHarvestDate, rem
 exports.evaluateHarvestReminders = onSchedule({
     schedule: "every 60 minutes",
     timeZone: MANILA_TIME_ZONE,
-    region: "asia-southeast1"
+    region: "asia-southeast1",
+    // A transient failure of the active-cycle query below must not silently
+    // skip this hour's reminder run for the entire fleet - Cloud Scheduler
+    // retries the whole invocation, matching the per-cycle try/catch below
+    // which already isolates one bad cycle from the rest.
+    retryCount: 3
 }, async () => {
     const db = admin.firestore();
     const todayKey = dateKeyInManila(Date.now());
-    const activeCycles = await db.collectionGroup("cycles").where("status", "==", "ACTIVE").get();
+
+    let activeCycles;
+    try {
+        activeCycles = await db.collectionGroup("cycles").where("status", "==", "ACTIVE").get();
+    } catch (error) {
+        logger.error("Harvest reminder active-cycle query failed; run skipped", {error});
+        throw error;
+    }
+
     logger.info("Harvest reminder active cycle enumeration", {
         activeCycleCount: activeCycles.size,
         todayManilaDate: todayKey
@@ -982,7 +995,9 @@ exports.onCoolingPeltierUpdated = onValueWritten({
         // on whatever episode is currently open - never create/overwrite one
         // here, only the alert transition (episode start) does that.
         if (after.source === "automatic") {
-            await episodeRef.set({peltierObserved: true}, {merge: true}).catch(() => {});
+            await episodeRef.set({peltierObserved: true}, {merge: true}).catch((error) => {
+                logger.error("Failed to record peltierObserved evidence on cooling episode", {deviceId, error});
+            });
         }
         return;
     }
@@ -1046,7 +1061,15 @@ exports.onCoolingPeltierUpdated = onValueWritten({
 
     // Close only after a successful attempt so a retry after a mid-flight
     // failure (e.g. FCM error) still finds the episode open and evidenced.
-    await episodeRef.update({closedAt: Date.now(), closedEventId: event.id}).catch(() => {});
+    // Still caught rather than re-thrown - the notification itself already
+    // sent successfully above - but must not fail silently: without this,
+    // "water temperature restored" completions had no trace anywhere if the
+    // close-marker write itself failed.
+    await episodeRef.update({closedAt: Date.now(), closedEventId: event.id}).catch((error) => {
+        logger.error("Failed to close water-temperature cooling episode after a successful completion notification", {
+            deviceId, episodeId: episode.episodeId, notificationId, error
+        });
+    });
 });
 
 async function handleDeviceConnectivityTransition(eventId, deviceId, wasOnline, isOnline) {
@@ -1121,7 +1144,19 @@ async function handleDeviceConnectivityTransition(eventId, deviceId, wasOnline, 
         android: {
             priority: "high",
             ttl: CONNECTIVITY_FCM_TTL_MS,
-            collapseKey: `device_connectivity_${deviceId}`
+            // Confirmed live bug: OFFLINE_ALERT and ONLINE_RECOVERY used to
+            // share one collapseKey. FCM collapses multiple pending messages
+            // for the same key into only the most recent one once a phone
+            // reconnects - fine when successive messages are redundant
+            // updates of the same fact, but these two are NOT redundant: an
+            // "unreachable" and a "back online" pushed close together
+            // (exactly what a real reconnect cycle produces) could collapse
+            // into just one delivered notification, silently dropping the
+            // other - reported as "the connected again notif sometimes
+            // doesn't show." Keying by notificationType keeps same-type
+            // spam collapsing to the latest (still desirable) while never
+            // collapsing one transition type against the other.
+            collapseKey: `device_connectivity_${deviceId}_${notificationType}`
         },
         tokens: userTokens
     };
@@ -1841,42 +1876,68 @@ async function regenerateSmsRecipients(db, deviceId) {
     logger.info(`Projections updated for device ${deviceId}: ${Object.keys(recipients).length} SMS-eligible, ${Object.keys(access).length} authorized`);
 }
 
+// retry: true on all three triggers below is deliberate: smsRecipients/
+// deviceAccess are security-relevant (deviceAccess backs the RTDB security
+// rules' authorization lookup), so a transient failure here must be retried
+// by the platform rather than silently leaving a stale/incomplete
+// projection - see regenerateSmsRecipients()'s own comment.
 exports.onDeviceAssignmentWrittenUpdateSmsRecipients = onDocumentWritten(
-    "deviceAssignments/{assignmentId}",
+    {document: "deviceAssignments/{assignmentId}", retry: true},
     async (event) => {
         const before = event.data.before.exists ? event.data.before.data() : null;
         const after = event.data.after.exists ? event.data.after.data() : null;
         const deviceId = (after && after.deviceId) || (before && before.deviceId);
-        if (deviceId) await regenerateSmsRecipients(admin.firestore(), deviceId);
+        if (!deviceId) return;
+        try {
+            await regenerateSmsRecipients(admin.firestore(), deviceId);
+        } catch (error) {
+            logger.error("[SMS-SYNC] assignment write projection failed", {
+                assignmentId: event.params.assignmentId, deviceId, error
+            });
+            throw error;
+        }
     }
 );
 
 exports.onUserWrittenUpdateSmsRecipients = onDocumentWritten(
-    "users/{uid}",
+    {document: "users/{uid}", retry: true},
     async (event) => {
         const uid = event.params.uid;
         const db = admin.firestore();
         const deviceIds = new Set();
 
-        const ownedDevices = await db.collection("devices").where("ownerUid", "==", uid).get();
-        ownedDevices.forEach((doc) => deviceIds.add(doc.id));
+        try {
+            const ownedDevices = await db.collection("devices").where("ownerUid", "==", uid).get();
+            ownedDevices.forEach((doc) => deviceIds.add(doc.id));
 
-        const assignments = await db.collection("deviceAssignments").where("userUid", "==", uid).get();
-        assignments.forEach((doc) => {
-            const deviceId = doc.data().deviceId;
-            if (deviceId) deviceIds.add(deviceId);
-        });
+            const assignments = await db.collection("deviceAssignments").where("userUid", "==", uid).get();
+            assignments.forEach((doc) => {
+                const deviceId = doc.data().deviceId;
+                if (deviceId) deviceIds.add(deviceId);
+            });
 
-        for (const deviceId of deviceIds) {
-            await regenerateSmsRecipients(db, deviceId);
+            for (const deviceId of deviceIds) {
+                await regenerateSmsRecipients(db, deviceId);
+            }
+        } catch (error) {
+            logger.error("[SMS-SYNC] user write projection failed", {
+                uid, deviceIds: Array.from(deviceIds), error
+            });
+            throw error;
         }
     }
 );
 
 exports.onDeviceWrittenUpdateSmsRecipients = onDocumentWritten(
-    "devices/{deviceId}",
+    {document: "devices/{deviceId}", retry: true},
     async (event) => {
-        await regenerateSmsRecipients(admin.firestore(), event.params.deviceId);
+        const deviceId = event.params.deviceId;
+        try {
+            await regenerateSmsRecipients(admin.firestore(), deviceId);
+        } catch (error) {
+            logger.error("[SMS-SYNC] device write projection failed", {deviceId, error});
+            throw error;
+        }
     }
 );
 

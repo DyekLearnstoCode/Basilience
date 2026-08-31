@@ -90,7 +90,7 @@ public class DevOptionsFragment extends Fragment {
             "OFF", "STARTUP", "REFILL", "PH", "EC", "COOLING",
             "FOGGING", "CANOPY", "GROW_LIGHT"
     };
-    private EditText etPh, etEc, etTemp, etHumidity, etWaterTemperature, etWaterLevel;
+    private EditText etPh, etEc, etTemp, etHumidity, etWaterTemperature, etWaterLevel, etWaterLevelCm;
     private TextView tvSensorTestIndicator;
     private TextView tvIgnoreWaterLevelIndicator;
     private TextView tvDiagnosticPh, tvDiagnosticEc, tvDiagnosticAirTemperature;
@@ -133,6 +133,18 @@ public class DevOptionsFragment extends Fragment {
     // cleaned up on exit.
     private boolean canopyPwmTestActive = false;
 
+    // True only for accounts with users/{uid}.isDeveloper == true in Firestore
+    // (see Auth_Login_Activity, which caches it into this same "is_developer"
+    // pref at login) - narrower than, and separate from, the ADMIN role check
+    // above that gates entry to this screen at all. Never settable from
+    // within the app (see firestore.rules); gates the subset of Developer
+    // Options that can act on a live grow (Mock Sensors, Automation Test
+    // Mode, the Ignore Water Level safety bypass, Canopy PWM raw commands),
+    // while Sensor Test/Refill thresholds stay available to any Admin.
+    private boolean isDeveloper = false;
+    private View containerAutomationTestMode;
+    private View containerIgnoreWaterLevel;
+
     private boolean loadingMockState = true;
     private boolean suppressMockSwitchCallback = false;
     private boolean sensorTestActive = false;
@@ -160,6 +172,7 @@ public class DevOptionsFragment extends Fragment {
             navController.popBackStack();
             return;
         }
+        isDeveloper = accessPrefs.getBoolean("is_developer", false);
         View btnBack = view.findViewById(R.id.btnBack);
         if (btnBack != null) {
             btnBack.setVisibility(View.VISIBLE);
@@ -177,6 +190,22 @@ public class DevOptionsFragment extends Fragment {
         containerMockData = view.findViewById(R.id.containerMockData);
         containerRefill = view.findViewById(R.id.containerRefill);
         containerCanopyPwm = view.findViewById(R.id.containerCanopyPwm);
+        containerAutomationTestMode = view.findViewById(R.id.containerAutomationTestMode);
+        containerIgnoreWaterLevel = view.findViewById(R.id.containerIgnoreWaterLevel);
+
+        // Developer-only tools are hidden outright (not just disabled) for an
+        // Admin without the isDeveloper flag - Mock Sensors can feed fabricated
+        // readings into live automation, Automation Test Mode pauses every
+        // other subsystem, the water-level override removes a physical-damage
+        // safety, and Canopy PWM sends raw actuator commands. Sensor Test and
+        // Refill thresholds are unaffected - see the field-level comment on
+        // isDeveloper above for the full reasoning.
+        if (!isDeveloper) {
+            if (btnFilterMock != null) btnFilterMock.setVisibility(View.GONE);
+            if (btnFilterCanopyPwm != null) btnFilterCanopyPwm.setVisibility(View.GONE);
+            if (containerAutomationTestMode != null) containerAutomationTestMode.setVisibility(View.GONE);
+            if (containerIgnoreWaterLevel != null) containerIgnoreWaterLevel.setVisibility(View.GONE);
+        }
 
         // Canopy Fan PWM test components
         btnCanopyPwm0 = view.findViewById(R.id.btnCanopyPwm0);
@@ -204,6 +233,7 @@ public class DevOptionsFragment extends Fragment {
         etHumidity = view.findViewById(R.id.etHumidity);
         etWaterTemperature = view.findViewById(R.id.etWaterTemperature);
         etWaterLevel = view.findViewById(R.id.etWaterLevel);
+        etWaterLevelCm = view.findViewById(R.id.etWaterLevelCm);
         btnPush = view.findViewById(R.id.btnPush);
 
         // Physical sensor test components
@@ -257,75 +287,78 @@ public class DevOptionsFragment extends Fragment {
         automationTestModeStatusRef = deviceRef.child("status/automationTestMode");
         manualModeCommandRef = deviceRef.child("commands/manualMode");
 
-        ArrayAdapter<String> automationModeAdapter = new ArrayAdapter<>(requireContext(),
-                android.R.layout.simple_spinner_item, AUTOMATION_TEST_MODE_LABELS);
-        automationModeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinnerAutomationTestMode.setAdapter(automationModeAdapter);
-        spinnerAutomationTestMode.setEnabled(false);
-        spinnerAutomationTestMode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View selectedView, int position, long id) {
-                if (suppressAutomationTestModeCallback || !automationTestModeStatusLoaded) return;
-                String requestedMode = AUTOMATION_TEST_MODE_VALUES[position];
-                if (requestedMode.equals(confirmedAutomationTestMode)) return;
-                setAutomationTestModeCommand(requestedMode);
+        if (isDeveloper) {
+            ArrayAdapter<String> automationModeAdapter = new ArrayAdapter<>(requireContext(),
+                    android.R.layout.simple_spinner_item, AUTOMATION_TEST_MODE_LABELS);
+            automationModeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            spinnerAutomationTestMode.setAdapter(automationModeAdapter);
+            spinnerAutomationTestMode.setEnabled(false);
+            spinnerAutomationTestMode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                @Override
+                public void onItemSelected(AdapterView<?> parent, View selectedView, int position, long id) {
+                    if (suppressAutomationTestModeCallback || !automationTestModeStatusLoaded) return;
+                    String requestedMode = AUTOMATION_TEST_MODE_VALUES[position];
+                    if (requestedMode.equals(confirmedAutomationTestMode)) return;
+                    setAutomationTestModeCommand(requestedMode);
+                }
+
+                @Override
+                public void onNothingSelected(AdapterView<?> parent) {
+                    // The selector always has an explicit Off / Full System item.
+                }
+            });
+
+            if (switchMockGrowLightTime != null) {
+                switchMockGrowLightTime.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                    if (suppressMockGrowLightTimeSwitchCallback || loadingMockGrowLightTimeState) return;
+                    setMockGrowLightTimeEnabled(isChecked);
+                    if (btnMockGrowLightTime != null) btnMockGrowLightTime.setEnabled(isChecked);
+                });
+            }
+            if (btnMockGrowLightTime != null) {
+                btnMockGrowLightTime.setOnClickListener(v -> showMockGrowLightTimePicker());
             }
 
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-                // The selector always has an explicit Off / Full System item.
-            }
-        });
+            loadCurrentValues();
+            loadMockGrowLightTime();
+            switchMockEnable.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                if (suppressMockSwitchCallback || loadingMockState) return;
+                if (isChecked) {
+                    suppressMockSwitchCallback = true;
+                    switchMockEnable.setChecked(false);
+                    suppressMockSwitchCallback = false;
+                    NotificationHelper.showConfirmation(requireContext(),
+                            "Enable Mock Sensors?",
+                            "Mock values will replace physical sensor readings used by automatic control until Mock Sensors are disabled.",
+                            "Enable", "Cancel", () -> {
+                                suppressMockSwitchCallback = true;
+                                switchMockEnable.setChecked(true);
+                                suppressMockSwitchCallback = false;
+                            });
+                    return;
+                }
+                if (!loadingMockState && !isChecked) {
+                    disableMockMode();
+                }
+            });
 
-        if (switchMockGrowLightTime != null) {
-            switchMockGrowLightTime.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                if (suppressMockGrowLightTimeSwitchCallback || loadingMockGrowLightTimeState) return;
-                setMockGrowLightTimeEnabled(isChecked);
-                if (btnMockGrowLightTime != null) btnMockGrowLightTime.setEnabled(isChecked);
+            switchIgnoreWaterLevel.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                if (suppressIgnoreWaterLevelSwitchCallback || loadingIgnoreWaterLevelState) return;
+                if (isChecked) {
+                    suppressIgnoreWaterLevelSwitchCallback = true;
+                    switchIgnoreWaterLevel.setChecked(false);
+                    suppressIgnoreWaterLevelSwitchCallback = false;
+                    NotificationHelper.showConfirmation(requireContext(),
+                            "Ignore Water Level Safety?",
+                            "Developer testing only. Automatic refill and low-water actuator protection will be ignored while enabled. The real water level and alerts will remain active. Running pumps, fogger, or dosing actuators with insufficient water may damage equipment or produce invalid results.",
+                            "Enable", "Cancel", () -> setIgnoreWaterLevelCommand(true));
+                    return;
+                }
+                setIgnoreWaterLevelCommand(false);
             });
         }
-        if (btnMockGrowLightTime != null) {
-            btnMockGrowLightTime.setOnClickListener(v -> showMockGrowLightTimePicker());
-        }
 
-        loadCurrentValues();
         loadRefillThresholds();
-        loadMockGrowLightTime();
-        switchMockEnable.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (suppressMockSwitchCallback || loadingMockState) return;
-            if (isChecked) {
-                suppressMockSwitchCallback = true;
-                switchMockEnable.setChecked(false);
-                suppressMockSwitchCallback = false;
-                NotificationHelper.showConfirmation(requireContext(),
-                        "Enable Mock Sensors?",
-                        "Mock values will replace physical sensor readings used by automatic control until Mock Sensors are disabled.",
-                        "Enable", "Cancel", () -> {
-                            suppressMockSwitchCallback = true;
-                            switchMockEnable.setChecked(true);
-                            suppressMockSwitchCallback = false;
-                        });
-                return;
-            }
-            if (!loadingMockState && !isChecked) {
-                disableMockMode();
-            }
-        });
-
-        switchIgnoreWaterLevel.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (suppressIgnoreWaterLevelSwitchCallback || loadingIgnoreWaterLevelState) return;
-            if (isChecked) {
-                suppressIgnoreWaterLevelSwitchCallback = true;
-                switchIgnoreWaterLevel.setChecked(false);
-                suppressIgnoreWaterLevelSwitchCallback = false;
-                NotificationHelper.showConfirmation(requireContext(),
-                        "Ignore Water Level Safety?",
-                        "Developer testing only. Automatic refill and low-water actuator protection will be ignored while enabled. The real water level and alerts will remain active. Running pumps, fogger, or dosing actuators with insufficient water may damage equipment or produce invalid results.",
-                        "Enable", "Cancel", () -> setIgnoreWaterLevelCommand(true));
-                return;
-            }
-            setIgnoreWaterLevelCommand(false);
-        });
 
         // Setup filter button listeners
         btnFilterSensorTest.setOnClickListener(v -> updateFilterSelection("Sensor"));
@@ -335,13 +368,14 @@ public class DevOptionsFragment extends Fragment {
             btnFilterCanopyPwm.setOnClickListener(v -> updateFilterSelection("CanopyPwm"));
         }
 
-        if (btnCanopyPwm0 != null) btnCanopyPwm0.setOnClickListener(v -> sendCanopyPwmTest(0));
-        if (btnCanopyPwm30 != null) btnCanopyPwm30.setOnClickListener(v -> sendCanopyPwmTest(30));
-        if (btnCanopyPwm50 != null) btnCanopyPwm50.setOnClickListener(v -> sendCanopyPwmTest(50));
-        if (btnCanopyPwm75 != null) btnCanopyPwm75.setOnClickListener(v -> sendCanopyPwmTest(75));
-        if (btnCanopyPwm100 != null) btnCanopyPwm100.setOnClickListener(v -> sendCanopyPwmTest(100));
-
-        btnPush.setOnClickListener(v -> pushMockValues());
+        if (isDeveloper) {
+            if (btnCanopyPwm0 != null) btnCanopyPwm0.setOnClickListener(v -> sendCanopyPwmTest(0));
+            if (btnCanopyPwm30 != null) btnCanopyPwm30.setOnClickListener(v -> sendCanopyPwmTest(30));
+            if (btnCanopyPwm50 != null) btnCanopyPwm50.setOnClickListener(v -> sendCanopyPwmTest(50));
+            if (btnCanopyPwm75 != null) btnCanopyPwm75.setOnClickListener(v -> sendCanopyPwmTest(75));
+            if (btnCanopyPwm100 != null) btnCanopyPwm100.setOnClickListener(v -> sendCanopyPwmTest(100));
+            btnPush.setOnClickListener(v -> pushMockValues());
+        }
         if (btnSaveRefillThresholds != null) {
             btnSaveRefillThresholds.setOnClickListener(v -> saveRefillThresholds());
         }
@@ -354,9 +388,11 @@ public class DevOptionsFragment extends Fragment {
         }
 
         observeSensorTest();
-        observeIgnoreWaterLevelOverride();
-        observeAutomationTestMode();
-        observeManualModeForCanopyPwm();
+        if (isDeveloper) {
+            observeIgnoreWaterLevelOverride();
+            observeAutomationTestMode();
+            observeManualModeForCanopyPwm();
+        }
         updateFilterSelection("Sensor");
     }
 
@@ -818,6 +854,9 @@ public class DevOptionsFragment extends Fragment {
 
                     Double waterLevel = snapshot.child("waterLevel").getValue(Double.class);
                     if (waterLevel != null) etWaterLevel.setText(String.valueOf(waterLevel));
+
+                    Double waterLevelCm = snapshot.child("waterLevelCm").getValue(Double.class);
+                    if (waterLevelCm != null) etWaterLevelCm.setText(String.valueOf(waterLevelCm));
                 }
                 loadingMockState = false;
             }
@@ -975,6 +1014,14 @@ public class DevOptionsFragment extends Fragment {
             if (!etHumidity.getText().toString().isEmpty()) updates.put("humidity", Double.parseDouble(etHumidity.getText().toString()));
             if (!etWaterTemperature.getText().toString().isEmpty()) updates.put("waterTemperature", Double.parseDouble(etWaterTemperature.getText().toString()));
             if (!etWaterLevel.getText().toString().isEmpty()) updates.put("waterLevel", Double.parseDouble(etWaterLevel.getText().toString()));
+            // Optional explicit override - firmware's readMockSensors() prefers this
+            // over deriving depth from the percentage above when both are present.
+            // updateChildren() merges rather than replaces, so an empty field must
+            // explicitly null out any override left over from a previous push -
+            // otherwise a stale cm value would keep silently overriding the percent
+            // field with no way to tell from this screen that it was still active.
+            updates.put("waterLevelCm", etWaterLevelCm.getText().toString().isEmpty()
+                    ? null : Double.parseDouble(etWaterLevelCm.getText().toString()));
 
             showLoading("Pushing Mock Data...", "Writing values to ESP32...");
 

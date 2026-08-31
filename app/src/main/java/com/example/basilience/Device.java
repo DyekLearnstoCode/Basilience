@@ -11,6 +11,11 @@ public class Device {
     private boolean isOnline;
     private long lastOnline;
     private long createdAt;
+    // deviceId of the Basilience Harvest Scale (BasilienceHarvestScale, a
+    // standalone ESP8266 unit) paired with this device - one scale per
+    // device when reproduced across multiple units, not a shared/global
+    // scale. Null/absent when unpaired.
+    private String harvestScaleId;
 
     public Device() {
         // Required for Firebase
@@ -55,4 +60,7 @@ public class Device {
 
     public long getCreatedAt() { return createdAt; }
     public void setCreatedAt(long createdAt) { this.createdAt = createdAt; }
+
+    public String getHarvestScaleId() { return harvestScaleId; }
+    public void setHarvestScaleId(String harvestScaleId) { this.harvestScaleId = harvestScaleId; }
 }

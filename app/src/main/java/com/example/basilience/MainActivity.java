@@ -38,9 +38,23 @@ import java.lang.ref.WeakReference;
 public class MainActivity extends AppCompatActivity {
 
     public static final String EXTRA_OPEN_WIFI_CONFIGURATION = "open_wifi_configuration";
+    // Carried by the tray notification's own PendingIntent (see
+    // MyFirebaseMessagingService.showNotification()) so opening the app by
+    // tapping it marks that specific notification read, the same as tapping
+    // it in the in-app list already does.
+    public static final String EXTRA_MARK_READ_DEVICE_ID = "mark_read_device_id";
+    public static final String EXTRA_MARK_READ_NOTIFICATION_ID = "mark_read_notification_id";
 
     private static WeakReference<MainActivity> foregroundActivity = new WeakReference<>(null);
     private static final Map<String, String> activeParameterAlerts = new LinkedHashMap<>();
+    // Parallel to activeParameterAlerts (same type keys) - the Firestore
+    // notification id each active alert type arrived with, so dismissing the
+    // combined popup can mark every alert it actually covers as read. Every
+    // popup this map feeds is only ever raised from an FCM message (see
+    // MyFirebaseMessagingService.validateAndShowParameterAlert()), which
+    // always carries this id - the live RTDB /alerts listener only
+    // reconciles/clears entries here, it never adds one itself.
+    private static final Map<String, String> activeParameterAlertEventIds = new LinkedHashMap<>();
     private static final Set<String> presentedParameterEventIds = new HashSet<>();
     private static String parameterAlertDeviceId;
     private NotificationHelper.UpdatableParameterDialog parameterAlertDialog;
@@ -280,6 +294,7 @@ public class MainActivity extends AppCompatActivity {
             // Initial RBAC check for Bottom Nav Menu items is handled in listener now
 
             openWifiConfigurationIfRequested(navController, getIntent());
+            markNotificationReadIfRequested(getIntent());
 
             // Selection Listener...
             bottomNav.setOnItemSelectedListener(item -> {
@@ -428,6 +443,17 @@ public class MainActivity extends AppCompatActivity {
         NavHostFragment host = (NavHostFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.nav_host_fragment);
         if (host != null) openWifiConfigurationIfRequested(host.getNavController(), intent);
+        markNotificationReadIfRequested(intent);
+    }
+
+    private void markNotificationReadIfRequested(android.content.Intent intent) {
+        if (intent == null) return;
+        String deviceId = intent.getStringExtra(EXTRA_MARK_READ_DEVICE_ID);
+        String notificationId = intent.getStringExtra(EXTRA_MARK_READ_NOTIFICATION_ID);
+        if (deviceId == null || notificationId == null) return;
+        intent.removeExtra(EXTRA_MARK_READ_DEVICE_ID);
+        intent.removeExtra(EXTRA_MARK_READ_NOTIFICATION_ID);
+        NotificationHelper.markNotificationRead(deviceId, notificationId);
     }
 
     private void openWifiConfigurationIfRequested(NavController controller, android.content.Intent intent) {
@@ -739,29 +765,43 @@ public class MainActivity extends AppCompatActivity {
                 ? (deviceId == null ? "" : deviceId) + "|" + type
                 : eventId;
 
-        activity.runOnUiThread(() -> activity.addForegroundParameterAlert(type, label, stableId, deviceId));
+        activity.runOnUiThread(() -> activity.addForegroundParameterAlert(type, label, stableId, eventId, deviceId));
         return true;
     }
 
-    private void addForegroundParameterAlert(String type, String label, String eventId, String deviceId) {
-        if (presentedParameterEventIds.contains(eventId)) return;
+    /**
+     * @param dedupId the possibly-synthesized id used only to suppress a
+     *                repeat presentation of the same alert (see
+     *                showForegroundParameterAlert's stableId).
+     * @param notificationId the real Firestore notification id, or null when
+     *                       no genuine backend event id was available -
+     *                       never the synthesized fallback, so a later
+     *                       mark-as-read write can never target a document
+     *                       that doesn't exist.
+     */
+    private void addForegroundParameterAlert(String type, String label, String dedupId, String notificationId, String deviceId) {
+        if (presentedParameterEventIds.contains(dedupId)) return;
 
         if (deviceId != null && deviceId.equals(currentParameterAlertDeviceId)
                 && Boolean.FALSE.equals(currentParameterAlertStates.get(type))) {
             // The FCM event arrived after the live alert had already recovered.
-            presentedParameterEventIds.add(eventId);
+            presentedParameterEventIds.add(dedupId);
             return;
         }
 
-        presentedParameterEventIds.add(eventId);
+        presentedParameterEventIds.add(dedupId);
 
         if (parameterAlertDeviceId != null && deviceId != null && !parameterAlertDeviceId.equals(deviceId)) {
             activeParameterAlerts.clear();
+            activeParameterAlertEventIds.clear();
             if (parameterAlertDialog != null && parameterAlertDialog.isShowing()) parameterAlertDialog.dismiss();
             parameterAlertDialog = null;
         }
         parameterAlertDeviceId = deviceId;
         activeParameterAlerts.put(type, label);
+        if (notificationId != null && !notificationId.trim().isEmpty()) {
+            activeParameterAlertEventIds.put(type, notificationId);
+        }
         if (criticalAlertShowing) return;
         String content = buildParameterAlertContent();
 
@@ -779,6 +819,7 @@ public class MainActivity extends AppCompatActivity {
         if (parameterAlertDeviceId != null
                 && (deviceId == null || !parameterAlertDeviceId.equals(deviceId))) {
             activeParameterAlerts.clear();
+            activeParameterAlertEventIds.clear();
             if (parameterAlertDialog != null && parameterAlertDialog.isShowing()) {
                 parameterAlertDialog.dismiss();
             }
@@ -854,6 +895,7 @@ public class MainActivity extends AppCompatActivity {
         for (String type : new HashSet<>(activeParameterAlerts.keySet())) {
             if (Boolean.FALSE.equals(currentParameterAlertStates.get(type))) {
                 activeParameterAlerts.remove(type);
+                activeParameterAlertEventIds.remove(type);
                 removed = true;
             }
         }
@@ -903,7 +945,17 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void dismissParameterAlerts() {
+        // Confirmed gap this fixes: tapping "Got it" on the alert popup
+        // previously had no effect on Notification history - the underlying
+        // Firestore records stayed unread even though the user had just
+        // acknowledged them here.
+        if (parameterAlertDeviceId != null) {
+            for (String notificationId : activeParameterAlertEventIds.values()) {
+                NotificationHelper.markNotificationRead(parameterAlertDeviceId, notificationId);
+            }
+        }
         activeParameterAlerts.clear();
+        activeParameterAlertEventIds.clear();
         parameterAlertDeviceId = null;
         parameterAlertDialog = null;
     }
@@ -919,6 +971,7 @@ public class MainActivity extends AppCompatActivity {
         for (String type : new HashSet<>(activeParameterAlerts.keySet())) {
             if (Boolean.FALSE.equals(currentParameterAlertStates.get(type))) {
                 activeParameterAlerts.remove(type);
+                activeParameterAlertEventIds.remove(type);
             }
         }
         if (activeParameterAlerts.isEmpty()) {

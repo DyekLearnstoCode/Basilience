@@ -93,10 +93,12 @@ public class DeviceFragment extends Fragment {
                     if (RoleConstants.ROLE_ADMIN.equalsIgnoreCase(currentRole)) {
                         NotificationHelper.showSelectionDialog(requireContext(),
                                 device.getDeviceName() != null ? device.getDeviceName() : "Device",
-                                new String[]{"Configure Wi-Fi", "Unclaim Device"},
+                                new String[]{"Configure Wi-Fi", "Pair Harvest Scale", "Unclaim Device"},
                                 index -> {
                                     if (index == 0) {
                                         openWifiConfiguration(view, device);
+                                    } else if (index == 1) {
+                                        showPairHarvestScaleDialog(device);
                                     } else {
                                         NotificationHelper.showDestructiveConfirmation(
                                                 requireContext(),
@@ -154,6 +156,56 @@ public class DeviceFragment extends Fragment {
         loadDevices();
 
         return view;
+    }
+
+    // Each Basilience Harvest Scale is its own separately provisioned
+    // physical unit, dedicated to one device when reproduced across
+    // multiple installs - never a single shared/global scale - so pairing
+    // is per-device data (devices/{deviceId}.harvestScaleId), set here.
+    private void showPairHarvestScaleDialog(Device device) {
+        if (device.getDeviceId() == null) return;
+
+        View dialogView = LayoutInflater.from(requireContext())
+                .inflate(R.layout.dialog_pair_harvest_scale, null);
+        TextInputEditText etHarvestScaleId = dialogView.findViewById(R.id.etHarvestScaleId);
+        MaterialButton btnSavePairing = dialogView.findViewById(R.id.btnSavePairing);
+        MaterialButton btnCancel = dialogView.findViewById(R.id.btnCancel);
+
+        if (device.getHarvestScaleId() != null) {
+            etHarvestScaleId.setText(device.getHarvestScaleId());
+        }
+
+        androidx.appcompat.app.AlertDialog dialog = NotificationHelper.showCustomViewDialog(
+                requireContext(), "Pair Harvest Scale", dialogView);
+
+        if (btnCancel != null) {
+            btnCancel.setOnClickListener(v -> {
+                if (dialog != null) dialog.dismiss();
+            });
+        }
+
+        if (btnSavePairing != null) {
+            btnSavePairing.setOnClickListener(v -> {
+                String scaleId = etHarvestScaleId.getText() != null
+                        ? etHarvestScaleId.getText().toString().trim() : "";
+                btnSavePairing.setEnabled(false);
+                dbHelper.setHarvestScaleId(device.getDeviceId(), scaleId)
+                        .addOnSuccessListener(aVoid -> {
+                            if (!isAdded()) return;
+                            btnSavePairing.setEnabled(true);
+                            NotificationHelper.showSuccess(requireContext(),
+                                    scaleId.isEmpty() ? "Harvest scale unpaired" : "Harvest scale paired");
+                            if (dialog != null) dialog.dismiss();
+                            loadDevices();
+                        })
+                        .addOnFailureListener(e -> {
+                            if (!isAdded()) return;
+                            btnSavePairing.setEnabled(true);
+                            Log.e(TAG, "Failed to pair harvest scale for deviceId=" + device.getDeviceId(), e);
+                            NotificationHelper.showError(requireContext(), "Unable to save this pairing. Please try again.");
+                        });
+            });
+        }
     }
 
     private void openWifiConfiguration(View view, Device device) {

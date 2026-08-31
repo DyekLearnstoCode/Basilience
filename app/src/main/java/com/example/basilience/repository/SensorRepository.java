@@ -51,7 +51,23 @@ public class SensorRepository {
                     return;
                 }
 
-                SensorData data = snapshot.getValue(SensorData.class);
+                SensorData data;
+                try {
+                    data = snapshot.getValue(SensorData.class);
+                } catch (com.google.firebase.database.DatabaseException error) {
+                    // A field written with an unexpected type (e.g. Double where
+                    // Long is expected, or vice versa - see the lastServerSeen
+                    // crash this same trap already caused elsewhere in the app)
+                    // throws here. Never let a single malformed /sensors write
+                    // crash the primary monitoring screen: keep whatever value
+                    // liveData already holds and surface the same read-error
+                    // signal used for a cancelled/denied listener.
+                    Log.e("SensorRepository", "Failed to parse sensor data", error);
+                    if (readErrorLiveData != null) {
+                        readErrorLiveData.postValue(true);
+                    }
+                    return;
+                }
 
                 if (data != null) {
                     liveData.postValue(data);

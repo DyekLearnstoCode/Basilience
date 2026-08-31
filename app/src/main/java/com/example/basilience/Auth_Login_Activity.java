@@ -318,6 +318,7 @@ public class Auth_Login_Activity extends AppCompatActivity {
                                             .remove("user_role")
                                             .remove("owner_uid")
                                             .remove("selected_device_id")
+                                            .remove("is_developer")
                                             .apply();
                                     NotificationHelper.showInfo(this, "Account Profile Missing",
                                             "Your sign-in account exists, but your Basilience profile could not be found. Please contact your administrator or recover the account profile.");
@@ -326,11 +327,18 @@ public class Auth_Login_Activity extends AppCompatActivity {
 
                                 String role = document.getString("role");
                                 String ownerUid = document.getString("ownerAdminUid");
+                                // isDeveloper is never self-service - only settable via the
+                                // Firebase Console/Admin SDK (see firestore.rules) - and gates
+                                // the developer-only subset of Developer Options, separate from
+                                // (and narrower than) the ADMIN role check that gates the screen
+                                // itself. Defaults false for every existing/normal account.
+                                boolean isDeveloper = Boolean.TRUE.equals(document.getBoolean("isDeveloper"));
                                 SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
                                 SharedPreferences.Editor editor = prefs.edit();
                                 editor.putBoolean(KEY_IS_LOGGED_IN, cbRemember.isChecked());
                                 editor.putString("user_role", role);
                                 editor.putString("owner_uid", ownerUid);
+                                editor.putBoolean("is_developer", isDeveloper);
                                 editor.apply();
 
                                 // Device assignments are established only by Admin assignment
@@ -370,6 +378,7 @@ public class Auth_Login_Activity extends AppCompatActivity {
             getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                     .putString("user_role", role)
                     .putString("owner_uid", document.getString("ownerAdminUid"))
+                    .putBoolean("is_developer", Boolean.TRUE.equals(document.getBoolean("isDeveloper")))
                     .apply();
             navigateToMain();
         }, error -> {
@@ -389,6 +398,7 @@ public class Auth_Login_Activity extends AppCompatActivity {
                 .remove("user_role")
                 .remove("owner_uid")
                 .remove("selected_device_id")
+                .remove("is_developer")
                 .apply();
         showLoading(false, null);
     }

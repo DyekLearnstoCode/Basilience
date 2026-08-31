@@ -113,6 +113,14 @@ public class WifiConfigFragment extends Fragment {
         }
         selectedDeviceId = deviceId;
 
+        // Defensive, not redundant - see the matching call/comment in
+        // Parameters_Monitoring_Fragment.startRealTimeMonitoring(). Confirmed
+        // live bug: after a credential push and device reboot, this screen's
+        // status stayed stuck on RECONNECTING even after leaving and
+        // returning, because nothing here ever (re-)established monitoring
+        // for the singleton itself.
+        DeviceConnectionManager.getInstance().monitorDevice(deviceId);
+
         DeviceConnectionManager.getInstance().getConnectivityState().observe(
                 getViewLifecycleOwner(), state -> {
                     connectivityState = state == null
@@ -226,7 +234,7 @@ public class WifiConfigFragment extends Fragment {
         lastServerSeenListener = deviceRef.child("status").child("lastServerSeen").addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull com.google.firebase.database.DataSnapshot snapshot) {
-                Long seen = snapshot.getValue(Long.class);
+                Long seen = DeviceConnectionManager.readLongValue(snapshot);
                 if (seen != null && !seen.equals(lastServerSeen)) {
                     Log.d(TAG, "lastServerSeen updated");
                 }

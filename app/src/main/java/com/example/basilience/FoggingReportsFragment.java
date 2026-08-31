@@ -869,7 +869,7 @@ public class FoggingReportsFragment extends Fragment {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
 
                     Boolean backendOnline = snapshot.child("online").getValue(Boolean.class);
-                    Long lastServerSeen = snapshot.child("lastServerSeen").getValue(Long.class);
+                    Long lastServerSeen = DeviceConnectionManager.readLongValue(snapshot.child("lastServerSeen"));
                     // Reuses DeviceConnectionManager's authoritative presence
                     // rule so Fogging Reports can never disagree with the rest
                     // of the app about whether the device is online.
@@ -1400,7 +1400,7 @@ public class FoggingReportsFragment extends Fragment {
                         if (!isAdded() || requestGeneration != waterOutlookRequestGeneration) return;
 
                         Boolean backendOnline = snapshot.child("online").getValue(Boolean.class);
-                        Long lastServerSeen = snapshot.child("lastServerSeen").getValue(Long.class);
+                        Long lastServerSeen = DeviceConnectionManager.readLongValue(snapshot.child("lastServerSeen"));
                         // Reuses the project's single authoritative presence
                         // rule - no second freshness threshold is defined.
                         boolean deviceLive = DeviceConnectionManager.resolveState(

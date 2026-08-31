@@ -141,6 +141,7 @@ public class Cycle_Add_Fragment extends Fragment {
 
         // Single Active Cycle Rule check
         dbHelper.getCycles(deviceId).addOnSuccessListener(queryDocumentSnapshots -> {
+            if (!isAdded()) return;
             if (CycleStatus.hasActive(queryDocumentSnapshots)) {
                 hideLayoutLoading();
                 btnSave.setEnabled(true);
@@ -149,6 +150,7 @@ public class Cycle_Add_Fragment extends Fragment {
                 proceedWithSaving(view, deviceId);
             }
         }).addOnFailureListener(e -> {
+            if (!isAdded()) return;
             hideLayoutLoading();
             btnSave.setEnabled(true);
             Log.e(TAG, "Active cycle verification failed", e);
@@ -188,6 +190,7 @@ public class Cycle_Add_Fragment extends Fragment {
 
         dbHelper.setSelectedDeviceId(deviceId);
         dbHelper.addCycle(newCycle).addOnCompleteListener(task -> {
+            if (!isAdded()) return;
             hideLayoutLoading();
             if (task.isSuccessful()) {
                 NotificationHelper.showSuccess(requireContext(), "Cycle saved successfully");

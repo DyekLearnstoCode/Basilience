@@ -91,7 +91,7 @@ public class DeviceConnectionManager {
     // by the crash this fixes). getValue() with no class returns the raw
     // deserialized Object - a Long or a Double depending on how the value was
     // written - and instanceof/longValue() safely accepts either.
-    private static Long readLongValue(DataSnapshot snapshot) {
+    static Long readLongValue(DataSnapshot snapshot) {
         Object raw = snapshot.getValue();
 
         if (raw instanceof Number) {

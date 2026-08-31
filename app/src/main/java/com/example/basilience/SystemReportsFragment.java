@@ -1329,8 +1329,8 @@ public class SystemReportsFragment extends Fragment {
         }
         if (canonicalParameter.equalsIgnoreCase("Water Temperature")) {
             switch (status) {
-                case "STABLE": return "The water around the roots stayed below the set temperature limit most of the time, helping keep the root area comfortable for the basil.";
-                case "NEEDS ATTENTION": return "The water around the roots became too warm several times. If this continues, it may place extra stress on the basil and affect how well the roots take in water and nutrients.";
+                case "STABLE": return "The reservoir water stayed below the set temperature limit most of the time, helping keep the mist delivered to the basil at a comfortable temperature.";
+                case "NEEDS ATTENTION": return "The reservoir water became too warm several times before being turned into mist. If this continues, the fog reaching the basil may run warmer than ideal, which can place extra stress on the plant.";
                 default: return "No water temperature limit has been set for this device yet, so the readings cannot be compared against a limit.";
             }
         }

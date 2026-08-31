@@ -79,6 +79,11 @@ public class HarvestLogFragment extends Fragment {
     private String currentHarvestSource = "MANUAL";
     private Harvest editingHarvest = null;
     private Cycle currentCycle = null;
+    // deviceId of the Basilience Harvest Scale paired with this fragment's
+    // device (Database_Helper.setHarvestScaleId()/getHarvestScaleId()) - a
+    // separate physical unit per device, not a single shared scale. Null
+    // until resolved, or if this device has none paired.
+    private String pairedHarvestScaleId = null;
     private NotificationHelper.LoadingHandle loadingHandle;
     // Explicit re-entrancy guard for the Add/Edit Harvest save action - the
     // button's own setEnabled(false) is not by itself a guaranteed block
@@ -162,6 +167,23 @@ public class HarvestLogFragment extends Fragment {
         loadHarvestData();
         loadChartData();
         loadCycleSummary();
+        loadPairedHarvestScale();
+    }
+
+    // Resolves which Harvest Scale (if any) is paired with this fragment's
+    // device, so showHarvestDialog() knows whether to offer "Read from
+    // Harvest Scale" at all. Best-effort: a failed lookup just leaves the
+    // control hidden (see Database_Helper.getHarvestScaleId()), it never
+    // blocks or errors this screen.
+    private void loadPairedHarvestScale() {
+        SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
+        String deviceId = prefs.getString("selected_device_id", null);
+        if (deviceId == null) return;
+
+        dbHelper.getHarvestScaleId(deviceId).addOnSuccessListener(scaleId -> {
+            if (!isAdded()) return;
+            pairedHarvestScaleId = scaleId;
+        });
     }
 
     @Override
@@ -262,9 +284,44 @@ public class HarvestLogFragment extends Fragment {
         Button btnCancel = dialogView.findViewById(R.id.btnCancel);
         Button btnReadSensor = dialogView.findViewById(R.id.btnReadSensor);
 
-        // No load-cell/weight publisher exists in the ESP32 firmware. Do not
-        // present a control that can only read a fabricated/stale RTDB field.
-        btnReadSensor.setVisibility(View.GONE);
+        // BasilienceHarvestScale (a standalone ESP8266 device, separate
+        // from this device's own ESP32 grow-chamber firmware) publishes
+        // real weight readings once paired - see loadPairedHarvestScale()
+        // and Database_Helper.setHarvestScaleId()/getHarvestScaleId(). No
+        // pairing means nothing to read from, so the control stays hidden
+        // rather than offering a button that can only ever fail.
+        if (pairedHarvestScaleId == null || pairedHarvestScaleId.isEmpty()) {
+            btnReadSensor.setVisibility(View.GONE);
+        } else {
+        btnReadSensor.setVisibility(View.VISIBLE);
+        btnReadSensor.setOnClickListener(v -> {
+            btnReadSensor.setEnabled(false);
+            // This reads the scale's most recent STABILITY-CONFIRMED entry,
+            // not the raw live field it overwrites every 5 seconds
+            // regardless of settling.
+            dbHelper.readLatestHarvestScaleReading(pairedHarvestScaleId)
+                    .addOnSuccessListener(weightGrams -> {
+                        if (!isAdded()) return;
+                        btnReadSensor.setEnabled(true);
+                        if (layoutWeight != null) layoutWeight.setError(null);
+                        // Plain numeric grams, not HarvestFormatter.formatWeight()'s
+                        // "1.5 kg"/"850 g" display string - this field is re-parsed
+                        // with Double.parseDouble() on save, which needs a bare
+                        // number. Locale.US pins the decimal separator to '.'
+                        // regardless of device locale, matching what parseDouble
+                        // always expects.
+                        etWeight.setText(String.format(Locale.US, "%.1f", weightGrams));
+                        currentHarvestSource = "SCALE";
+                    })
+                    .addOnFailureListener(e -> {
+                        if (!isAdded()) return;
+                        btnReadSensor.setEnabled(true);
+                        Log.e(TAG, "Failed to read harvest scale reading", e);
+                        NotificationHelper.showError(getContext(),
+                                "Unable to read the harvest scale. Check that it's powered on, connected to Wi-Fi, and has a stable weighing on the platform.");
+                    });
+        });
+        }
 
         editingHarvest = harvest;
         currentHarvestSource = "MANUAL";
@@ -617,7 +674,13 @@ public class HarvestLogFragment extends Fragment {
                 String input = etFrequency.getText().toString().trim();
                 if (input.isEmpty()) return;
 
-                int newFreq = Integer.parseInt(input);
+                int newFreq;
+                try {
+                    newFreq = Integer.parseInt(input);
+                } catch (NumberFormatException error) {
+                    NotificationHelper.showError(getContext(), "Enter a valid number of days");
+                    return;
+                }
                 if (newFreq < 1 || newFreq > 365) {
                     NotificationHelper.showError(getContext(), "Frequency must be between 1 and 365 days");
                     return;
@@ -672,9 +735,11 @@ public class HarvestLogFragment extends Fragment {
                     });
                     dbHelper.completeCycle(cycleId).addOnSuccessListener(aVoid -> {
                         if (!isAdded()) return;
-                        dismissLoading();
-                        if (btnCompleteCycle != null) btnCompleteCycle.setEnabled(true);
-                        NotificationHelper.showSuccess(requireContext(), "Cycle completed");
+                        dismissLoading(() -> {
+                            if (!isAdded()) return;
+                            if (btnCompleteCycle != null) btnCompleteCycle.setEnabled(true);
+                            NotificationHelper.showSuccess(requireContext(), "Cycle completed");
+                        });
                     }).addOnFailureListener(e -> {
                         if (!isAdded()) return;
                         dismissLoading();
@@ -705,10 +770,12 @@ public class HarvestLogFragment extends Fragment {
                 .addOnSuccessListener(aVoid -> {
                     isHarvestSubmitting = false;
                     if (!isAdded()) return;
-                    dismissLoading();
-                    NotificationHelper.showSuccess(requireContext(), "Harvest saved");
-                    dialog.dismiss();
-                    loadChartData(); // Refresh chart manually
+                    dismissLoading(() -> {
+                        if (!isAdded()) return;
+                        NotificationHelper.showSuccess(requireContext(), "Harvest saved");
+                        dialog.dismiss();
+                        loadChartData(); // Refresh chart manually
+                    });
                 })
                 .addOnFailureListener(e -> {
                     isHarvestSubmitting = false;
@@ -1054,7 +1121,24 @@ public class HarvestLogFragment extends Fragment {
     }
 
     private void dismissLoading() {
-        if (loadingHandle != null) loadingHandle.dismiss();
+        dismissLoading(null);
+    }
+
+    /**
+     * afterHidden runs only once the loader has actually disappeared - see
+     * NotificationHelper.LoadingHandle#dismiss(Runnable)'s own comment for
+     * the confirmed bug this exists to avoid (a success/result notification
+     * shown immediately after calling dismiss(), rather than from this
+     * callback, could render on top of a loader that was still visible,
+     * mid-deferral, when the request resolved faster than the minimum
+     * visible duration).
+     */
+    private void dismissLoading(Runnable afterHidden) {
+        if (loadingHandle != null) {
+            loadingHandle.dismiss(afterHidden);
+        } else if (afterHidden != null) {
+            afterHidden.run();
+        }
         loadingHandle = null;
     }
 }

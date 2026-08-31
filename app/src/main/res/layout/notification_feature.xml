@@ -134,6 +134,31 @@
                 android:layout_height="wrap_content"
                 android:nestedScrollingEnabled="false" />
 
+            <!-- LOAD MORE: fetches the next page of older notifications
+                 on demand (Database_Helper.loadOlderNotifications), rather
+                 than the live listener syncing an ever-larger window up
+                 front. Hidden until the first page loads, and again once
+                 the oldest notification has been reached. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnLoadMore"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Load Older Notifications"
+                android:textColor="@color/primary"
+                android:visibility="gone" />
+
+            <ProgressBar
+                android:id="@+id/progressLoadMore"
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="12dp"
+                android:indeterminateTint="@color/primary"
+                android:visibility="gone" />
+
             <!-- EMPTY STATE -->
             <TextView
                 android:id="@+id/tvEmptyNotifications"

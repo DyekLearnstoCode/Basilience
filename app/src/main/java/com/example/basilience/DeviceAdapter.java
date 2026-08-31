@@ -123,7 +123,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         backendOnline = snapshot.child("online").getValue(Boolean.class);
-                        lastServerSeen = snapshot.child("lastServerSeen").getValue(Long.class);
+                        lastServerSeen = DeviceConnectionManager.readLongValue(snapshot.child("lastServerSeen"));
                         provisioning = Boolean.TRUE.equals(
                                 snapshot.child("provisioning").getValue(Boolean.class));
                         applyResolvedStatus();

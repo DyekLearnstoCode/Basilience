@@ -35,9 +35,17 @@ service cloud.firestore {
       allow read: if isSignedIn();
       // Public self-registration may establish only an unlinked ADMIN profile.
       // FARMER/PERSONNEL profiles are created by an authenticated Admin.
+      // isDeveloper gates the developer-only subset of the app's Developer
+      // Options screen (Mock Sensors, Automation Test Mode, the water-level
+      // safety bypass, Canopy PWM raw commands) and must only ever be set via
+      // the Firebase Console/Admin SDK, which bypass these rules entirely -
+      // self-registration otherwise has no field whitelist here (unlike
+      // update below, which uses hasOnly()), so without this check any
+      // signed-up user could set isDeveloper: true on their own document.
       allow create: if (isSignedIn() && request.auth.uid == uid &&
                         request.resource.data.role == 'ADMIN' &&
-                        request.resource.data.ownerAdminUid == null) ||
+                        request.resource.data.ownerAdminUid == null &&
+                        (!('isDeveloper' in request.resource.data) || request.resource.data.isDeveloper == false)) ||
         (isAdmin() && request.resource.data.role == 'FARMER' && request.resource.data.ownerAdminUid == request.auth.uid);
       // Personnel may maintain their contact profile only.  An admin can only link,
       // unlink, or edit a FARMER profile that is unlinked or already belongs to them.

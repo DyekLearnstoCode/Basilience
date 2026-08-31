@@ -491,6 +491,28 @@
                                 android:textCursorDrawable="@null" />
                         </com.google.android.material.textfield.TextInputLayout>
 
+                        <!-- Water Depth (cm) - the authoritative field refill/low-water
+                             control and Water Outlook/Reporting actually key off of.
+                             Optional: leave blank and the firmware derives it from
+                             Water Level % above (percent of MAX_WORKING_WATER_CM).
+                             Set this directly to test depth-based behavior without
+                             doing the percent math yourself. -->
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/InputFieldStyle"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="20dp">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/etWaterLevelCm"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:hint="Water Depth cm (optional, overrides %)"
+                                android:inputType="numberDecimal|numberSigned"
+                                android:textColor="@android:color/black"
+                                android:textCursorDrawable="@null" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
                         <!-- Push Mock Data Button -->
                         <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnPush"
@@ -725,6 +747,7 @@
             </LinearLayout>
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/containerAutomationTestMode"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
@@ -830,6 +853,7 @@
                  and manual refill are unaffected - see DevOptionsFragment's
                  confirmation dialog for the exact scope shown to the user. -->
             <LinearLayout
+                android:id="@+id/containerIgnoreWaterLevel"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
