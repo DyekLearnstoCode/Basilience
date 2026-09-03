@@ -349,7 +349,28 @@ public class Database_Helper {
             return db.collection("users").whereEqualTo("email", email.trim()).limit(1).get().continueWithTask(queryTask -> {
                 if (!queryTask.isSuccessful()) throw queryTask.getException();
                 if (queryTask.getResult().isEmpty()) throw new FirebaseFirestoreException("No eligible personnel account was found.", FirebaseFirestoreException.Code.NOT_FOUND);
-                DocumentReference personnelRef = queryTask.getResult().getDocuments().get(0).getReference();
+                DocumentSnapshot queriedProfile = queryTask.getResult().getDocuments().get(0);
+                DocumentReference personnelRef = queriedProfile.getReference();
+
+                // Fast-path check using the document this query already
+                // fetched, instead of always paying for a THIRD sequential
+                // round trip (checkAdminTask, this query, then a transaction
+                // read) just to re-check the exact same two fields on the
+                // exact same document. This is what made "already linked" -
+                // easily the most common outcome, since an Admin usually
+                // knows the personnel exists - visibly slow to report. The
+                // transaction below still re-validates before writing, so a
+                // genuine race (someone else linking this personnel in the
+                // instant between this query and the write) is still caught
+                // correctly; this only short-circuits the read-only outcomes
+                // that don't need transactional consistency at all.
+                if (!RoleConstants.ROLE_FARMER.equalsIgnoreCase(queriedProfile.getString("role"))) {
+                    throw new FirebaseFirestoreException("No eligible personnel account was found.", FirebaseFirestoreException.Code.PERMISSION_DENIED);
+                }
+                String queriedLinkedAdminUid = queriedProfile.getString("ownerAdminUid");
+                if (adminUid.equals(queriedLinkedAdminUid)) throw new FirebaseFirestoreException("This personnel is already linked to your account.", FirebaseFirestoreException.Code.ALREADY_EXISTS);
+                if (queriedLinkedAdminUid != null && !queriedLinkedAdminUid.isEmpty()) throw new FirebaseFirestoreException("This personnel account cannot be linked to this Admin.", FirebaseFirestoreException.Code.PERMISSION_DENIED);
+
                 return db.runTransaction(transaction -> {
                     DocumentSnapshot profile = transaction.get(personnelRef);
                     if (!RoleConstants.ROLE_FARMER.equalsIgnoreCase(profile.getString("role"))) {
@@ -1335,6 +1356,25 @@ public class Database_Helper {
                 return batch.commit();
             });
         });
+    }
+
+    /**
+     * Whether the given device currently has a cycle whose status is ACTIVE.
+     * Used to warn an Admin before unclaiming a device with cultivation in
+     * progress - unclaiming only revokes visibility, it never stops the
+     * device's own automation, so an ACTIVE cycle keeps running regardless.
+     */
+    public Task<Boolean> hasActiveCycle(String deviceId) {
+        return db.collection("devices")
+                .document(deviceId)
+                .collection("cycles")
+                .whereEqualTo("status", "ACTIVE")
+                .limit(1)
+                .get()
+                .continueWith(task -> {
+                    if (!task.isSuccessful()) throw task.getException();
+                    return !task.getResult().isEmpty();
+                });
     }
 
     public Task<QuerySnapshot> getMyDevices() {

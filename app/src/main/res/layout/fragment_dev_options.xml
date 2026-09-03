@@ -142,6 +142,59 @@
                     android:textSize="10sp" />
             </LinearLayout>
 
+            <!-- PARAMETER TARGET RANGES - Admin-only, not chip-toggled like the
+                 tabs above; a fixed link to its own screen, visible only in
+                 Device Configuration mode (see DevOptionsFragment.configureAccessMode). -->
+            <LinearLayout
+                android:id="@+id/rowTargetRangesLink"
+                android:layout_width="match_parent"
+                android:layout_height="90dp"
+                android:layout_marginBottom="20dp"
+                android:background="@drawable/card_option"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="12dp"
+                android:visibility="gone">
+
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:padding="0dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_science_24" />
+
+                <TextView
+                    style="@style/Basilience.CardOptionLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:text="Parameter Target Ranges" />
+
+                <FrameLayout
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:background="@drawable/circle_button"
+                    android:clickable="false"
+                    android:duplicateParentState="true"
+                    android:focusable="false"
+                    android:gravity="center"
+                    android:importantForAccessibility="no">
+
+                    <ImageView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:src="@drawable/enter_arrow"
+                        app:tint="@color/state_primary_text" />
+
+                </FrameLayout>
+
+            </LinearLayout>
+
             <!-- 1. PHYSICAL SENSOR TEST CONTAINER -->
             <LinearLayout
                 android:id="@+id/containerSensorTest"

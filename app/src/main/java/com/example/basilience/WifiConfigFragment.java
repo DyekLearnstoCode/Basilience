@@ -179,14 +179,29 @@ public class WifiConfigFragment extends Fragment {
                     if (!isAdded()) return;
                     btnSaveWifi.setEnabled(true);
                     if (responseCode == 200) {
-                        awaitingReconnect = false;
-                        provisioningAttemptStartLastSeen = null;
-                        hideLoading();
+                        // The device accepted the credentials but hasn't actually
+                        // reconnected yet - that's confirmed asynchronously by
+                        // whichever comes first: attachWifiStatusListener()'s
+                        // Firebase listeners noticing a fresh heartbeat on the new
+                        // network (maybeConfirmProvisioningReconnect()), the local
+                        // AP still answering with a "connected" status
+                        // (pollLocalProvisioningStatus()), or reconnectTimeout
+                        // firing after RECONNECT_CONFIRMATION_TIMEOUT_MS with a
+                        // "saved but not reconnected yet" message. Deliberately NOT
+                        // nulling provisioningAttemptStartLastSeen here (unlike the
+                        // failure/exception branches below, which do abandon the
+                        // attempt) - it's this attempt's baseline for
+                        // hasFreshHeartbeatForProvisioningAttempt() and needs to
+                        // survive until one of those three outcomes resolves it.
+                        awaitingReconnect = true;
+                        pendingProvisioningSsid = ssid;
                         etSsid.setText("");
                         etPassword.setText("");
+                        showLoading("Waiting for Reconnection...",
+                                "Basilience is reconnecting to \"" + ssid + "\"...");
                         mainHandler.removeCallbacks(reconnectTimeout);
-                        NotificationHelper.showSuccessAcknowledgement(requireContext(), "Wi-Fi Configuration Saved",
-                                "Your new Wi-Fi credentials were saved successfully. Basilience will reconnect to the network automatically.", null);
+                        mainHandler.postDelayed(reconnectTimeout, RECONNECT_CONFIRMATION_TIMEOUT_MS);
+                        mainHandler.postDelayed(WifiConfigFragment.this::pollLocalProvisioningStatus, 1000);
                     } else {
                         provisioningAttemptStartLastSeen = null;
                         hideLoading();
@@ -255,13 +270,20 @@ public class WifiConfigFragment extends Fragment {
         if (awaitingReconnect) return;
         boolean freshHeartbeat = hasFreshHeartbeatForProvisioningAttempt();
         Log.d(TAG, "[WiFiSuccessTrace] pending=" + awaitingReconnect
-                + " online=" + isCurrentlyOnline
                 + " wifiConnected=" + lastReportedWifiConnected
                 + " lastServerSeen=" + lastServerSeen
                 + " baseline=" + provisioningAttemptStartLastSeen
                 + " freshHeartbeat=" + freshHeartbeat
                 + " dialogShown=" + reconnectSuccessDialogShown);
-        Log.d(TAG, "[WiFiSuccessTrace] successCheck = pending && online && wifiConnected && freshHeartbeat && !dialogShown");
+        // Deliberately NOT gated on isCurrentlyOnline/DeviceConnectivityState.ONLINE
+        // here (unlike updateStatusUI()'s ordinary connectivity badge, which
+        // stays exactly as-is) - that classification requires its own
+        // freshness window on top of a periodic 2s re-check, real extra
+        // latency on top of the one signal this flow actually needs: a
+        // fresh heartbeat since the reconnect attempt started. Waiting for
+        // "Online" too was confirming success later than the device had
+        // already proven it reconnected.
+        Log.d(TAG, "[WiFiSuccessTrace] successCheck = pending && wifiConnected && freshHeartbeat && !dialogShown");
 
         if (!awaitingReconnect) {
             Log.d(TAG, "[WiFiSuccessTrace] blocked: pending=false");
@@ -269,10 +291,6 @@ public class WifiConfigFragment extends Fragment {
         }
         if (!isAdded()) {
             Log.d(TAG, "[WiFiSuccessTrace] blocked: fragment not added");
-            return;
-        }
-        if (!isCurrentlyOnline) {
-            Log.d(TAG, "[WiFiSuccessTrace] blocked: online=false");
             return;
         }
         if (!Boolean.TRUE.equals(lastReportedWifiConnected)) {

@@ -110,7 +110,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
             }
 
             if (isAutomationLifecycleEvent(notificationType)) {
-                showNotification(title, body, eventId, null, deviceId);
+                showNotification(title, body, eventId, null, deviceId, false);
                 Log.d(TAG, "POPUP_ATTEMPT type=" + notificationType);
                 boolean shown = MainActivity.showForegroundAutomationLifecycle(
                         title,
@@ -124,7 +124,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
             // Notification payloads are automatically posted by FCM only while the
             // app is backgrounded. Foreground delivery always posts exactly one tray
             // card here; only explicitly critical types also receive one popup.
-            showNotification(title, body, eventId, null, deviceId);
+            showNotification(title, body, eventId, null, deviceId, false);
             if (isCriticalAlert(notificationType)) {
                 Log.d(TAG, "POPUP_ATTEMPT type=" + notificationType);
                 boolean shown = MainActivity.showForegroundAlert(title, body, eventId);
@@ -217,7 +217,13 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                         NotificationHelper.recordCloudConnectivityPresentation(
                                 MyFirebaseMessagingService.this, deviceId, isOffline);
 
-                        showNotification(title, body, eventId, deviceId, deviceId);
+                        // isOffline only, not recovery - tapping "device came back
+                        // online" has nothing to reconfigure. deviceId here is
+                        // guaranteed to already be the selected device: the
+                        // mismatch check above (line ~164) already discarded this
+                        // message otherwise, so there's no risk of routing to the
+                        // wrong device's Wi-Fi Configuration screen.
+                        showNotification(title, body, eventId, deviceId, deviceId, isOffline);
                         Log.d(TAG, "POPUP_ATTEMPT type=" + type);
                         boolean shown;
                         if (isOffline) {
@@ -266,7 +272,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                         }
 
                         Log.d(TAG, "VALIDATION_PASS type=" + alertKey + " deviceId=" + deviceId);
-                        showNotification(title, body, eventId, null, deviceId);
+                        showNotification(title, body, eventId, null, deviceId, false);
                         Log.d(TAG, "POPUP_ATTEMPT type=" + alertKey);
                         boolean shown = MainActivity.showForegroundParameterAlert(
                                 alertKey, eventId, deviceId);
@@ -343,7 +349,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
     }
 
     private void showNotification(String title, String messageBody, String eventId, String connectivityDeviceId,
-                                   String readMarkDeviceId) {
+                                   String readMarkDeviceId, boolean openWifiConfigurationOnTap) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
                 && androidx.core.content.ContextCompat.checkSelfPermission(
                         this, android.Manifest.permission.POST_NOTIFICATIONS)
@@ -381,6 +387,14 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                 && eventId != null && !eventId.isEmpty()) {
             intent.putExtra(MainActivity.EXTRA_MARK_READ_DEVICE_ID, readMarkDeviceId);
             intent.putExtra(MainActivity.EXTRA_MARK_READ_NOTIFICATION_ID, eventId);
+        }
+        // Consumed by MainActivity.openWifiConfigurationIfRequested() - lets
+        // tapping the actual "DEVICE UNREACHABLE" tray notification route
+        // straight to Wi-Fi Configuration for the affected device, the same
+        // workflow NotificationHelper.showWifiConfigurationRequiredNotification()'s
+        // separate, foreground-only notification already offers.
+        if (openWifiConfigurationOnTap) {
+            intent.putExtra(MainActivity.EXTRA_OPEN_WIFI_CONFIGURATION, true);
         }
         android.app.PendingIntent pendingIntent = android.app.PendingIntent.getActivity(
                 this, notificationId, intent,

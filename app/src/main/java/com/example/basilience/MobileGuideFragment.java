@@ -43,16 +43,25 @@ public class MobileGuideFragment extends Fragment {
 
     /**
      * Sections marked adminOnly() (currently just Developer Options) are left
-     * out of the list entirely for non-Admin accounts, rather than shown with
-     * just a label - the same role check used everywhere else in the app
-     * (SharedPreferences "user_role"), not a new permission concept.
+     * out of the list entirely for accounts that couldn't actually reach the
+     * real Developer Options screen - not merely non-Admins. The real screen
+     * requires the account's Developer Tester entitlement AND developer mode
+     * enabled for the selected device (see SettingsFragment's own
+     * updateDeveloperOptionsVisibility() and DevOptionsFragment's matching
+     * re-check on entry) - an ordinary Admin without that entitlement was
+     * previously shown this guidance anyway, even though they'd be denied
+     * entry to the screen it describes.
      */
     private List<GuideSection> visibleSections() {
         SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
-        boolean isAdmin = RoleConstants.ROLE_ADMIN.equalsIgnoreCase(prefs.getString("user_role", ""));
+        String selectedDeviceId = prefs.getString("selected_device_id", null);
+        boolean developerOptionsReachable = RoleConstants.isDeveloperTester(prefs)
+                && prefs.getBoolean("developer_mode_enabled", false)
+                && selectedDeviceId != null
+                && selectedDeviceId.equals(prefs.getString(RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID, null));
 
         List<GuideSection> all = MobileGuideContent.sections();
-        if (isAdmin) return all;
+        if (developerOptionsReachable) return all;
 
         List<GuideSection> visible = new ArrayList<>();
         for (GuideSection section : all) {

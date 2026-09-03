@@ -84,13 +84,6 @@
             app:popEnterAnim="@anim/slide_in_left"
             app:popExitAnim="@anim/slide_out_right" />
         <action
-            android:id="@+id/action_settings_to_targetRangesFragment"
-            app:destination="@id/parameterTargetRangesFragment"
-            app:enterAnim="@anim/slide_in_right"
-            app:exitAnim="@anim/slide_out_left"
-            app:popEnterAnim="@anim/slide_in_left"
-            app:popExitAnim="@anim/slide_out_right" />
-        <action
             android:id="@+id/action_settings_to_privacyPolicyFragment"
             app:destination="@id/privacyPolicyFragment"
             app:enterAnim="@anim/slide_in_right"
@@ -342,7 +335,7 @@
     <fragment
         android:id="@+id/deviceMaintenanceFragment"
         android:name="com.example.basilience.DevOptionsFragment"
-        android:label="Device Maintenance"
+        android:label="Device Configuration"
         tools:layout="@layout/fragment_dev_options">
         <argument
             android:name="maintenanceMode"

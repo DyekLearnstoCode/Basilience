@@ -100,13 +100,7 @@ public class DeviceFragment extends Fragment {
                                     } else if (index == 1) {
                                         showPairHarvestScaleDialog(device);
                                     } else {
-                                        NotificationHelper.showDestructiveConfirmation(
-                                                requireContext(),
-                                                "Unclaim Device",
-                                                "Are you sure you want to unclaim " + device.getDeviceName() + "?",
-                                                "Unclaim",
-                                                () -> unclaimDevice(device)
-                                        );
+                                        confirmUnclaim(device);
                                     }
                                 });
                     } else {
@@ -259,6 +253,33 @@ public class DeviceFragment extends Fragment {
                     Toast.makeText(getActivity(), "Unable to load your devices. Please try again.", Toast.LENGTH_SHORT).show();
                 });
     }
+    /**
+     * Unclaiming only removes an Admin's/Farmer's access to a device - it never touches
+     * the device itself, so an ACTIVE cycle (and the fogging/dosing/monitoring that goes
+     * with it) keeps running unattended afterward. Check for one first so the Admin makes
+     * that call knowingly instead of the confirmation dialog looking the same either way.
+     */
+    private void confirmUnclaim(Device device) {
+        String deviceName = device.getDeviceName() != null ? device.getDeviceName() : "Device";
+        dbHelper.hasActiveCycle(device.getDeviceId())
+                .addOnCompleteListener(task -> {
+                    if (!isAdded()) return;
+                    boolean activeCycle = task.isSuccessful() && Boolean.TRUE.equals(task.getResult());
+                    String message = activeCycle
+                            ? "\"" + deviceName + "\" has an active cultivation cycle. Unclaiming will not stop it - " +
+                              "fogging, dosing, and monitoring will keep running unattended until someone claims it again. " +
+                              "Unclaim anyway?"
+                            : "Are you sure you want to unclaim " + deviceName + "?";
+                    NotificationHelper.showDestructiveConfirmation(
+                            requireContext(),
+                            "Unclaim Device",
+                            message,
+                            "Unclaim",
+                            () -> unclaimDevice(device)
+                    );
+                });
+    }
+
     private void unclaimDevice(Device device) {
         if (deviceMutationInProgress) return;
         deviceMutationInProgress = true;

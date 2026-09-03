@@ -352,6 +352,30 @@ public class SystemReportsFragment extends Fragment {
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerCycle.setAdapter(adapter);
         spinnerCycle.setSelection(preselect);
+
+        // Confirmed live bug: Spinner.setSelection() does not reliably fire
+        // onItemSelectedListener when the position matches what the adapter
+        // already auto-selected (a well-known AdapterView quirk - most
+        // commonly position 0, which preselect resolves to for any device
+        // with a single cycle, or whenever the active cycle happens to be
+        // first in the list). That left selectedCycle permanently null even
+        // though the spinner visually showed a cycle chosen, silently
+        // stranding the whole screen on "Select a cycle and parameter..."
+        // with every period chip appearing to do nothing. Set it directly
+        // here instead of depending solely on the listener; the listener
+        // still runs the same logic when the user actually changes the
+        // selection interactively, this just guarantees the initial one.
+        Cycle newlySelected = cycles.get(preselect);
+        boolean cycleChanged = selectedCycle == null
+                || !Objects.equals(selectedCycle.getCycleId(), newlySelected.getCycleId());
+        selectedCycle = newlySelected;
+        if (cycleChanged) {
+            customStartMs = null;
+            customEndMs = null;
+            currentSelectedFilter = "Entire Cycle";
+        }
+        updatePeriodChipsForSelectedCycle();
+        loadReportData();
     }
 
     private String cycleSpinnerLabel(Cycle c) {
@@ -440,7 +464,13 @@ public class SystemReportsFragment extends Fragment {
     // ------------------------------------------------------------------
 
     private void startCustomRangeSelection() {
-        if (selectedCycle == null) return;
+        if (selectedCycle == null) {
+            // Previously a silent no-op - a user tapping Custom before a
+            // cycle finished resolving saw nothing happen with no
+            // explanation at all.
+            Toast.makeText(getContext(), "Select a cycle first.", Toast.LENGTH_SHORT).show();
+            return;
+        }
         long cycleStartMs = currentCycleStartMs();
         long cycleEndMs = currentCycleEndMs();
         long initialStart = customStartMs != null ? customStartMs : cycleStartMs;
@@ -644,6 +674,18 @@ public class SystemReportsFragment extends Fragment {
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
                         Log.w("REPORT_THRESHOLDS", "Unable to read configured device thresholds", error.toException());
+                        // Previously silent: the report would just sit without
+                        // rendering (loadReportData() above is only reached
+                        // from onDataChange) and nothing told the user why.
+                        // Threshold-based highlighting will be missing from
+                        // the report, but the rest of it can still load.
+                        if (!isAdded()) return;
+                        Toast.makeText(getContext(),
+                                "Unable to load configured thresholds for this report.",
+                                Toast.LENGTH_SHORT).show();
+                        if (selectedCycle != null && spinnerParameter.getSelectedItem() != null) {
+                            loadReportData();
+                        }
                     }
                 });
     }
@@ -814,6 +856,19 @@ public class SystemReportsFragment extends Fragment {
         // A custom legend keeps this at one or two entries no matter how many
         // runs the series was cut into.
         applyChartLegend(primaryColor, outOfRangeColor, anyOutOfRange);
+        // Confirmed live crash (IndexOutOfBoundsException inside MPAndroidChart's
+        // LegendRenderer.renderLegend, reached from onDraw): setData() above
+        // already triggers one legend layout pass sized for whatever the
+        // dataset produced, then applyChartLegend()'s setCustom() swaps in a
+        // DIFFERENT entry count (1 or 2, depending on anyOutOfRange) without
+        // ever re-running that layout pass. MPAndroidChart's word-wrap sizing
+        // arrays stay sized for the FIRST pass's entry count, so switching
+        // filters between a period with an out-of-range excursion (2 entries)
+        // and one without (1 entry) tries to index a slot that no longer
+        // exists on whichever draw call catches the mismatch. Forcing a
+        // second legend computation here, now that the entries are final,
+        // keeps those internal arrays in sync with what's actually rendered.
+        lineChart.notifyDataSetChanged();
         lineChart.getDescription().setEnabled(false);
         lineChart.getLegend().setEnabled(true);
         // Without this, MPAndroidChart draws every legend entry starting at
@@ -1423,10 +1478,17 @@ public class SystemReportsFragment extends Fragment {
                     currentInsight.interpretation, userName);
 
             Uri contentUri = FileProvider.getUriForFile(requireContext(), requireContext().getPackageName() + ".fileprovider", pdfFile);
-            Intent intent = new Intent(Intent.ACTION_VIEW);
-            intent.setDataAndType(contentUri, "application/pdf");
+            // ACTION_SEND (matching the CSV export just below), not ACTION_VIEW -
+            // a "share sheet" is meant to hand the file to another app (Drive,
+            // email, Messenger, etc.), not just open it in a PDF viewer.
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.setType("application/pdf");
+            intent.putExtra(Intent.EXTRA_SUBJECT, "Basilience " + filter.displayParameter + " Report - " + filter.cycleLabel);
+            intent.putExtra(Intent.EXTRA_TEXT, "Attached is the " + filter.displayParameter + " report for "
+                    + filter.cycleLabel + " (" + filter.periodLabel + ").");
+            intent.putExtra(Intent.EXTRA_STREAM, contentUri);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(intent, "Open PDF Report"));
+            startActivity(Intent.createChooser(intent, "Export Report via:"));
         } catch (IOException e) {
             Log.e("PDF_EXPORT_ERROR", "Error generating PDF", e);
             NotificationHelper.showError(getContext(), "We couldn't generate the PDF report. Please try again.");
@@ -1477,10 +1539,10 @@ public class SystemReportsFragment extends Fragment {
                     + CycleReportGenerator.sanitizeForFilename(filter.cycleLabel) + "_"
                     + filter.canonicalParameter.replace(" ", "") + "_" + System.currentTimeMillis() + ".csv";
             File csvFile = new File(cachePath, filename);
-            FileWriter writer = new FileWriter(csvFile);
-            writer.append(csvBuilder.toString());
-            writer.flush();
-            writer.close();
+            try (FileWriter writer = new FileWriter(csvFile)) {
+                writer.append(csvBuilder.toString());
+                writer.flush();
+            }
 
             Uri contentUri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", csvFile);
             if (contentUri != null) {

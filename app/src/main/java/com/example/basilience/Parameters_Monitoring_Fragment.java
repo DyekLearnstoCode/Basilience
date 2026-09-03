@@ -630,8 +630,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
-                Log.e("RTDB", "highWaterTemp listener cancelled: " + error.getMessage());
                 configuredHighWaterTemp = null;
+                handleAccessRevoked("highWaterTemp", error);
             }
         };
         highWaterTempRef.addValueEventListener(highWaterTempListener);
@@ -653,8 +653,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
-                Log.e("RTDB", "physicalSensors/ph listener cancelled: " + error.getMessage());
                 physicalPhCandidate = null;
+                handleAccessRevoked("physicalSensors/ph", error);
             }
         };
         physicalSensorsPhRef.addValueEventListener(physicalSensorsPhListener);
@@ -706,7 +706,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
-                Log.e("RTDB", "alerts listener cancelled: " + error.getMessage());
+                handleAccessRevoked("alerts", error);
             }
         };
         alertsRef.addValueEventListener(alertsListener);
@@ -747,7 +747,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
-                Log.e("RTDB", "status listener cancelled: " + error.getMessage());
+                handleAccessRevoked("status", error);
             }
         };
         statusRef.addValueEventListener(statusListener);
@@ -820,7 +820,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
-                Log.e("RTDB", "commands/manualMode listener cancelled: " + error.getMessage());
+                handleAccessRevoked("commands/manualMode", error);
             }
         };
         manualModeRef.addValueEventListener(manualModeListener);
@@ -852,7 +852,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             public void onCancelled(@NonNull DatabaseError error) {
                 // Do not touch actuator.state on cancellation — leaves the last
                 // confirmed physical state on screen instead of showing a false OFF.
-                Log.e("RTDB", "actuatorStatus listener cancelled: " + error.getMessage());
+                handleAccessRevoked("actuatorStatus", error);
             }
         };
         actuatorStatusRef.addValueEventListener(actuatorStatusListener);
@@ -1546,6 +1546,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (card == null || !isAdded()) return;
         TextView status = card.findViewById(R.id.tvStatus);
         SwitchMaterial toggle = card.findViewById(R.id.switchActuator);
+        TextView reasonView = card.findViewById(R.id.tvActuatorReason);
 
         if (toggle != null) {
             // Update switch position without triggering listener
@@ -1609,6 +1610,17 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 toggle.setTrackTintList(ColorStateList.valueOf(stateColor));
             }
         }
+
+        // Own line, not tvStatus's row - see item_actuator.xml's own comment.
+        // Only for the two terminal states where "why" is worth surfacing:
+        // a forced-off (e.g. Peltier stopped when Circulation Pump is turned
+        // off) and a rejected command.
+        if (reasonView != null) {
+            boolean showReason = (actuator.state == 0 || actuator.state == 3)
+                    && actuator.reason != null && !actuator.reason.isEmpty();
+            reasonView.setText(showReason ? actuator.reason : "");
+            reasonView.setVisibility(showReason ? View.VISIBLE : View.GONE);
+        }
     }
 
     private String actuatorSourceSuffix(Actuator actuator) {
@@ -1653,7 +1665,13 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         // (called from onModeSwitchChanged() and after every command
         // completes) would re-enable the switches for a non-Admin right
         // after setupActuatorUI() correctly disabled them.
-        boolean enabled = isAdminUser() && isManualMode && isCurrentlyOnline && !isSafetyLock;
+        // !isActuatorBusy is required too - this is the same call sendActuatorCommand()/
+        // btnTriggerRefill/btnResetSafety use right after setting isActuatorBusy = true
+        // to lock the panel. Without it here, every switch was being re-enabled the
+        // instant a command started, so a second tap mid-command (while the "Sending
+        // command..."/"Validating..." popup was showing) went through, hijacked the
+        // shared actuatorCommandGeneration tracking, and orphaned the first command's polling.
+        boolean enabled = isAdminUser() && isManualMode && isCurrentlyOnline && !isSafetyLock && !isActuatorBusy;
         setActuatorEnabled(actWaterPumpValve, enabled);
         setActuatorEnabled(actCanopyFan, enabled);
         setActuatorEnabled(actGrowLights, enabled);
@@ -1711,12 +1729,20 @@ public class Parameters_Monitoring_Fragment extends Fragment {
      * one remaining ambiguous case, "genuinely no sensor signal at all"
      * (data.ph absent) vs "a first reading is still being confirmed"
      * (phConfirming=true, "Stabilizing..."). physicalPhCandidate
-     * (debug/physicalSensors/ph, only ever populated while Developer Sensor
-     * Test is active) is kept as a secondary fallback for that same absent
-     * case, preserving the original mechanism unchanged. This is display
-     * status only - it never feeds automation, which continues to use only
-     * the accepted /sensors/ph value and the existing stricter stability
-     * gate exactly as before.
+     * (debug/physicalSensors/ph) is NOT used for this decision - despite an
+     * earlier comment here claiming it's "only ever populated while
+     * Developer Sensor Test is active", the firmware actually publishes it
+     * unconditionally on every optional-job cycle regardless of mock mode
+     * (FirebaseManager.cpp's writeDiagnosticSensors()), including a
+     * disconnected/floating pH ADC's raw noise when no probe is wired at
+     * all. Trusting it here previously made this card flash "Stabilizing…"
+     * on mock-only test rigs with nothing physically connected. phConfirming
+     * alone is a sufficient signal now (it's unconditionally published by
+     * both the mock and physical sensor paths - see SensorManager.cpp's
+     * applyEffectiveSensors()), so the debug candidate is not needed as a
+     * fallback any more. This is display status only - it never feeds
+     * automation, which continues to use only the accepted /sensors/ph
+     * value and the existing stricter stability gate exactly as before.
      */
     private void updateSensorUI() {
         if (!isAdded() || getView() == null) return;
@@ -1725,9 +1751,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             boolean phAccepted = data != null && data.ph != null
                     && !data.ph.isNaN() && !data.ph.isInfinite();
             boolean phBeingConfirmed = data != null && Boolean.TRUE.equals(data.phConfirming);
-            boolean physicalCandidateLive = physicalPhCandidate != null
-                    && !physicalPhCandidate.isNaN() && !physicalPhCandidate.isInfinite();
-            if (!phAccepted && (phBeingConfirmed || physicalCandidateLive)) {
+            if (!phAccepted && phBeingConfirmed) {
                 tvPH.setText("Stabilizing…");
             } else {
                 tvPH.setText(formatSensor(
@@ -1896,6 +1920,26 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 });
     }
 
+    // Firebase never retries a listener cancelled for PERMISSION_DENIED - none
+    // of the six RTDB listeners in observeDeviceData() will ever fire
+    // onDataChange again once that happens (e.g. an Admin unclaimed this
+    // device mid-session). Whichever listener notices first drives the shared
+    // connectivity state to ACCESS_REVOKED immediately, rather than each one
+    // silently going quiet while the banner still says "Reconnecting..." or
+    // "Online" from whatever it last knew. The stale sensor/alert/actuator
+    // values already on screen are deliberately left as-is (same philosophy
+    // as actuatorStatusListener's own onCancelled comment below) - a frozen
+    // last-known reading under a banner that honestly says access was
+    // revoked is not misleading the way it would be under "Reconnecting...".
+    private void handleAccessRevoked(String listenerName, DatabaseError error) {
+        Log.e("RTDB", listenerName + " listener cancelled: " + error.getMessage());
+        if (error.getCode() != DatabaseError.PERMISSION_DENIED || !isAdded()) return;
+        if (connectivityState == DeviceConnectivityState.ACCESS_REVOKED) return;
+        connectivityState = DeviceConnectivityState.ACCESS_REVOKED;
+        isCurrentlyOnline = false;
+        updateConnectionUI();
+    }
+
     private void updateConnectionUI() {
         if (tvConnectionStatus == null || !isAdded()) return;
 
@@ -1917,6 +1961,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 tvConnectionDetail.setText("Device is powered and running locally.\nConnect it to Wi-Fi to restore cloud monitoring.");
             } else if (displayState == DeviceConnectivityState.OFFLINE) {
                 tvConnectionDetail.setText("Basilience cannot communicate with the device.\nCheck its power or network connection.");
+            } else if (displayState == DeviceConnectivityState.ACCESS_REVOKED) {
+                tvConnectionDetail.setText("You no longer have access to this device.\nAsk an Admin to claim it again to resume monitoring.");
             } else {
                 tvConnectionDetail.setText("Restoring Basilience cloud connection...");
             }

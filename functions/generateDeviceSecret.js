@@ -38,6 +38,7 @@ if (!deviceId) {
 }
 
 admin.initializeApp({
+    projectId: "basilience-database",
     databaseURL: "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app"
 });
 

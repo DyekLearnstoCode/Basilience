@@ -116,6 +116,10 @@ public class DevOptionsFragment extends Fragment {
 
     private View containerSensorTest, containerMockData, containerRefill, containerCanopyPwm;
     private View cardAutomationTestMode, containerIgnoreWaterLevel;
+    // Admin-only navigation link, not a chip-toggled tab like the containers
+    // above - visible whenever this screen is in Device Configuration
+    // (maintenanceMode) rather than Developer Options.
+    private View rowTargetRangesLink;
     private MaterialButton btnFilterCanopyPwm;
 
     // Isolated Canopy Fan PWM diagnostic (real-hardware Canopy/Blower PWM
@@ -144,8 +148,6 @@ public class DevOptionsFragment extends Fragment {
     // Mode, the Ignore Water Level safety bypass, Canopy PWM raw commands),
     // while Sensor Test/Refill thresholds stay available to any Admin.
     private boolean isDeveloper = false;
-    private View containerAutomationTestMode;
-    private View containerIgnoreWaterLevel;
 
     private boolean loadingMockState = true;
     private boolean suppressMockSwitchCallback = false;
@@ -182,7 +184,7 @@ public class DevOptionsFragment extends Fragment {
                         RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID, null));
         if ((maintenanceMode && !isAdmin) || (!maintenanceMode && !developerAuthorized)) {
             Toast.makeText(requireContext(), maintenanceMode
-                    ? "Device Maintenance is available to Admin users only"
+                    ? "Device Configuration is available to Admin users only"
                     : "Developer Tester access is required", Toast.LENGTH_SHORT).show();
             navController.popBackStack();
             return;
@@ -207,6 +209,18 @@ public class DevOptionsFragment extends Fragment {
         containerCanopyPwm = view.findViewById(R.id.containerCanopyPwm);
         cardAutomationTestMode = view.findViewById(R.id.cardAutomationTestMode);
         containerIgnoreWaterLevel = view.findViewById(R.id.containerIgnoreWaterLevel);
+        rowTargetRangesLink = view.findViewById(R.id.rowTargetRangesLink);
+        if (rowTargetRangesLink != null) {
+            // Navigates by destination ID rather than a named <action>, since
+            // this row is now only ever shown from the devOptionsFragment
+            // entry point (see configureAccessMode()) but this same
+            // onViewCreated() runs for the deviceMaintenanceFragment entry
+            // point too - a destination-ID navigate works from either
+            // without needing two near-duplicate actions defined in the nav
+            // graph for the same target.
+            rowTargetRangesLink.setOnClickListener(v ->
+                    navController.navigate(R.id.parameterTargetRangesFragment));
+        }
 
         // Canopy Fan PWM test components
         btnCanopyPwm0 = view.findViewById(R.id.btnCanopyPwm0);
@@ -277,6 +291,7 @@ public class DevOptionsFragment extends Fragment {
             Toast.makeText(getContext(), "No device selected", Toast.LENGTH_SHORT).show();
             return;
         }
+        helper.setSelectedDeviceId(currentDeviceId);
 
         String rtdbUrl = "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app";
         deviceRef = FirebaseDatabase.getInstance(rtdbUrl).getReference("devices/" + currentDeviceId);
@@ -291,7 +306,24 @@ public class DevOptionsFragment extends Fragment {
         automationTestModeStatusRef = deviceRef.child("status/automationTestMode");
         manualModeCommandRef = deviceRef.child("commands/manualMode");
 
-        if (isDeveloper) {
+        // Confirmed live bug: this used to run whenever the ACCOUNT had ever
+        // been granted developer status, regardless of which mode this
+        // particular screen visit is - so an Admin who also happens to be a
+        // Developer Tester got this whole block's Firebase listeners wired
+        // even while viewing Device Configuration (maintenanceMode), where
+        // every view it touches is hidden (see configureAccessMode()) but
+        // was never actually skipped underneath. That's exactly what made
+        // "Enable Mock Sensors?" pop up unprompted every time Device
+        // Configuration opened: loadCurrentValues() below (inside this
+        // block) is asynchronous, and the maintenanceMode branch further
+        // down set loadingMockState back to false immediately after kicking
+        // it off, without waiting - so by the time the async read of the
+        // device's actual (already-enabled, from earlier mock testing) mock
+        // state came back and called switchMockEnable.setChecked(true), the
+        // suppression flag meant to guard exactly that programmatic sync
+        // had already been cleared, so the checked-change listener fired as
+        // if a user had tapped it.
+        if (isDeveloper && !maintenanceMode) {
             ArrayAdapter<String> automationModeAdapter = new ArrayAdapter<>(requireContext(),
                     android.R.layout.simple_spinner_item, AUTOMATION_TEST_MODE_LABELS);
             automationModeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
@@ -417,7 +449,7 @@ public class DevOptionsFragment extends Fragment {
             btnFilterCanopyPwm.setOnClickListener(v -> updateFilterSelection("CanopyPwm"));
         }
 
-        if (isDeveloper) {
+        if (isDeveloper && !maintenanceMode) {
             if (btnCanopyPwm0 != null) btnCanopyPwm0.setOnClickListener(v -> sendCanopyPwmTest(0));
             if (btnCanopyPwm30 != null) btnCanopyPwm30.setOnClickListener(v -> sendCanopyPwmTest(30));
             if (btnCanopyPwm50 != null) btnCanopyPwm50.setOnClickListener(v -> sendCanopyPwmTest(50));
@@ -452,7 +484,7 @@ public class DevOptionsFragment extends Fragment {
         TextView subtitle = view.findViewById(R.id.tvToolsSubtitle);
 
         if (maintenanceMode) {
-            if (title != null) title.setText("Device Maintenance");
+            if (title != null) title.setText("Device Configuration");
             if (subtitle != null) subtitle.setText("Safe device diagnostics and production settings.");
             btnFilterMock.setVisibility(View.GONE);
             btnFilterCanopyPwm.setVisibility(View.GONE);
@@ -462,11 +494,20 @@ public class DevOptionsFragment extends Fragment {
             containerIgnoreWaterLevel.setVisibility(View.GONE);
             btnEnableProvisioningAp.setVisibility(View.GONE);
             btnDisableDeveloperMode.setVisibility(View.GONE);
+            if (rowTargetRangesLink != null) rowTargetRangesLink.setVisibility(View.GONE);
         } else {
+            if (title != null) title.setText("Developer Options");
+            if (subtitle != null) subtitle.setText("For IT experts and developers - testing and maintenance tools only.");
             btnFilterSensorTest.setVisibility(View.GONE);
             btnFilterRefill.setVisibility(View.GONE);
             containerSensorTest.setVisibility(View.GONE);
             containerRefill.setVisibility(View.GONE);
+            // Moved here from Device Configuration by request - target
+            // ranges belong with the other developer/testing tools now.
+            // ParameterTargetRangesFragment's own canEdit bounce-back still
+            // refuses anyone who isn't an Admin, so this doesn't loosen who
+            // can actually change ranges, only where the entry point lives.
+            if (rowTargetRangesLink != null) rowTargetRangesLink.setVisibility(View.VISIBLE);
         }
     }
 
@@ -708,6 +749,22 @@ public class DevOptionsFragment extends Fragment {
         if (!canopyManualModeOn) {
             Toast.makeText(getContext(), "Enable Manual Mode on the Monitoring screen first", Toast.LENGTH_SHORT).show();
             return;
+        }
+
+        // Defensive re-resolution: onViewCreated() sets dbHelper's device ID
+        // exactly once. If that happened to run before selected_device_id
+        // was actually available (a real observed failure mode - "No device
+        // selected" on every attempt to control the fan, for the rest of
+        // this screen's life), dbHelper's device stayed permanently unset
+        // with no way to recover short of leaving and re-entering the
+        // screen. Re-check and self-heal here instead, the same defensive
+        // pattern Parameters_Monitoring_Fragment already uses for its own
+        // connectivity listener.
+        if (dbHelper.getSelectedDeviceId() == null && getContext() != null) {
+            String retryDeviceId = getContext()
+                    .getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE)
+                    .getString("selected_device_id", null);
+            if (retryDeviceId != null) dbHelper.setSelectedDeviceId(retryDeviceId);
         }
 
         canopyPwmTestActive = percent > 0;

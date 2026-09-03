@@ -33,6 +33,7 @@ public class DeviceConnectionManager {
     private Boolean backendOnline;
     private Long lastServerSeen;
     private boolean provisioning;
+    private boolean accessRevoked;
     private final Handler stateHandler = new Handler(Looper.getMainLooper());
     private final Runnable stateRefresh = new Runnable() {
         @Override
@@ -139,7 +140,15 @@ public class DeviceConnectionManager {
     }
 
     public void monitorDevice(String deviceId) {
-        if (deviceId == null || deviceId.equals(currentDeviceId)) {
+        // The accessRevoked check matters: once a listener is marked
+        // revoked it's permanently dead (Firebase never retries a
+        // PERMISSION_DENIED listener), and the current-device check below
+        // would otherwise treat re-requesting the SAME device as a no-op
+        // forever. Without this, unclaiming then re-claiming the same
+        // device (with no other device viewed in between) left the screen
+        // stuck on "Access Revoked" even though access was genuinely
+        // restored - nothing ever re-established a live listener.
+        if (deviceId == null || (deviceId.equals(currentDeviceId) && !accessRevoked)) {
             return;
         }
 
@@ -151,6 +160,7 @@ public class DeviceConnectionManager {
         backendOnline = null;
         lastServerSeen = null;
         provisioning = false;
+        accessRevoked = false;
         connectivityState.setValue(DeviceConnectivityState.RECONNECTING);
         onlineStatus.setValue(false);
 
@@ -175,8 +185,23 @@ public class DeviceConnectionManager {
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 android.util.Log.e(TAG, "Status listener cancelled: " + error.getMessage());
-                // A cancelled listener is not an authoritative status/online=false event.
-                // Retain the last backend-reported presence value.
+                if (error.getCode() == DatabaseError.PERMISSION_DENIED) {
+                    // The RTDB rules denied this read outright (e.g. an Admin
+                    // unclaimed this device). Firebase does not retry a
+                    // permission-denied listener - onDataChange will never
+                    // fire again on this ref - so without this the UI would
+                    // be stuck showing "Reconnecting..." forever. Stop the
+                    // periodic refresh too, since it would just keep
+                    // re-deriving the same stale RECONNECTING result from
+                    // data that can no longer change.
+                    accessRevoked = true;
+                    stateHandler.removeCallbacks(stateRefresh);
+                    connectivityState.setValue(DeviceConnectivityState.ACCESS_REVOKED);
+                    onlineStatus.setValue(false);
+                    return;
+                }
+                // Any other cancellation is not an authoritative status/online=false
+                // event. Retain the last backend-reported presence value.
             }
         };
         statusRef.addValueEventListener(statusListener);
@@ -185,6 +210,12 @@ public class DeviceConnectionManager {
     }
 
     private void publishResolvedState() {
+        // Once access has been revoked there is no data left to re-derive a
+        // state from - and the periodic refresh runnable is stopped in
+        // onCancelled anyway - but this guards against the one already-queued
+        // tick that could still be in flight when that happens.
+        if (accessRevoked) return;
+
         // System.currentTimeMillis() alone assumes this device's clock agrees
         // with the Cloud Function's server clock that authored lastServerSeen -
         // see the field comment on serverTimeOffsetMs for why that assumption
@@ -224,6 +255,7 @@ public class DeviceConnectionManager {
         backendOnline = null;
         lastServerSeen = null;
         provisioning = false;
+        accessRevoked = false;
         connectivityState.setValue(DeviceConnectivityState.RECONNECTING);
         onlineStatus.setValue(false);
         currentDeviceId = null;

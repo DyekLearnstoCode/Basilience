@@ -170,16 +170,20 @@ public class Personnel_Main_Fragment extends Fragment {
             });
             helper.linkExistingPersonnelByEmail(email).addOnSuccessListener(unused -> {
                 if (!isAdded()) return;
-                dismissLoading();
-                d.dismiss();
-                NotificationHelper.showSuccess(requireContext(), "Personnel linked successfully.");
-                loadFarmersFromFirestore();
+                dismissLoading(() -> {
+                    if (!isAdded()) return;
+                    d.dismiss();
+                    NotificationHelper.showSuccess(requireContext(), "Personnel linked successfully.");
+                    loadFarmersFromFirestore();
+                });
             }).addOnFailureListener(e -> {
                 if (!isAdded()) return;
-                dismissLoading();
-                if (positive != null) positive.setEnabled(true);
-                if (negative != null) negative.setEnabled(true);
-                NotificationHelper.showError(requireContext(), e.getMessage());
+                dismissLoading(() -> {
+                    if (!isAdded()) return;
+                    if (positive != null) positive.setEnabled(true);
+                    if (negative != null) negative.setEnabled(true);
+                    NotificationHelper.showError(requireContext(), e.getMessage());
+                });
             });
         });
 
@@ -190,7 +194,15 @@ public class Personnel_Main_Fragment extends Fragment {
     }
 
     private void dismissLoading() {
-        if (loadingHandle != null) loadingHandle.dismiss();
+        dismissLoading(null);
+    }
+
+    private void dismissLoading(Runnable afterHidden) {
+        if (loadingHandle != null) {
+            loadingHandle.dismiss(afterHidden);
+        } else if (afterHidden != null) {
+            afterHidden.run();
+        }
         loadingHandle = null;
     }
 

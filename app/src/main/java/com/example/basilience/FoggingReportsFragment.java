@@ -47,6 +47,7 @@ import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
+import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
@@ -144,6 +145,12 @@ public class FoggingReportsFragment extends Fragment {
     // icon-only ImageButton); only View-level setOnClickListener() is ever
     // called on it, so this type change carries no behavior difference.
     private MaterialButton btnShare;
+    // Defense-in-depth, mirroring SystemReportsFragment's own userRole/
+    // updateUIForRole() gate - the Reports tab is already hidden from
+    // non-Admins in the bottom nav (MainActivity), but this fragment
+    // shouldn't rely on that alone being the only thing standing between a
+    // non-Admin and PDF export if it's ever reached another way.
+    private String userRole = RoleConstants.ROLE_FARMER;
     private String currentSelectedFilter = "Entire Cycle";
     private String selectedDeviceId;
 
@@ -273,6 +280,7 @@ public class FoggingReportsFragment extends Fragment {
         if (btnShare != null) {
             btnShare.setOnClickListener(v -> exportPdf());
         }
+        fetchUserInfo();
 
         spinnerCycle.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
@@ -488,6 +496,24 @@ public class FoggingReportsFragment extends Fragment {
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerCycle.setAdapter(adapter);
         spinnerCycle.setSelection(preselect);
+
+        // Same confirmed bug as SystemReportsFragment's identical method:
+        // Spinner.setSelection() does not reliably fire onItemSelectedListener
+        // when the position matches what the adapter already auto-selected
+        // (most commonly position 0). Set selectedCycle directly here rather
+        // than depending solely on the listener, which only reliably fires
+        // for a later, user-driven change.
+        Cycle newlySelected = cycles.get(preselect);
+        boolean cycleChanged = selectedCycle == null
+                || !Objects.equals(selectedCycle.getCycleId(), newlySelected.getCycleId());
+        selectedCycle = newlySelected;
+        if (cycleChanged) {
+            customStartMs = null;
+            customEndMs = null;
+            currentSelectedFilter = "Entire Cycle";
+        }
+        updatePeriodChipsForSelectedCycle();
+        loadData();
     }
 
     private String cycleSpinnerLabel(Cycle c) {
@@ -569,7 +595,13 @@ public class FoggingReportsFragment extends Fragment {
     // ------------------------------------------------------------------
 
     private void startCustomRangeSelection() {
-        if (selectedCycle == null) return;
+        if (selectedCycle == null) {
+            // Previously a silent no-op - a user tapping Custom before a
+            // cycle finished resolving saw nothing happen with no
+            // explanation at all.
+            Toast.makeText(getContext(), "Select a cycle first.", Toast.LENGTH_SHORT).show();
+            return;
+        }
         long cycleStartMs = currentCycleStartMs();
         long cycleEndMs = currentCycleEndMs();
         long initialStart = customStartMs != null ? customStartMs : cycleStartMs;
@@ -1650,6 +1682,25 @@ public class FoggingReportsFragment extends Fragment {
     // produced the visible report; never re-queries a different range.
     // ------------------------------------------------------------------
 
+    // Mirrors SystemReportsFragment's own fetchUserInfo()/updateUIForRole() -
+    // btnShare's Admin-only visibility must not depend solely on this screen
+    // being reachable only via the Admin-gated Reports tab.
+    private void fetchUserInfo() {
+        String uid = FirebaseAuth.getInstance().getUid();
+        if (uid == null || dbHelper == null) return;
+        dbHelper.getUserProfile(uid).addOnSuccessListener(documentSnapshot -> {
+            if (!isAdded() || !documentSnapshot.exists()) return;
+            userRole = documentSnapshot.getString("role");
+            updateUIForRole();
+        });
+    }
+
+    private void updateUIForRole() {
+        if (btnShare != null) {
+            btnShare.setVisibility(RoleConstants.ROLE_ADMIN.equalsIgnoreCase(userRole) ? View.VISIBLE : View.GONE);
+        }
+    }
+
     private void exportPdf() {
         if (!isAdded() || getContext() == null) return;
         // Both currentFilter and currentSummary are cleared together
@@ -1660,7 +1711,18 @@ public class FoggingReportsFragment extends Fragment {
             Toast.makeText(getContext(), "Load a fogging report before exporting.", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (processedSessions == null || processedSessions.isEmpty()) {
+        // Confirmed live bug: processedSessions only ever holds COMPLETED
+        // sessions (renderReport() sets it from summary.getCompletedSessions(),
+        // which excludes the currently-running one), but the visible report
+        // - and totalSessionCount/currentTotals - DOES count a running
+        // session. A farmer opening this screen while fogging is actively
+        // running, with no other completed session in the selected window
+        // (e.g. the "Today" filter on the day's first session), saw a fully
+        // populated report on screen yet got "No fogging data available to
+        // export" when tapping Share. Check the same total the report
+        // itself used to decide whether there's anything to show, not the
+        // completed-only list.
+        if (currentTotals.totalSessionCount == 0) {
             Toast.makeText(getContext(), "No fogging data available to export.", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -1734,10 +1796,17 @@ public class FoggingReportsFragment extends Fragment {
                 }
                 try {
                     Uri contentUri = FileProvider.getUriForFile(appContext, packageName + ".fileprovider", result);
-                    Intent intent = new Intent(Intent.ACTION_VIEW);
-                    intent.setDataAndType(contentUri, "application/pdf");
+                    // ACTION_SEND, not ACTION_VIEW - a "share sheet" hands the
+                    // file to another app (Drive, email, Messenger, etc.), which
+                    // ACTION_VIEW + createChooser does not do, it only offers a
+                    // viewer. Matches SystemReportsFragment's PDF/CSV export.
+                    Intent intent = new Intent(Intent.ACTION_SEND);
+                    intent.setType("application/pdf");
+                    intent.putExtra(Intent.EXTRA_SUBJECT, "Basilience Fogging Report");
+                    intent.putExtra(Intent.EXTRA_TEXT, "Attached is the fogging report for " + filter.periodLabel + ".");
+                    intent.putExtra(Intent.EXTRA_STREAM, contentUri);
                     intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    startActivity(Intent.createChooser(intent, "Open PDF Report"));
+                    startActivity(Intent.createChooser(intent, "Export Report via:"));
                 } catch (Exception e) {
                     Log.e("FoggingReports", "Error opening PDF", e);
                     NotificationHelper.showError(getContext(), "We couldn't open the PDF report.");

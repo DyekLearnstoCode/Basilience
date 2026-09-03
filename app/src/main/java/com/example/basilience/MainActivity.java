@@ -373,7 +373,17 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
-            public void onCancelled(DatabaseError error) {}
+            public void onCancelled(DatabaseError error) {
+                if (error.getCode() != DatabaseError.PERMISSION_DENIED) return;
+                // A permission-denied listener is never retried, so
+                // onDataChange will never fire again on this ref. If the
+                // card happened to be visible (dosing active) the moment
+                // access was revoked, it would otherwise stay stuck showing
+                // that stale "Device Alert" banner forever. Hide it rather
+                // than keep trusting data that can no longer update.
+                MaterialCardView card = findViewById(R.id.summaryAlertCard);
+                if (card != null) card.setVisibility(View.GONE);
+            }
         };
         summaryStatusRef.addValueEventListener(summaryAlertListener);
     }
@@ -879,6 +889,18 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 Log.e("ParameterAlerts", "Current alert listener cancelled", error.toException());
+                if (error.getCode() != DatabaseError.PERMISSION_DENIED) return;
+                // Same reasoning as summaryAlertListener's onCancelled: this
+                // listener is dead now, so any alert dialog left showing at
+                // the moment access was revoked would otherwise stay open
+                // forever with no way to know it's stale. Mark every
+                // currently-active alert type false through the same path
+                // onDataChange uses, so reconcileCurrentParameterAlerts()
+                // dismisses it exactly as if the alerts had genuinely cleared.
+                for (String type : new HashSet<>(activeParameterAlerts.keySet())) {
+                    currentParameterAlertStates.put(type, false);
+                }
+                reconcileCurrentParameterAlerts();
             }
         };
 

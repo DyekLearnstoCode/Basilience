@@ -31,10 +31,13 @@ import java.util.Map;
  * {@code /devices/{deviceId}/settings} node - the same values the device,
  * Monitoring and Reports already read - so there is no second settings store.
  *
- * <p>Assigned Personnel can open this screen and see the active ranges but not
- * change them, matching the RTDB rule that already restricts writes to
- * {@code settings} to an Admin. The read-only presentation exists so the app
- * agrees with the server rather than offering a Save that would be rejected.
+ * <p>Reached only from Developer Options (DevOptionsFragment's non-maintenance
+ * mode, see its rowTargetRangesLink), never from a direct Settings row.
+ * Admin-only, not just for writes: this screen bounces back anyone who
+ * isn't an Admin, since target ranges are crop-specific and set by whoever
+ * administers this device - reachability through Developer Options doesn't
+ * loosen that, a Developer Tester who isn't also an Admin still gets
+ * refused here.
  */
 public class ParameterTargetRangesFragment extends Fragment {
 
@@ -52,7 +55,6 @@ public class ParameterTargetRangesFragment extends Fragment {
 
     private Database_Helper dbHelper;
     private MaterialButton btnSave;
-    private View tvViewOnlyNotice;
     private String deviceId;
     private boolean canEdit;
     private boolean loaded;
@@ -77,7 +79,6 @@ public class ParameterTargetRangesFragment extends Fragment {
         }
 
         btnSave = view.findViewById(R.id.btnSaveTargetRanges);
-        tvViewOnlyNotice = view.findViewById(R.id.tvViewOnlyNotice);
 
         SharedPreferences prefs = requireContext()
                 .getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
@@ -85,18 +86,23 @@ public class ParameterTargetRangesFragment extends Fragment {
         String role = prefs.getString("user_role", RoleConstants.ROLE_FARMER);
         canEdit = RoleConstants.ROLE_ADMIN.equalsIgnoreCase(role);
 
-        bindInputs(view);
-
         if (!canEdit) {
-            // Matches the RTDB rule: only an Admin may write settings.
-            if (tvViewOnlyNotice != null) tvViewOnlyNotice.setVisibility(View.VISIBLE);
-            if (btnSave != null) btnSave.setVisibility(View.GONE);
-            for (RangeInputs r : inputs.values()) {
-                setEditable(r, false);
-            }
-        } else if (btnSave != null) {
-            btnSave.setOnClickListener(v -> save());
+            // Admin-only screen: crop-specific target ranges are set by
+            // whoever administers this device, not by assigned Personnel.
+            // Previously Personnel could open this read-only (matching only
+            // the RTDB write rule, not visibility), by explicit decision
+            // that's no longer wanted - the only way in is Device
+            // Configuration's rowTargetRangesLink, itself Admin-only, and
+            // this is the same bounce-back already used just below for "no
+            // device selected", so reaching this screen any other way
+            // (back-stack, deep link) is refused the same way.
+            NotificationHelper.showError(requireContext(), "Admins only");
+            Navigation.findNavController(view).popBackStack();
+            return;
         }
+
+        bindInputs(view);
+        if (btnSave != null) btnSave.setOnClickListener(v -> save());
 
         if (deviceId == null || deviceId.isEmpty()) {
             NotificationHelper.showError(requireContext(), "No device selected");
@@ -142,11 +148,6 @@ public class ParameterTargetRangesFragment extends Fragment {
         };
         if (r.minField != null) r.minField.addTextChangedListener(watcher);
         if (r.maxField != null) r.maxField.addTextChangedListener(watcher);
-    }
-
-    private void setEditable(RangeInputs r, boolean editable) {
-        if (r.minField != null) { r.minField.setEnabled(editable); r.minField.setFocusable(editable); }
-        if (r.maxField != null) { r.maxField.setEnabled(editable); r.maxField.setFocusable(editable); }
     }
 
     // ------------------------------------------------------------------

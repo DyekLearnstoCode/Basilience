@@ -49,11 +49,9 @@ public class SettingsFragment extends Fragment {
         // Account Information
         bindSettingsRow(view, R.id.rowAccount, navController, R.id.action_settings_to_accountFragment);
 
-        // Parameter Target Ranges - a normal cultivation setting, so it sits
-        // with the other Settings rows rather than under Developer Options.
-        bindSettingsRow(view, R.id.rowTargetRanges, navController,
-                R.id.action_settings_to_targetRangesFragment);
-
+        // Parameter Target Ranges now lives inside Device Configuration
+        // (the Admin-only DevOptionsFragment mode) rather than as its own
+        // Settings row - see that screen's rowTargetRangesLink.
         deviceMaintenanceContainer = view.findViewById(R.id.deviceMaintenanceContainer);
         bindSettingsRow(view, R.id.deviceMaintenanceContainer, navController,
                 R.id.action_settings_to_deviceMaintenanceFragment);
@@ -101,13 +99,16 @@ public class SettingsFragment extends Fragment {
         if (deviceMaintenanceContainer != null) {
             deviceMaintenanceContainer.setVisibility(isAdmin ? View.VISIBLE : View.GONE);
         }
+
+        String deviceId = prefs.getString("selected_device_id", null);
+        boolean hasSelectedDevice = deviceId != null && !deviceId.trim().isEmpty();
+
         boolean isDeveloperTester = RoleConstants.isDeveloperTester(prefs);
         if (!isDeveloperTester) {
             devOptionsContainer.setVisibility(View.GONE);
             return;
         }
-        String deviceId = prefs.getString("selected_device_id", null);
-        if (deviceId == null || deviceId.trim().isEmpty()) {
+        if (!hasSelectedDevice) {
             devOptionsContainer.setVisibility(View.GONE);
             return;
         }

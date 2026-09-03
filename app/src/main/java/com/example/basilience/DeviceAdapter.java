@@ -75,6 +75,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
         private Boolean backendOnline;
         private Long lastServerSeen;
         private boolean provisioning;
+        private boolean accessRevoked;
         private final Handler statusHandler = new Handler(Looper.getMainLooper());
         private final Runnable refreshStatus = new Runnable() {
             @Override
@@ -111,6 +112,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
             backendOnline = null;
             lastServerSeen = null;
             provisioning = false;
+            accessRevoked = false;
             applyStatus(DeviceConnectivityState.RECONNECTING);
 
             // Realtime listener for live status updates
@@ -133,6 +135,15 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
                     public void onCancelled(@NonNull DatabaseError error) {
                         Log.w("DeviceAdapter", "status listener cancelled for "
                                 + device.getDeviceId() + ": " + error.getMessage());
+                        if (error.getCode() == DatabaseError.PERMISSION_DENIED) {
+                            // Same reasoning as DeviceConnectionManager's onCancelled:
+                            // a permission-denied listener is never retried, so
+                            // without this the row would show "Reconnecting..."
+                            // forever with no further update ever arriving.
+                            accessRevoked = true;
+                            statusHandler.removeCallbacks(refreshStatus);
+                            applyStatus(DeviceConnectivityState.ACCESS_REVOKED);
+                        }
                     }
                 };
 
@@ -165,9 +176,13 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
             backendOnline = null;
             lastServerSeen = null;
             provisioning = false;
+            accessRevoked = false;
         }
 
         private void applyResolvedStatus() {
+            // Guards against an already-queued refreshStatus tick landing
+            // after onCancelled has already set the terminal revoked state.
+            if (accessRevoked) return;
             applyStatus(DeviceConnectionManager.resolveState(
                     backendOnline, lastServerSeen, provisioning, System.currentTimeMillis()));
         }

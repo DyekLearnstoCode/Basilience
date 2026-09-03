@@ -50,6 +50,19 @@
 
         </LinearLayout>
 
+        <!-- Reason detail for a forced-off/rejected actuator (e.g. "Peltier
+             stopped: Circulation unavailable.") - kept off tvStatus's row so a
+             long sentence never squeezes tvActuatorName into a vertical
+             letter-wrap. GONE by default; the fragment reveals it per-card. -->
+        <TextView
+            android:id="@+id/tvActuatorReason"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textSize="11sp"
+            android:textColor="@color/nav_inactive"
+            android:visibility="gone" />
+
         <!-- Variable-speed control - only shown for PWM-capable actuators
              (Canopy Fan, Reservoir Fan). GONE by default; the fragment
              reveals it per-card. -->
