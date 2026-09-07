@@ -63,6 +63,17 @@
                     android:gravity="center"
                     android:text="Production for this cultivation cycle" />
 
+                <!-- Confirms which device this harvest history belongs to. -->
+                <TextView
+                    android:id="@+id/tvDeviceScopeLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:textColor="#3D8B3D"
+                    android:textSize="13sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:layout_marginTop="@dimen/ds_space_xs" />
+
             </LinearLayout>
 
             <!-- CYCLE CONTEXT ROW: cycle identity and status on the left,

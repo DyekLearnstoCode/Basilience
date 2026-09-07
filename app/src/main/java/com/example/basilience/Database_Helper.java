@@ -423,6 +423,27 @@ public class Database_Helper {
      * scale - so this is per-device data on the devices/{deviceId}
      * document, not a fixed app-wide value.
      */
+    /**
+     * Renames a claimed device (the friendly deviceName shown throughout
+     * the app, not the immutable deviceId/document ID). Same Admin-gated,
+     * ownerUid-unchanged update path as setHarvestScaleId() below - the
+     * Firestore rule for devices/{deviceId} already allows the owning
+     * Admin to update any field other than ownerUid, so no rules change is
+     * needed here. Unlike the harvest scale pairing, a blank name is
+     * rejected rather than treated as "clear it" - every device must have
+     * a name.
+     */
+    public Task<Void> renameDevice(String deviceId, String newName) {
+        if (deviceId == null) return Tasks.forException(new Exception("No device selected"));
+        String trimmed = newName == null ? "" : newName.trim();
+        if (trimmed.isEmpty()) {
+            return Tasks.forException(new IllegalArgumentException("Device name cannot be empty"));
+        }
+
+        return checkAdminTask().onSuccessTask(aVoid ->
+                db.collection("devices").document(deviceId).update("deviceName", trimmed));
+    }
+
     public Task<Void> setHarvestScaleId(String deviceId, String scaleDeviceId) {
         if (deviceId == null) return Tasks.forException(new Exception("No device selected"));
         String trimmed = scaleDeviceId == null ? null : scaleDeviceId.trim();
@@ -592,7 +613,13 @@ public class Database_Helper {
                                         + " deviceId=" + deviceIdAtCallTime, e));
                     } else {
                         Log.e(TAG, "[MANUAL-APP] Rejected: manual mode not enabled actuator=" + actuatorName);
-                        return Tasks.forException(new Exception("Manual mode must be enabled to control actuators."));
+                        // IllegalStateException specifically (not a bare Exception)
+                        // so the caller can reliably tell this expected business-
+                        // rule rejection apart from an actual Firebase/network
+                        // failure by type, and surface this message directly
+                        // instead of a generic "command failed, try again" that
+                        // doesn't explain why (see Parameters_Monitoring_Fragment).
+                        return Tasks.forException(new IllegalStateException("Manual mode must be enabled to control actuators."));
                     }
                 });
     }
@@ -1301,7 +1328,15 @@ public class Database_Helper {
                 String currentOwnerUid = document.getString("ownerUid");
                 String status = document.getString("status");
                 if (currentOwnerUid != null || "CLAIMED".equals(status)) {
-                    throw new FirebaseFirestoreException("Device is already claimed.",
+                    // Distinguishes "you already claimed this one" from "someone
+                    // else owns it" - both used to surface as the same generic
+                    // "check token" message client-side (DeviceFragment), which
+                    // misled a user re-entering a token for a device they'd
+                    // already claimed into thinking the token itself was wrong.
+                    String message = adminUid.equals(currentOwnerUid)
+                            ? "You have already claimed this device."
+                            : "This device is already claimed by another account.";
+                    throw new FirebaseFirestoreException(message,
                             FirebaseFirestoreException.Code.ALREADY_EXISTS);
                 }
 

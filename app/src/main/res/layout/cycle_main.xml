@@ -43,6 +43,17 @@
                 android:gravity="center"
                 android:text="Growth Cycles" />
 
+            <!-- Confirms which device these growth cycles belong to. -->
+            <TextView
+                android:id="@+id/tvDeviceScopeLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:textColor="#3D8B3D"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:layout_marginTop="4dp" />
+
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

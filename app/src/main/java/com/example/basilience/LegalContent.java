@@ -164,15 +164,22 @@ public final class LegalContent {
      * read before an account exists - reading them must never require signing
      * in first. Unlike the post-login Settings screens (ToSFragment /
      * PrivacyPolicyFragment), which have their own header Back control, this
-     * dialog's body is plain read-only text with no button of its own -
-     * "Back" here is the shared dialog shell's existing tertiary dismiss
-     * button (see NotificationHelper.showCustomViewDialog), not a new control.
+     * used to rely only on the shared dialog shell's plain-text tertiary
+     * dismiss button, which wasn't reading as a real "back" control sitting
+     * below a long document - dialog_legal_text.xml now has its own
+     * conventional top-left back arrow (btnLegalBack), wired below, matching
+     * every other screen's header Back button instead.
      */
     public static void showReadOnly(Context context, String title, String body) {
         if (context == null) return;
         View content = LayoutInflater.from(context).inflate(R.layout.dialog_legal_text, null);
         TextView tvBody = content.findViewById(R.id.tvLegalBody);
         if (tvBody != null) tvBody.setText(body);
-        NotificationHelper.showCustomViewDialog(context, title, content, "Back");
+
+        android.app.Dialog dialog = NotificationHelper.showCustomViewDialog(context, title, content);
+        View btnBack = content.findViewById(R.id.btnLegalBack);
+        if (btnBack != null && dialog != null) {
+            btnBack.setOnClickListener(v -> dialog.dismiss());
+        }
     }
 }

@@ -143,6 +143,9 @@ public class Cycle_Details_Fragment extends Fragment {
 
         if (deviceId != null) {
             dbHelper.setSelectedDeviceId(deviceId);
+            if (getView() != null) {
+                NotificationHelper.bindDeviceLabel(getView().findViewById(R.id.tvDeviceScopeLabel), deviceId);
+            }
             cycleListener = dbHelper.listenToCycles((snapshot, e) -> {
                 if (!isAdded()) return;
                 if (e != null) {

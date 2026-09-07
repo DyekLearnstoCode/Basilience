@@ -108,10 +108,18 @@ public class WifiConfigFragment extends Fragment {
         String deviceId = prefs.getString("selected_device_id", "");
 
         if (deviceId.isEmpty()) {
+            // Previously the toast vanished and the screen stayed on-screen
+            // with SSID/password fields still interactive but deviceRef and
+            // every status listener below never set up - the user could type
+            // and tap Save with no way for the screen to ever complete or
+            // explain why. Exit the same recoverable way as the other
+            // device-scoped screens.
             Toast.makeText(getContext(), "Device ID not found", Toast.LENGTH_SHORT).show();
+            navController.popBackStack();
             return;
         }
         selectedDeviceId = deviceId;
+        NotificationHelper.bindDeviceLabel(view.findViewById(R.id.tvDeviceScopeLabel), deviceId);
 
         // Defensive, not redundant - see the matching call/comment in
         // Parameters_Monitoring_Fragment.startRealTimeMonitoring(). Confirmed
@@ -139,7 +147,10 @@ public class WifiConfigFragment extends Fragment {
                 .getReference("devices").child(deviceId);
         Log.d(TAG, "[WiFiSuccessTrace] listener path=devices/" + selectedDeviceId + "/status");
 
-        btnSaveWifi.setOnClickListener(v -> handleSaveCredentials());
+        btnSaveWifi.setOnClickListener(v -> {
+            NotificationHelper.hideKeyboard(v);
+            handleSaveCredentials();
+        });
         attachWifiStatusListener();
         checkSetupApReachability();
 

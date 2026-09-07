@@ -83,6 +83,21 @@
                     android:text="Parameter Reports"
                     android:textSize="18sp"
                     android:textColor="@color/state_primary_text"/>
+
+                <FrameLayout
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:background="@drawable/circle_button"
+                    android:gravity="center">
+
+                    <ImageView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:src="@drawable/enter_arrow"
+                        app:tint="@color/black" />
+
+                </FrameLayout>
             </LinearLayout>
 
             <!-- FOGGING REPORTS CARD -->
@@ -114,6 +129,21 @@
                     android:text="Fogging Reports"
                     android:textSize="18sp"
                     android:textColor="@color/state_primary_text"/>
+
+                <FrameLayout
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:background="@drawable/circle_button"
+                    android:gravity="center">
+
+                    <ImageView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:src="@drawable/enter_arrow"
+                        app:tint="@color/black" />
+
+                </FrameLayout>
             </LinearLayout>
 
         </LinearLayout>

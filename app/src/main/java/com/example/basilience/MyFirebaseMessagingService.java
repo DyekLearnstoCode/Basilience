@@ -255,6 +255,26 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
             return;
         }
 
+        // Same selected-device guard validateAndShowConnectivity() already
+        // applies (see its own comment above). Without this, a popup for a
+        // DIFFERENT device than the one currently on screen could be tapped
+        // while Parameters_Monitoring_Fragment was already showing another
+        // device - MainActivity.openParametersFromAlert() only reloads that
+        // screen when navigating to a NEW destination, so tapping "View" for
+        // an off-screen device's alert while already on Parameters left the
+        // previous device's live listeners running and any command sent
+        // from that screen still targeted the previous device, not the one
+        // the alert/notification named. See the task report's cross-device
+        // audit for the full repro.
+        String selectedDeviceId = getSharedPreferences("basilience_prefs", MODE_PRIVATE)
+                .getString("selected_device_id", null);
+        if (!deviceId.equals(selectedDeviceId)) {
+            Log.i(TAG, "Discarded parameter alert for non-selected device " + deviceId);
+            Log.i(TAG, "DROP_REASON selected_device_mismatch eventDevice=" + deviceId
+                    + " selectedDevice=" + selectedDeviceId);
+            return;
+        }
+
         FirebaseDatabase.getInstance(RTDB_URL)
                 .getReference("devices")
                 .child(deviceId)

@@ -134,10 +134,11 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         // actuator is running under a confirmed manual override (see
         // ManualOverrideAdvisor / ActuatorManager::validateCommand).
         boolean overrideActive;
-        // Mirrors actuatorStatus/{key}/speed (0-100 PWM duty). Only ever
-        // driven by firmware for PWM-capable actuators (Canopy Fan,
-        // Reservoir Fan - see ActuatorManager::isPwmActuator); every other
-        // actuator just carries firmware's constant default of 100.
+        // Mirrors actuatorStatus/{key}/speed (0-100 PWM duty). Canopy Fan and
+        // Reservoir Fan are PWM-capable, but their speed is decided entirely
+        // by firmware now - there is no app-side speed control (see
+        // setupActuatorUI()'s own comment) - so every actuator tracked here
+        // just displays whatever speed firmware last published.
         int speed = 100;
 
         Actuator(String name, String dbKey) {
@@ -406,6 +407,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                                             pollOperationUntilDone(requestId, "Refill", 0);
                                         })
                                         .addOnFailureListener(e -> {
+                                            if (!isAdded()) return;
                                             hideActuatorLoading();
                                             isActuatorBusy = false;
                                             updateActuatorControls();
@@ -459,6 +461,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                                             pollOperationUntilDone(requestId, "Reset Safety", 0);
                                         })
                                         .addOnFailureListener(e -> {
+                                            if (!isAdded()) return;
                                             hideActuatorLoading();
                                             isActuatorBusy = false;
                                             updateActuatorControls();
@@ -546,11 +549,27 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         Log.d(SENSOR_UI_TAG, "[SENSOR-UI] monitoring view created");
 
         if (deviceId == null) {
+            // Previously logged only (Log.e, no toast, no exit) - the screen
+            // then rendered as if functional with the reveal overlay/timeout
+            // never armed and monitoring never started, leaving the user on
+            // a permanently non-functional screen with zero explanation.
+            // Matches the same recoverable-exit fix applied to
+            // DevOptionsFragment/ParameterTargetRangesFragment.
             Log.e("Monitoring", "No device selected");
+            if (getContext() != null) {
+                Toast.makeText(getContext(), "No device selected", Toast.LENGTH_SHORT).show();
+            }
+            View currentView = getView();
+            if (currentView != null) {
+                Navigation.findNavController(currentView).popBackStack();
+            }
             return;
         }
 
         dbHelper.setSelectedDeviceId(deviceId);
+        if (getView() != null) {
+            NotificationHelper.bindDeviceLabel(getView().findViewById(R.id.tvDeviceScopeLabel), deviceId);
+        }
 
         // Defensive, not redundant: monitorDevice() only ever gets triggered
         // centrally from MainActivity (on its own onCreate() and on a
@@ -581,12 +600,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         sensorLiveData.setValue(null);
         sensorReadErrorLiveData.setValue(false);
 
-        if (deviceId == null) {
-            Log.e("Monitoring", "No device selected");
-            return;
-        }
-
-        dbHelper.setSelectedDeviceId(deviceId);
+        // deviceId is guaranteed non-null past the guard above - dropped a
+        // second, unreachable duplicate of that same check that used to sit
+        // here (deviceId is never reassigned in between).
         sensorRepository.startListening(deviceId, sensorLiveData, sensorReadErrorLiveData);
         if (!isCurrentlyOnline) confirmSetupApReachability(deviceId);
 
@@ -969,6 +985,10 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     // ACTUATOR UI SETUP — tap shows loading popup, not inline
     // =========================================================
 
+    // Canopy Fan and Reservoir Fan (Blower) get a plain on/off toggle here
+    // like every other actuator - there is deliberately no speed slider.
+    // Speed is decided entirely by firmware now, not the app (per the
+    // adviser's direction to move that decision to the firmware side).
     private void setupActuatorUI(View card, Actuator actuator) {
         TextView nameTv = card.findViewById(R.id.tvActuatorName);
         if (nameTv != null) nameTv.setText(actuator.name);
@@ -982,8 +1002,6 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         // enabled for any signed-in Personnel/Farmer whenever Manual Mode was on,
         // even though every command they sent was guaranteed to fail server-side.
         boolean isAdmin = isAdminUser();
-
-        setupSpeedControl(card, actuator, isAdmin);
 
         // Clear any previous listener first
         toggle.setOnCheckedChangeListener(null);
@@ -1051,63 +1069,6 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             }
 
             sendActuatorCommand(card, actuator, checked, false);
-        });
-    }
-
-    /**
-     * Variable-speed slider - only meaningful for the two PWM-capable
-     * actuators (Canopy Fan, Reservoir Fan; see firmware's
-     * ActuatorManager::isPwmActuator). Hidden for every other card.
-     * Only enabled while the fan is actually running under manual control -
-     * a command sent while off would be silently discarded by firmware (see
-     * ActuatorManager::requestCommand's no-op-OFF guard), so there is
-     * nothing useful to send until then.
-     */
-    private void setupSpeedControl(View card, Actuator actuator, boolean isAdmin) {
-        View layoutSpeed = card.findViewById(R.id.layoutSpeedControl);
-        SeekBar seekSpeed = card.findViewById(R.id.seekSpeed);
-        TextView tvSpeedLabel = card.findViewById(R.id.tvSpeedLabel);
-        if (layoutSpeed == null || seekSpeed == null || tvSpeedLabel == null) return;
-
-        boolean supportsSpeed = actuator == canopyFan || actuator == reservoirFan;
-        if (!supportsSpeed) {
-            layoutSpeed.setVisibility(View.GONE);
-            seekSpeed.setOnSeekBarChangeListener(null);
-            return;
-        }
-        layoutSpeed.setVisibility(View.VISIBLE);
-
-        seekSpeed.setOnSeekBarChangeListener(null);
-        seekSpeed.setProgress(actuator.speed);
-        tvSpeedLabel.setText("Speed: " + actuator.speed + "%");
-
-        boolean enabled = isAdmin && isManualMode && isCurrentlyOnline && !isSafetyLock
-                && !isActuatorBusy && actuator.physicalRunning;
-        seekSpeed.setEnabled(enabled);
-        seekSpeed.setAlpha(enabled ? 1.0f : 0.5f);
-
-        seekSpeed.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                tvSpeedLabel.setText("Speed: " + progress + "%");
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-                int newSpeed = seekBar.getProgress();
-                Log.d("Monitoring", "[MANUAL-APP] Speed change actuator=" + actuator.dbKey + " speed=" + newSpeed);
-                dbHelper.updateActuatorState(actuator.dbKey, true, false, newSpeed)
-                        .addOnFailureListener(e -> {
-                            if (!isAdded()) return;
-                            NotificationHelper.showError(requireContext(), "Speed Change Failed",
-                                    e.getMessage() != null ? e.getMessage() : "Could not update fan speed.");
-                            seekBar.setProgress(actuator.speed);
-                            tvSpeedLabel.setText("Speed: " + actuator.speed + "%");
-                        });
-            }
         });
     }
 
@@ -1192,17 +1153,6 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                         dbHelper.updateActuatorState("growPump", checked, overrideRequested),
                         dbHelper.updateActuatorState("bloomPump", checked, overrideRequested)
                 );
-            } else if (actuator == canopyFan || actuator == reservoirFan) {
-                // PWM actuators: the ON toggle used to omit speed entirely,
-                // which firmware then defaulted to 100% (see
-                // FirebaseManager::consumeActuatorCommandSnapshot) regardless
-                // of whatever speed was last shown on this card's slider -
-                // "speed selection does not work" was this: turning the fan
-                // on always jumped to 100% and silently discarded the
-                // selected/last-known speed. Sending the actuator's current
-                // speed on every command (ON or OFF, harmless either way -
-                // OFF ignores it) makes ON resume at that speed instead.
-                updateTask = dbHelper.updateActuatorState(actuator.dbKey, checked, overrideRequested, actuator.speed);
             } else {
                 updateTask = dbHelper.updateActuatorState(actuator.dbKey, checked, overrideRequested);
             }
@@ -1211,9 +1161,17 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             updateTask.addOnCompleteListener(task -> {
                 if (!isAdded() || generation != actuatorCommandGeneration || actuatorCommandFinished) return;
                 if (!task.isSuccessful()) {
-                    Log.e("Monitoring", "Actuator command failed for " + actuator.dbKey, task.getException());
+                    Exception exception = task.getException();
+                    Log.e("Monitoring", "Actuator command failed for " + actuator.dbKey, exception);
+                    // updateActuatorState() throws IllegalStateException
+                    // specifically for the expected "manual mode isn't on"
+                    // rejection - surface that reason directly instead of a
+                    // generic "could not be sent" that doesn't explain why.
+                    String message = exception instanceof IllegalStateException
+                            ? exception.getMessage()
+                            : "The actuator command could not be sent. Please try again.";
                     finishActuatorCommand(generation, actuator, previousManualIntent,
-                            "Command Failed", "The actuator command could not be sent. Please try again.",
+                            "Command Failed", message,
                             false);
                 } else {
                     // Command written — show Validating immediately and start polling
@@ -1626,7 +1584,6 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private String actuatorSourceSuffix(Actuator actuator) {
         if ("automatic".equalsIgnoreCase(actuator.physicalSource)) return " · Auto";
         if ("manual".equalsIgnoreCase(actuator.physicalSource)) return " · Manual";
-        if ("android".equalsIgnoreCase(actuator.physicalSource)) return " · App";
         return "";
     }
 
@@ -2086,7 +2043,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 {"The other actuators",
                         "Water Pump (Valve) refills the reservoir. Circulation Pump keeps nutrient solution mixed and readings representative. pH Up/pH Down and the Nutrients pumps dose small amounts to correct pH and EC. Fogger and Reservoir Fan (Blower) work together to raise humidity and cool the canopy. Peltier (Temp) cools the reservoir when water temperature runs high. Canopy Fan circulates air, and Grow Lights follow the automatic lighting schedule."},
                 {"Fan speed",
-                        "Canopy Fan and Reservoir Fan (Blower) also have a speed slider, which appears once Manual Mode is on and that fan is switched on. Drag and release to set a new speed - it takes effect immediately while the fan keeps running."},
+                        "Canopy Fan and Reservoir Fan (Blower) run at a speed the firmware decides on its own - there is no speed control in the app. Turning them on or off here still works like every other actuator."},
                 {"Rejected / blocked status",
                         "A 'Rejected' or 'blocked' status with a reason means the firmware refused that specific command - most often because a safety interlock is active, a sensor reading is invalid, or another operation currently owns that equipment. It clears on its own once the blocking condition ends; it does not mean the actuator is stuck."}
         };

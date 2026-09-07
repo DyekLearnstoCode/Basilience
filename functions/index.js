@@ -1808,26 +1808,15 @@ function normalizePhilippineMobile(input) {
     return "+63" + subscriber;
 }
 
-// Recomputes both the /devices/{deviceId}/smsRecipients AND
-// /deviceAccess/{deviceId} RTDB projections in one pass, from the SAME
-// authoritative Firestore relationship getDeviceUserTokens() already uses
-// (devices.ownerUid + deviceAssignments, filtered by role/ownerAdminUid
-// linkage) - no second ownership model. smsRecipients carries only
-// phone/enabled/role (no email/password/other profile data); deviceAccess
-// carries only role plus the server-projected developerTester entitlement,
-// used exclusively as an RTDB-rules lookup table (Android never reads it
-// directly). One invalid/empty phone is skipped, never
-// blocking the rest of either projection. Both projections are written with
-// a single atomic .set() each - a fully recomputed snapshot with no
-// remaining members clears stale entries automatically (RTDB has no way to
-// persist an "empty object", so .set({}) removes the node), and nothing is
-// written unless every read above succeeded (a failed read throws before any
-// write is attempted, so a partial/stale overwrite cannot happen).
-async function regenerateSmsRecipients(db, deviceId) {
-    if (!deviceId) return;
-
+// Computes the access/recipients projection for deviceId from its OWN
+// ownerUid + deviceAssignments only - no awareness of Harvest Scale
+// parent/child relationships. Factored out of regenerateSmsRecipients() so
+// a Harvest Scale (see below) can borrow its PARENT's computation instead
+// of running this against its own (permanently absent) ownership.
+async function computeOwnedDeviceAccess(db, deviceId) {
     const deviceDoc = await db.collection("devices").doc(deviceId).get();
-    const ownerUid = deviceDoc.exists ? (deviceDoc.data().ownerUid || deviceDoc.data().ownerAdminUid) : null;
+    const deviceData = deviceDoc.exists ? deviceDoc.data() : null;
+    const ownerUid = deviceData ? (deviceData.ownerUid || deviceData.ownerAdminUid) : null;
 
     const recipients = {};
     const access = {};
@@ -1875,12 +1864,72 @@ async function regenerateSmsRecipients(db, deviceId) {
         }
     }
 
+    return {deviceData, access, recipients};
+}
+
+// Recomputes both the /devices/{deviceId}/smsRecipients AND
+// /deviceAccess/{deviceId} RTDB projections in one pass, from the SAME
+// authoritative Firestore relationship getDeviceUserTokens() already uses
+// (devices.ownerUid + deviceAssignments, filtered by role/ownerAdminUid
+// linkage) - no second ownership model. smsRecipients carries only
+// phone/enabled/role (no email/password/other profile data); deviceAccess
+// carries only role plus the server-projected developerTester entitlement,
+// used exclusively as an RTDB-rules lookup table (Android never reads it
+// directly). One invalid/empty phone is skipped, never
+// blocking the rest of either projection. Both projections are written with
+// a single atomic .set() each - a fully recomputed snapshot with no
+// remaining members clears stale entries automatically (RTDB has no way to
+// persist an "empty object", so .set({}) removes the node), and nothing is
+// written unless every read above succeeded (a failed read throws before any
+// write is attempted, so a partial/stale overwrite cannot happen).
+//
+// A Harvest Scale is a PERMANENT peripheral of exactly one device, decided
+// once (at physical setup, or the first time it's paired) and never
+// independently owned/claimed - devices/{scaleId}.parentDeviceId names
+// that device. Two directions keep this in sync:
+//   1. Called for the SCALE itself (its own doc was written - e.g. at
+//      provisioning, or right after being newly paired below): if it has a
+//      parentDeviceId, its access is computed from the PARENT's ownership
+//      instead of its own (which is permanently absent by design) - never
+//      independently claimable.
+//   2. Called for the PARENT device (its assignments/ownership changed, or
+//      it just paired a scale via harvestScaleId): its own access is also
+//      pushed directly onto its paired scale's deviceAccess right away,
+//      and parentDeviceId is (idempotently) stamped onto the scale's own
+//      Firestore record - through the Admin's write to the DEVICE THEY
+//      OWN, never a direct client write to the scale's own record, which
+//      Firestore rules wouldn't allow anyway since the scale is never
+//      independently owned.
+// smsRecipients is never mirrored either direction - a scale has no alerts
+// of its own to text about, only the device it's attached to does.
+async function regenerateSmsRecipients(db, deviceId) {
+    if (!deviceId) return;
+
+    let {deviceData, access, recipients} = await computeOwnedDeviceAccess(db, deviceId);
+
+    const parentDeviceId = deviceData ? deviceData.parentDeviceId : null;
+    if (parentDeviceId && parentDeviceId !== deviceId) {
+        const parentResult = await computeOwnedDeviceAccess(db, parentDeviceId);
+        access = parentResult.access;
+        recipients = {};
+    }
+
+    const harvestScaleId = (!parentDeviceId && deviceData) ? deviceData.harvestScaleId : null;
+
     const rtdb = admin.database();
-    await Promise.all([
+    const writes = [
         rtdb.ref(`/devices/${deviceId}/smsRecipients`).set(recipients),
         rtdb.ref(`/deviceAccess/${deviceId}`).set(access)
-    ]);
-    logger.info(`Projections updated for device ${deviceId}: ${Object.keys(recipients).length} SMS-eligible, ${Object.keys(access).length} authorized`);
+    ];
+    if (harvestScaleId) {
+        writes.push(rtdb.ref(`/deviceAccess/${harvestScaleId}`).set(access));
+        writes.push(db.collection("devices").doc(harvestScaleId)
+            .set({parentDeviceId: deviceId}, {merge: true}));
+    }
+    await Promise.all(writes);
+    logger.info(`Projections updated for device ${deviceId}: ${Object.keys(recipients).length} SMS-eligible, ${Object.keys(access).length} authorized`
+        + (harvestScaleId ? `; mirrored to paired harvest scale ${harvestScaleId}` : "")
+        + (parentDeviceId ? `; access borrowed from parent device ${parentDeviceId}` : ""));
 }
 
 // retry: true on all three triggers below is deliberate: smsRecipients/
@@ -1941,6 +1990,26 @@ exports.onDeviceWrittenUpdateSmsRecipients = onDocumentWritten(
         const deviceId = event.params.deviceId;
         try {
             await regenerateSmsRecipients(admin.firestore(), deviceId);
+
+            // A scale unpaired or re-pointed to a different device by this
+            // write leaves its previously-mirrored deviceAccess AND
+            // parentDeviceId stale - regenerateSmsRecipients() above only
+            // ever (re)writes the CURRENT harvestScaleId's projection,
+            // never the old one. If the scale has actually just been
+            // re-paired to ANOTHER device instead of unpaired outright,
+            // that device's own trigger sets both correctly right after
+            // regardless of this clear.
+            const before = event.data.before.exists ? event.data.before.data() : null;
+            const after = event.data.after.exists ? event.data.after.data() : null;
+            const oldScaleId = before ? before.harvestScaleId : null;
+            const newScaleId = after ? after.harvestScaleId : null;
+            if (oldScaleId && oldScaleId !== newScaleId) {
+                await Promise.all([
+                    admin.database().ref(`/deviceAccess/${oldScaleId}`).set({}),
+                    admin.firestore().collection("devices").doc(oldScaleId)
+                        .set({parentDeviceId: null}, {merge: true})
+                ]);
+            }
         } catch (error) {
             logger.error("[SMS-SYNC] device write projection failed", {deviceId, error});
             throw error;

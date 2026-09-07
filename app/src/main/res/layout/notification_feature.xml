@@ -56,6 +56,17 @@
                 android:layout_marginBottom="12dp"
                 android:textColor="@color/state_primary_text" />
 
+            <!-- Confirms which device these notifications belong to. -->
+            <TextView
+                android:id="@+id/tvDeviceScopeLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:textColor="#3D8B3D"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:layout_marginBottom="12dp" />
+
             <!-- FILTER CHIPS: ALL / UNREAD / READ -->
             <LinearLayout
                 android:layout_width="match_parent"

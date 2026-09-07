@@ -59,6 +59,52 @@ public class NotificationHelper {
     private static final WeakHashMap<Context, LoadingHandle> ACTIVE_LOADING = new WeakHashMap<>();
 
     /**
+     * Dismisses the soft keyboard, if shown, from whatever view currently
+     * holds focus. Meant for an IME_ACTION_DONE handler (pressing the
+     * keyboard's check/enter key) that proceeds straight into a loading
+     * state - without this, the keyboard stayed on screen throughout that
+     * loading state since submitting via the IME action never triggers
+     * Android's own implicit dismiss the way tapping a button elsewhere on
+     * screen does. Safe to call from any Activity/Fragment context.
+     */
+    public static void hideKeyboard(View view) {
+        if (view == null) return;
+        Object service = view.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (service instanceof android.view.inputmethod.InputMethodManager) {
+            ((android.view.inputmethod.InputMethodManager) service)
+                    .hideSoftInputFromWindow(view.getWindowToken(), 0);
+        }
+    }
+
+    /**
+     * Confirms on-screen which device a device-scoped screen is currently
+     * acting on - shows the raw ID immediately (already enough to tell
+     * devices apart) and upgrades to the friendly deviceName once the
+     * device document resolves. Shared by every device-scoped screen
+     * (Developer Options/Device Configuration, Parameters Monitoring,
+     * Harvest Log, Wi-Fi Config, Reports, Cycle Details, Notifications) so
+     * a multi-device account never has to just trust which device it's
+     * looking at - see the task report's cross-device audit for why this
+     * matters. Safe to call with a null/empty deviceId (clears the label).
+     */
+    public static void bindDeviceLabel(TextView label, String deviceId) {
+        if (label == null) return;
+        if (deviceId == null || deviceId.isEmpty()) {
+            label.setText(null);
+            return;
+        }
+        Context context = label.getContext();
+        label.setText(context.getString(R.string.device_scope_label, deviceId));
+        new Database_Helper().getDeviceDocument(deviceId).addOnSuccessListener(snapshot -> {
+            if (snapshot == null || !snapshot.exists()) return;
+            String name = snapshot.getString("deviceName");
+            if (name != null && !name.isEmpty()) {
+                label.setText(context.getString(R.string.device_scope_label, name));
+            }
+        });
+    }
+
+    /**
      * Marks one Firestore notification document read for the current user,
      * the same write NotificationFragment's own list already does
      * (devices/{deviceId}/notifications/{notificationId}, readBy.{uid}).
@@ -934,8 +980,12 @@ public class NotificationHelper {
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
         }
-        secondary.setOnClickListener(v -> dialog.dismiss());
+        secondary.setOnClickListener(v -> {
+            hideKeyboard(customView);
+            dialog.dismiss();
+        });
         primary.setOnClickListener(v -> {
+            hideKeyboard(customView);
             if (callback != null) callback.onConfirmed(dialog, customView);
         });
         dialog.show();

@@ -49,9 +49,10 @@ public class SettingsFragment extends Fragment {
         // Account Information
         bindSettingsRow(view, R.id.rowAccount, navController, R.id.action_settings_to_accountFragment);
 
-        // Parameter Target Ranges now lives inside Device Configuration
-        // (the Admin-only DevOptionsFragment mode) rather than as its own
-        // Settings row - see that screen's rowTargetRangesLink.
+        // Parameter Target Ranges lives inside Developer Options (the
+        // developer-gated DevOptionsFragment mode) rather than as its own
+        // Settings row - see that screen's rowTargetRangesLink and
+        // DevOptionsFragment.configureAccessMode().
         deviceMaintenanceContainer = view.findViewById(R.id.deviceMaintenanceContainer);
         bindSettingsRow(view, R.id.deviceMaintenanceContainer, navController,
                 R.id.action_settings_to_deviceMaintenanceFragment);

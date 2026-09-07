@@ -12,8 +12,10 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.firebase.firestore.FirebaseFirestore;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
@@ -97,6 +99,15 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
     // only when a record predates the recorderName snapshot. Avoids
     // re-fetching the same profile on every scroll/rebind.
     private final Map<String, String> resolvedRecorderNames = new HashMap<>();
+    // Without this, switching to a filter that reveals a batch of not-yet-
+    // resolved harvest rows at once (e.g. many older records lacking a
+    // recorderName snapshot) fired one Firestore read PER BIND for the same
+    // uid, since resolvedRecorderNames is only populated after a read
+    // completes - notifyDataSetChanged() rebinding all visible rows on every
+    // filter tap made this worse. Guards against issuing a second read for a
+    // uid that's already in flight; cleared on completion either way so a
+    // failed lookup can still be retried on a later bind.
+    private final Set<String> pendingRecorderLookups = new HashSet<>();
 
     public NotificationAdapter(List<NotificationItem> notifications,
                                OnNotificationClickListener clickListener,
@@ -251,8 +262,11 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         holder.tvRecordedBy.setText("Recorded by: Unknown");
 
         final String uid = item.recorderUid;
+        if (!pendingRecorderLookups.add(uid)) return; // already in flight for this uid
+
         FirebaseFirestore.getInstance().collection("users").document(uid).get()
                 .addOnSuccessListener(doc -> {
+                    pendingRecorderLookups.remove(uid);
                     String fullName = doc != null ? doc.getString("fullName") : null;
                     if (isEmpty(fullName)) return;
                     resolvedRecorderNames.put(uid, fullName);
@@ -260,7 +274,8 @@ public class NotificationAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
                     if (position != RecyclerView.NO_POSITION) {
                         notifyItemChanged(position);
                     }
-                });
+                })
+                .addOnFailureListener(e -> pendingRecorderLookups.remove(uid));
     }
 
     private static boolean isEmpty(String value) {

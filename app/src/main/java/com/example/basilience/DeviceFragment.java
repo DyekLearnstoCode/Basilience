@@ -20,6 +20,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
+import com.google.firebase.firestore.FirebaseFirestoreException;
 import com.google.firebase.firestore.QueryDocumentSnapshot;
 
 import java.util.ArrayList;
@@ -93,11 +94,13 @@ public class DeviceFragment extends Fragment {
                     if (RoleConstants.ROLE_ADMIN.equalsIgnoreCase(currentRole)) {
                         NotificationHelper.showSelectionDialog(requireContext(),
                                 device.getDeviceName() != null ? device.getDeviceName() : "Device",
-                                new String[]{"Configure Wi-Fi", "Pair Harvest Scale", "Unclaim Device"},
+                                new String[]{"Configure Wi-Fi", "Rename Device", "Pair Harvest Scale", "Unclaim Device"},
                                 index -> {
                                     if (index == 0) {
                                         openWifiConfiguration(view, device);
                                     } else if (index == 1) {
+                                        showRenameDeviceDialog(device);
+                                    } else if (index == 2) {
                                         showPairHarvestScaleDialog(device);
                                     } else {
                                         confirmUnclaim(device);
@@ -113,6 +116,7 @@ public class DeviceFragment extends Fragment {
         // Claim Device Action
         btnClaimDevice.setOnClickListener(v -> {
             if (deviceMutationInProgress) return;
+            NotificationHelper.hideKeyboard(v);
             String token = etClaimToken.getText().toString().trim();
             if (!token.isEmpty()) {
                 deviceMutationInProgress = true;
@@ -139,7 +143,22 @@ public class DeviceFragment extends Fragment {
                             btnClaimDevice.setEnabled(true);
                             hideLayoutLoading();
                             Log.e(TAG, "Failed to claim device", e);
-                            NotificationHelper.showError(requireContext(), "Unable to claim this device. Please check the token and try again.");
+                            // NOT_FOUND/ALREADY_EXISTS carry an already user-safe,
+                            // specific message from claimDevice() itself (invalid
+                            // token vs. already claimed by you vs. by someone
+                            // else) - showing it directly instead of a blanket
+                            // "check token" message that previously covered every
+                            // failure reason, including ones that had nothing to
+                            // do with the token being wrong.
+                            String message = "Unable to claim this device. Please try again.";
+                            if (e instanceof FirebaseFirestoreException) {
+                                FirebaseFirestoreException.Code code = ((FirebaseFirestoreException) e).getCode();
+                                if (code == FirebaseFirestoreException.Code.NOT_FOUND
+                                        || code == FirebaseFirestoreException.Code.ALREADY_EXISTS) {
+                                    message = e.getMessage();
+                                }
+                            }
+                            NotificationHelper.showError(requireContext(), message);
                         });
             } else {
                 Toast.makeText(getActivity(), "Please enter a device token code", Toast.LENGTH_SHORT).show();
@@ -180,6 +199,7 @@ public class DeviceFragment extends Fragment {
 
         if (btnSavePairing != null) {
             btnSavePairing.setOnClickListener(v -> {
+                NotificationHelper.hideKeyboard(v);
                 String scaleId = etHarvestScaleId.getText() != null
                         ? etHarvestScaleId.getText().toString().trim() : "";
                 btnSavePairing.setEnabled(false);
@@ -197,6 +217,62 @@ public class DeviceFragment extends Fragment {
                             btnSavePairing.setEnabled(true);
                             Log.e(TAG, "Failed to pair harvest scale for deviceId=" + device.getDeviceId(), e);
                             NotificationHelper.showError(requireContext(), "Unable to save this pairing. Please try again.");
+                        });
+            });
+        }
+    }
+
+    // The friendly deviceName shown throughout the app - see
+    // Database_Helper.renameDevice() for why no Firestore rules change was
+    // needed. Refreshes the device list on success so the new name is
+    // reflected immediately here, and every other screen's
+    // NotificationHelper.bindDeviceLabel() picks it up next time it opens.
+    private void showRenameDeviceDialog(Device device) {
+        if (device.getDeviceId() == null) return;
+
+        View dialogView = LayoutInflater.from(requireContext())
+                .inflate(R.layout.dialog_rename_device, null);
+        TextInputEditText etDeviceName = dialogView.findViewById(R.id.etDeviceName);
+        MaterialButton btnSaveDeviceName = dialogView.findViewById(R.id.btnSaveDeviceName);
+        MaterialButton btnCancel = dialogView.findViewById(R.id.btnCancel);
+
+        if (device.getDeviceName() != null) {
+            etDeviceName.setText(device.getDeviceName());
+            etDeviceName.setSelection(etDeviceName.getText().length());
+        }
+
+        androidx.appcompat.app.AlertDialog dialog = NotificationHelper.showCustomViewDialog(
+                requireContext(), "Rename Device", dialogView);
+
+        if (btnCancel != null) {
+            btnCancel.setOnClickListener(v -> {
+                if (dialog != null) dialog.dismiss();
+            });
+        }
+
+        if (btnSaveDeviceName != null) {
+            btnSaveDeviceName.setOnClickListener(v -> {
+                NotificationHelper.hideKeyboard(v);
+                String newName = etDeviceName.getText() != null
+                        ? etDeviceName.getText().toString().trim() : "";
+                if (newName.isEmpty()) {
+                    NotificationHelper.showError(requireContext(), "Device name cannot be empty");
+                    return;
+                }
+                btnSaveDeviceName.setEnabled(false);
+                dbHelper.renameDevice(device.getDeviceId(), newName)
+                        .addOnSuccessListener(aVoid -> {
+                            if (!isAdded()) return;
+                            btnSaveDeviceName.setEnabled(true);
+                            NotificationHelper.showSuccess(requireContext(), "Device renamed");
+                            if (dialog != null) dialog.dismiss();
+                            loadDevices();
+                        })
+                        .addOnFailureListener(e -> {
+                            if (!isAdded()) return;
+                            btnSaveDeviceName.setEnabled(true);
+                            Log.e(TAG, "Failed to rename deviceId=" + device.getDeviceId(), e);
+                            NotificationHelper.showError(requireContext(), "Unable to rename this device. Please try again.");
                         });
             });
         }
@@ -303,8 +379,20 @@ public class DeviceFragment extends Fragment {
                     if (!isAdded()) return;
                     deviceMutationInProgress = false;
                     hideLayoutLoading();
-                            Log.e(TAG, "Failed to unclaim device", e);
-                            NotificationHelper.showError(requireContext(), "Unable to unclaim this device. Please try again.");
+                    Log.e(TAG, "Failed to unclaim device", e);
+                    // Same fix as claimDevice() above: surface unclaimDevice()'s
+                    // own specific, safe message ("Device not found." /
+                    // "Only the device owner can unclaim this device.") instead
+                    // of a blanket retry prompt that doesn't explain why.
+                    String message = "Unable to unclaim this device. Please try again.";
+                    if (e instanceof FirebaseFirestoreException) {
+                        FirebaseFirestoreException.Code code = ((FirebaseFirestoreException) e).getCode();
+                        if (code == FirebaseFirestoreException.Code.NOT_FOUND
+                                || code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                            message = e.getMessage();
+                        }
+                    }
+                    NotificationHelper.showError(requireContext(), message);
                 });
     }
 

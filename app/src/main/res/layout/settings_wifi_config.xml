@@ -45,7 +45,18 @@
 
                     android:textColor="@color/state_primary_text"
                     android:gravity="center"
-                    android:layout_marginBottom="16dp"/>
+                    android:layout_marginBottom="4dp"/>
+
+                <!-- Confirms which device these WiFi settings apply to. -->
+                <TextView
+                    android:id="@+id/tvDeviceScopeLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:textColor="#3D8B3D"
+                    android:textSize="13sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:layout_marginBottom="16dp" />
 
             <!-- Current Status Card -->
             <androidx.cardview.widget.CardView

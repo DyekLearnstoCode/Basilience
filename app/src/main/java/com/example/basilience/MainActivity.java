@@ -106,8 +106,6 @@ public class MainActivity extends AppCompatActivity {
 
     private BottomNavigationView bottomNav;
 
-    private ValueEventListener summaryAlertListener;
-    private DatabaseReference summaryStatusRef;
     private ValueEventListener currentParameterAlertListener;
     private DatabaseReference currentParameterAlertsRef;
     private String currentParameterAlertDeviceId;
@@ -247,16 +245,25 @@ public class MainActivity extends AppCompatActivity {
                         }
                     }
                     
-                    if (id == R.id.DeviceManagementFragment) {
-                        // Task 2.i: Management Summary Logic
-                        startManagementSummaryListener();
-                    } else {
-                        stopManagementSummaryListener();
-                    }
                 } else {
-                    stopManagementSummaryListener(); // Ensure summary is hidden when leaving management
-
-                    if (id == R.id.home || id == R.id.Notification || id == R.id.reportschoiceFragment) {
+                    // Kept in sync with updateBottomNavSelection()'s own "this
+                    // screen is logically under Home" list below - that method
+                    // already pre-selects the Home tab for Parameters/Cycle/
+                    // Harvest/Guide/Reports-detail screens, but this visibility
+                    // check previously only listed home/Notification/
+                    // reportschoiceFragment, so the bar was hidden entirely on
+                    // every one of those screens even though Home was still
+                    // marked checked underneath it - a genuine mismatch, not a
+                    // deliberate "more space while drilled in" design (see the
+                    // task report's bottom-nav audit). Settings and its sub-
+                    // screens, and Personnel add/details, are deliberately left
+                    // out here - those remain full-screen without the bar.
+                    if (id == R.id.home || id == R.id.Notification || id == R.id.reportschoiceFragment
+                            || id == R.id.parametersFragment || id == R.id.userGuideFragment
+                            || id == R.id.hardwareGuideFragment || id == R.id.mobileGuideFragment
+                            || id == R.id.reportsFragment || id == R.id.foggingReportsFragment
+                            || id == R.id.cycleDetailsFragment || id == R.id.cycleaddFragment
+                            || id == R.id.harvestLogFragment) {
                         bottomNav.setVisibility(View.VISIBLE);
                         if (bottomNav.getMenu().findItem(R.id.home) == null) {
                             bottomNav.getMenu().clear();
@@ -332,70 +339,6 @@ public class MainActivity extends AppCompatActivity {
         if (getSupportActionBar() != null) {
             getSupportActionBar().hide();
         }
-    }
-
-    // Task 2.i: Listen to Firebase (device/status) and toggle summaryAlertCard
-    private void startManagementSummaryListener() {
-        if (summaryAlertListener != null) return;
-
-        SharedPreferences prefs = getSharedPreferences("basilience_prefs", MODE_PRIVATE);
-        String deviceId = prefs.getString("selected_device_id", null);
-
-        if (deviceId == null || deviceId.isEmpty()) {
-            return;
-        }
-
-        String path = "devices/" + deviceId + "/status";
-
-        summaryStatusRef = FirebaseDatabase.getInstance("https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app").getReference(path);
-        summaryAlertListener = new ValueEventListener() {
-            @Override
-            public void onDataChange(DataSnapshot snapshot) {
-                // Find views dynamically as they are part of Fragment layouts
-                MaterialCardView card = findViewById(R.id.summaryAlertCard);
-                TextView msg = findViewById(R.id.tvSummaryAlertMessage);
-
-                if (card == null || msg == null) return;
-
-                boolean phUp = Boolean.TRUE.equals(snapshot.child("phUp").getValue(Boolean.class));
-                boolean phDown = Boolean.TRUE.equals(snapshot.child("phDown").getValue(Boolean.class));
-                boolean nutrients = Boolean.TRUE.equals(snapshot.child("nutrients").getValue(Boolean.class));
-
-                if (phUp || phDown || nutrients) {
-                    card.setVisibility(View.VISIBLE);
-                    StringBuilder sb = new StringBuilder("Device Alert: ");
-                    if (phUp || phDown) sb.append("pH deviate. Automated dosing active. ");
-                    if (nutrients) sb.append("Nutrient pump running.");
-                    msg.setText(sb.toString().trim());
-                } else {
-                    card.setVisibility(View.GONE);
-                }
-            }
-
-            @Override
-            public void onCancelled(DatabaseError error) {
-                if (error.getCode() != DatabaseError.PERMISSION_DENIED) return;
-                // A permission-denied listener is never retried, so
-                // onDataChange will never fire again on this ref. If the
-                // card happened to be visible (dosing active) the moment
-                // access was revoked, it would otherwise stay stuck showing
-                // that stale "Device Alert" banner forever. Hide it rather
-                // than keep trusting data that can no longer update.
-                MaterialCardView card = findViewById(R.id.summaryAlertCard);
-                if (card != null) card.setVisibility(View.GONE);
-            }
-        };
-        summaryStatusRef.addValueEventListener(summaryAlertListener);
-    }
-
-    private void stopManagementSummaryListener() {
-        if (summaryStatusRef != null && summaryAlertListener != null) {
-            summaryStatusRef.removeEventListener(summaryAlertListener);
-            summaryAlertListener = null;
-        }
-        // Ensure card is hidden when leaving the screen
-        MaterialCardView card = findViewById(R.id.summaryAlertCard);
-        if (card != null) card.setVisibility(View.GONE);
     }
 
     // Helper method to keep onCreate clean
@@ -890,8 +833,8 @@ public class MainActivity extends AppCompatActivity {
             public void onCancelled(@NonNull DatabaseError error) {
                 Log.e("ParameterAlerts", "Current alert listener cancelled", error.toException());
                 if (error.getCode() != DatabaseError.PERMISSION_DENIED) return;
-                // Same reasoning as summaryAlertListener's onCancelled: this
-                // listener is dead now, so any alert dialog left showing at
+                // A permission-denied listener is never retried, so this
+                // listener is dead now - any alert dialog left showing at
                 // the moment access was revoked would otherwise stay open
                 // forever with no way to know it's stale. Mark every
                 // currently-active alert type false through the same path
@@ -908,6 +851,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void reconcileCurrentParameterAlerts() {
+        // dismiss() on a Dialog tied to this Activity's window can throw if
+        // the window has already been torn down (Activity finishing/
+        // destroyed) - this RTDB listener is only stopped in
+        // stopCurrentParameterAlertListener(), not tied to Activity
+        // lifecycle itself, so a late callback here is reachable.
+        if (isFinishing() || isDestroyed()) return;
         if (parameterAlertDeviceId != null
                 && currentParameterAlertDeviceId != null
                 && !parameterAlertDeviceId.equals(currentParameterAlertDeviceId)) {
@@ -1014,6 +963,11 @@ public class MainActivity extends AppCompatActivity {
     private void openParametersFromAlert() {
         String deviceId = parameterAlertDeviceId;
         dismissParameterAlerts();
+
+        String previousDeviceId = getSharedPreferences("basilience_prefs", MODE_PRIVATE)
+                .getString("selected_device_id", null);
+        boolean deviceChanged = deviceId != null && !deviceId.equals(previousDeviceId);
+
         if (deviceId != null && !deviceId.isEmpty()) {
             getSharedPreferences("basilience_prefs", MODE_PRIVATE).edit()
                     .putString("selected_device_id", deviceId).apply();
@@ -1022,8 +976,22 @@ public class MainActivity extends AppCompatActivity {
                 .findFragmentById(R.id.nav_host_fragment);
         if (host == null) return;
         NavController controller = host.getNavController();
-        if (controller.getCurrentDestination() == null
-                || controller.getCurrentDestination().getId() != R.id.parametersFragment) {
+        boolean alreadyOnParameters = controller.getCurrentDestination() != null
+                && controller.getCurrentDestination().getId() == R.id.parametersFragment;
+
+        if (!alreadyOnParameters) {
+            controller.navigate(R.id.parametersFragment);
+        } else if (deviceChanged) {
+            // Already showing Parameters, but for a DIFFERENT device than
+            // this alert is for. navigate() alone is a no-op when the
+            // destination doesn't change, so without this the fragment's
+            // live RTDB listeners and its Database_Helper would keep
+            // pointing at the PREVIOUS device even though SharedPreferences
+            // (and the user, having just tapped this alert) now say the new
+            // one - see the task report's cross-device audit for the full
+            // repro. Pop and re-push to force a fresh fragment view, which
+            // re-runs its full device-scoped setup for the new device.
+            controller.popBackStack();
             controller.navigate(R.id.parametersFragment);
         }
     }

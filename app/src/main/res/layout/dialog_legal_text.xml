@@ -4,23 +4,50 @@
   Scrollable and height-capped so a long document stays usable inside a
   dialog, which is how these are shown before an account exists.
 -->
-<androidx.core.widget.NestedScrollView
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:maxHeight="420dp"
-    android:fillViewport="true">
+    android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/tvLegalBody"
+    <!-- Conventional top-left back arrow, matching every other screen's
+         layout_header.xml btnBack - the shared dialog shell's bottom
+         tertiary text button (see LegalContent.showReadOnly()) wasn't
+         being recognized as a real "back" control, sitting as plain text
+         below a long scrollable document. Scoped to this content view
+         only, so it doesn't add a persistent element to every other
+         dialog that reuses the same shared shell. -->
+    <ImageView
+        android:id="@+id/btnLegalBack"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:layout_gravity="start"
+        android:layout_marginBottom="8dp"
+        android:padding="6dp"
+        android:src="@drawable/arrow_back"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/back" />
+
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingStart="4dp"
-        android:paddingEnd="4dp"
-        android:paddingBottom="8dp"
-        android:textColor="#333333"
-        android:textSize="14sp"
-        android:lineSpacingExtra="4dp"
-        android:textIsSelectable="true" />
+        android:maxHeight="420dp"
+        android:fillViewport="true">
 
-</androidx.core.widget.NestedScrollView>
+        <TextView
+            android:id="@+id/tvLegalBody"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
+            android:paddingBottom="8dp"
+            android:textColor="#333333"
+            android:textSize="14sp"
+            android:lineSpacingExtra="4dp"
+            android:textIsSelectable="true" />
+
+    </androidx.core.widget.NestedScrollView>
+
+</LinearLayout>

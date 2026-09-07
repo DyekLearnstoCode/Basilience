@@ -56,8 +56,10 @@
         <ImageView
             android:id="@+id/ivSectionImage"
             android:layout_width="match_parent"
-            android:layout_height="180dp"
-            android:scaleType="centerCrop"
+            android:layout_height="wrap_content"
+            android:adjustViewBounds="true"
+            android:maxHeight="420dp"
+            android:scaleType="fitCenter"
             android:background="@color/ds_surface_neutral"
             android:visibility="gone"
             android:contentDescription="@null" />

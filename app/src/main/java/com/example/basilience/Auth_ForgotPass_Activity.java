@@ -34,6 +34,7 @@ public class Auth_ForgotPass_Activity extends AppCompatActivity {
         btnResetPassword.setOnClickListener(v -> handlePasswordReset());
         etForgotEmail.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                NotificationHelper.hideKeyboard(v);
                 handlePasswordReset();
                 return true;
             }

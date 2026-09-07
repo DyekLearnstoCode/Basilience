@@ -110,6 +110,21 @@ public class HarvestLogFragment extends Fragment {
         dbHelper = new Database_Helper();
         NavController navController = Navigation.findNavController(view);
 
+        // Previously, a missing selected device silently made loadHarvestData()/
+        // loadCycleSummary() no-op below - the screen rendered fully but
+        // currentCycle never populated, leaving fabAddHarvest permanently
+        // stuck reporting "Cycle data is still loading" with no way to
+        // recover short of leaving manually. Check once, up front, and exit
+        // the same recoverable way as the other device-scoped screens.
+        SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
+        String harvestDeviceId = prefs.getString("selected_device_id", null);
+        if (harvestDeviceId == null) {
+            NotificationHelper.showError(getContext(), "No device selected");
+            navController.popBackStack();
+            return;
+        }
+        NotificationHelper.bindDeviceLabel(view.findViewById(R.id.tvDeviceScopeLabel), harvestDeviceId);
+
         if (getArguments() != null) {
             cycleId = getArguments().getString("cycleId");
             cycleNumber = getArguments().getInt("cycleNumber", 1);
@@ -349,6 +364,7 @@ public class HarvestLogFragment extends Fragment {
 
         btnSave.setOnClickListener(v -> {
             if (isHarvestSubmitting) return;
+            NotificationHelper.hideKeyboard(v);
             if (layoutWeight != null) layoutWeight.setError(null);
 
             String weightStr = etWeight.getText().toString().trim();
@@ -399,7 +415,9 @@ public class HarvestLogFragment extends Fragment {
                                 if (!isAdded()) return;
                                 dismissLoading();
                                 Log.e(TAG, "Failed to delete harvest entry for cycleId=" + cycleId, e);
-                                NotificationHelper.showError(requireContext(), "Unable to delete this harvest entry. Please try again.");
+                                NotificationHelper.showError(requireContext(), specificOrGenericMessage(e,
+                                        "Unable to delete this harvest entry. Please try again.",
+                                        FirebaseFirestoreException.Code.ABORTED));
                             });
                 });
     }
@@ -671,6 +689,7 @@ public class HarvestLogFragment extends Fragment {
 
         if (btnUpdate != null) {
             btnUpdate.setOnClickListener(v -> {
+                NotificationHelper.hideKeyboard(v);
                 String input = etFrequency.getText().toString().trim();
                 if (input.isEmpty()) return;
 
@@ -709,7 +728,10 @@ public class HarvestLogFragment extends Fragment {
                             btnUpdate.setEnabled(true);
                             if (btnCancel != null) btnCancel.setEnabled(true);
                             Log.e(TAG, "Failed to update harvest frequency for cycleId=" + cycleId, e);
-                            NotificationHelper.showError(requireContext(), "Unable to save the harvest frequency. Please try again.");
+                            NotificationHelper.showError(requireContext(), specificOrGenericMessage(e,
+                                    "Unable to save the harvest frequency. Please try again.",
+                                    FirebaseFirestoreException.Code.NOT_FOUND,
+                                    FirebaseFirestoreException.Code.FAILED_PRECONDITION));
                         });
             });
         }
@@ -783,7 +805,9 @@ public class HarvestLogFragment extends Fragment {
                     dismissLoading();
                     saveButton.setEnabled(true);
                     Log.e(TAG, "Failed to save harvest for cycleId=" + cycleId, e);
-                    NotificationHelper.showError(requireContext(), "Unable to save this harvest entry. Please try again.");
+                    NotificationHelper.showError(requireContext(), specificOrGenericMessage(e,
+                            "Unable to save this harvest entry. Please try again.",
+                            FirebaseFirestoreException.Code.ABORTED));
                 });
     }
 
@@ -815,8 +839,32 @@ public class HarvestLogFragment extends Fragment {
                     dismissLoading();
                     saveButton.setEnabled(true);
                     Log.e(TAG, "Failed to update harvest for cycleId=" + cycleId, e);
-                    NotificationHelper.showError(requireContext(), "Unable to save your changes. Please try again.");
+                    NotificationHelper.showError(requireContext(), specificOrGenericMessage(e,
+                            "Unable to save your changes. Please try again.",
+                            FirebaseFirestoreException.Code.ABORTED));
                 });
+    }
+
+    // Several Database_Helper write methods on this screen (addHarvestTransaction,
+    // updateHarvestTransaction, deleteHarvestTransaction, updateHarvestFrequency)
+    // already throw a specific, safe-to-show reason (an IllegalArgumentException
+    // for invalid input, or a FirebaseFirestoreException with one of the codes
+    // passed in) - this used to get discarded in favor of a generic "try again"
+    // that would keep failing identically forever (e.g. "the cycle is already
+    // completed" told to retry a save that can never succeed). Mirrors the same
+    // fix already applied to DeviceFragment's claimDevice()/unclaimDevice().
+    private static String specificOrGenericMessage(Exception e, String genericMessage,
+                                                     FirebaseFirestoreException.Code... surfaceCodes) {
+        if (e instanceof IllegalArgumentException && e.getMessage() != null) {
+            return e.getMessage();
+        }
+        if (e instanceof FirebaseFirestoreException) {
+            FirebaseFirestoreException.Code code = ((FirebaseFirestoreException) e).getCode();
+            for (FirebaseFirestoreException.Code candidate : surfaceCodes) {
+                if (candidate == code) return e.getMessage();
+            }
+        }
+        return genericMessage;
     }
 
     private void loadHarvestData() {

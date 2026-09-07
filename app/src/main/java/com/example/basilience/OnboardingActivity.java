@@ -169,22 +169,22 @@ public class OnboardingActivity extends AppCompatActivity {
         pages.add(new OnboardingPage(
                 "Monitor Your Cultivation System",
                 "Track pH, EC, air temperature, humidity, water temperature, and water level in real time, along with device connectivity and actuator status.",
-                0, "Monitoring screen with live parameter readings", null));
+                R.drawable.guide_monitoring, "Monitoring screen with live parameter readings", null));
 
         pages.add(new OnboardingPage(
                 "Manage Growth Cycles & Harvest",
                 "Keep track of your active growth cycle, see upcoming harvest schedules, record harvested weight, and review harvest history.",
-                0, "Growth Cycle and Harvest screens", null));
+                R.drawable.guide_growth_cycles, "Growth Cycle and Harvest screens", null));
 
         pages.add(new OnboardingPage(
                 "Stay Informed",
                 "Parameter and Fogging Reports summarize your system over time, and notifications keep you posted on important alerts and device connectivity.",
-                0, "Reports and Notifications screens", null));
+                R.drawable.guide_notifications, "Reports and Notifications screens", null));
 
         pages.add(new OnboardingPage(
                 "Administration Tools",
                 "Admin users can also manage personnel, Basilience devices, growth cycle setup, reports, and advanced diagnostic tools where available.",
-                0, "Personnel and Device Management screens", "Admin Only"));
+                R.drawable.guide_device_management, "Personnel and Device Management screens", "Admin Only"));
 
         pages.add(new OnboardingPage(
                 "You're Ready",

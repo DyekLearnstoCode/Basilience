@@ -200,6 +200,19 @@
         <item name="android:textColor">@color/primary</item>
     </style>
 
+    <!-- Small tracked all-caps label introducing a group of related content
+         (e.g. Developer Options' "DIAGNOSTICS", "SAFETY OVERRIDES" section
+         headers) - the visual hierarchy cue that separates one card/section
+         from the next, distinct from a card's own internal title. -->
+    <style name="Basilience.SectionEyebrow" parent="">
+        <item name="android:textSize">11sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.1</item>
+        <item name="android:textColor">@color/nav_inactive</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
     <!-- 4. Dialog Themes -->
     <style name="HarvestDialogTheme" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
         <item name="colorSurface">@color/snow</item>

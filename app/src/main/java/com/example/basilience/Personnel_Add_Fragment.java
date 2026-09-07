@@ -57,7 +57,10 @@ public class Personnel_Add_Fragment extends Fragment {
         layoutLoading = view.findViewById(R.id.layoutLoading);
         tvLoadingTitle = view.findViewById(R.id.tvLoadingTitle);
 
-        btnSave.setOnClickListener(v -> saveFarmer());
+        btnSave.setOnClickListener(v -> {
+            NotificationHelper.hideKeyboard(v);
+            saveFarmer();
+        });
 
         etPhone.setFilters(new InputFilter[]{
                 new InputFilter.LengthFilter(11)
@@ -117,6 +120,7 @@ public class Personnel_Add_Fragment extends Fragment {
 
         helper.createFarmerAccountAndAssignToCurrentAdmin(name, email, phone, password)
                 .addOnSuccessListener(unused -> {
+                    if (!isAdded()) return;
                     showLoading(false, null);
                     Bundle result = new Bundle();
                     result.putBoolean("added", true);
@@ -126,6 +130,7 @@ public class Personnel_Add_Fragment extends Fragment {
                     getParentFragmentManager().popBackStack();
                 })
                 .addOnFailureListener(e -> {
+                    if (!isAdded()) return;
                     showLoading(false, null);
                     btnSave.setEnabled(true);
                     Log.e(TAG, "Failed to create personnel account", e);

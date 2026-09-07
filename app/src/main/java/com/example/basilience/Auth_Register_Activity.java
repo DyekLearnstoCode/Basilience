@@ -65,6 +65,7 @@ public class Auth_Register_Activity extends AppCompatActivity {
         tvLogin.setOnClickListener(v -> finish());
         etConfirmPassword.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                NotificationHelper.hideKeyboard(v);
                 registerUser();
                 return true;
             }

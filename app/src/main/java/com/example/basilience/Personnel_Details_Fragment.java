@@ -25,6 +25,7 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentSnapshot;
+import com.google.firebase.firestore.FirebaseFirestoreException;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -99,7 +100,10 @@ public class Personnel_Details_Fragment extends Fragment {
 
         view.findViewById(R.id.btnEdit).setOnClickListener(v -> showEditMode());
         view.findViewById(R.id.btnCancelEdit).setOnClickListener(v -> showViewMode());
-        btnSave.setOnClickListener(v -> saveChanges());
+        btnSave.setOnClickListener(v -> {
+            NotificationHelper.hideKeyboard(v);
+            saveChanges();
+        });
         view.findViewById(R.id.btnResetPassword).setOnClickListener(v -> showChangePasswordDialog());
         view.findViewById(R.id.btnAssignDevice).setOnClickListener(v -> showAssignDeviceDialog());
         btnDelete.setOnClickListener(v -> NotificationHelper.showDestructiveConfirmation(
@@ -279,7 +283,18 @@ public class Personnel_Details_Fragment extends Fragment {
                                 if (!isAdded()) return;
                                 showLoading(false, null);
                                 Log.e(TAG, "Failed to assign device", e);
-                                NotificationHelper.showError(requireContext(), "Unable to assign this device. Please try again.");
+                                // The client already pre-checks "already assigned"
+                                // above, so this is only reached on a race (assigned
+                                // by someone else in between) - surface
+                                // assignDeviceToUser()'s own specific message rather
+                                // than a generic retry prompt in that case.
+                                String message = "Unable to assign this device. Please try again.";
+                                if (e instanceof FirebaseFirestoreException
+                                        && ((FirebaseFirestoreException) e).getCode()
+                                                == FirebaseFirestoreException.Code.ALREADY_EXISTS) {
+                                    message = e.getMessage();
+                                }
+                                NotificationHelper.showError(requireContext(), message);
                             });
                 });
             }).addOnFailureListener(e -> {
@@ -428,7 +443,13 @@ public class Personnel_Details_Fragment extends Fragment {
                     showLoading(false, null);
                     btnDelete.setEnabled(true);
                     Log.e(TAG, "Failed to delete personnel", e);
-                    NotificationHelper.showError(requireContext(), "Unable to remove this personnel. Please try again.");
+                    String message = "Unable to remove this personnel. Please try again.";
+                    if (e instanceof FirebaseFirestoreException
+                            && ((FirebaseFirestoreException) e).getCode()
+                                    == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                        message = e.getMessage();
+                    }
+                    NotificationHelper.showError(requireContext(), message);
                 });
     }
 

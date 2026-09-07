@@ -63,4 +63,6 @@
 
     <string name="status_ongoing">Ongoing</string>
     <string name="days_suffix">%1$d days</string>
+
+    <string name="device_scope_label">Device: %1$s</string>
 </resources>

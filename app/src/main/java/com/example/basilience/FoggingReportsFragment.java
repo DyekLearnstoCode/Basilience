@@ -224,6 +224,7 @@ public class FoggingReportsFragment extends Fragment {
             Toast.makeText(getContext(), "Please select a device first", Toast.LENGTH_SHORT).show();
         } else {
             dbHelper.setSelectedDeviceId(selectedDeviceId);
+            NotificationHelper.bindDeviceLabel(view.findViewById(R.id.tvDeviceScopeLabel), selectedDeviceId);
         }
 
         spinnerCycle = view.findViewById(R.id.spinnerCycle);
@@ -764,6 +765,7 @@ public class FoggingReportsFragment extends Fragment {
             .addListenerForSingleValueEvent(new ValueEventListener() {
                 @Override
                 public void onDataChange(@NonNull DataSnapshot snapshot) {
+                    if (!isAdded()) return;
                     if (snapshot.exists()) {
                         Double val = snapshot.getValue(Double.class);
                         if (val != null) refillStartLevelCm = val;
@@ -777,6 +779,7 @@ public class FoggingReportsFragment extends Fragment {
 
                 @Override
                 public void onCancelled(@NonNull DatabaseError error) {
+                    if (!isAdded()) return;
                     refillStartLevelCm = 2.0; // Fallback - matches firmware Config.h's REFILL_START_CM
                     tvRefillThreshold.setText(String.format(Locale.getDefault(),
                             "Refill threshold: %.1f cm (Offline Fallback)", refillStartLevelCm));

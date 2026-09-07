@@ -102,7 +102,10 @@ public class ParameterTargetRangesFragment extends Fragment {
         }
 
         bindInputs(view);
-        if (btnSave != null) btnSave.setOnClickListener(v -> save());
+        if (btnSave != null) btnSave.setOnClickListener(v -> {
+            NotificationHelper.hideKeyboard(v);
+            save();
+        });
 
         if (deviceId == null || deviceId.isEmpty()) {
             NotificationHelper.showError(requireContext(), "No device selected");
@@ -110,6 +113,7 @@ public class ParameterTargetRangesFragment extends Fragment {
             return;
         }
 
+        NotificationHelper.bindDeviceLabel(view.findViewById(R.id.tvDeviceScopeLabel), deviceId);
         loadCurrentValues();
     }
 

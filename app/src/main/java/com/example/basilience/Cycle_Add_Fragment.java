@@ -19,6 +19,7 @@ import androidx.navigation.Navigation;
 import com.google.android.material.textfield.TextInputLayout;
 import com.google.firebase.Timestamp;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.firestore.FirebaseFirestoreException;
 
 import java.util.Calendar;
 
@@ -75,7 +76,10 @@ public class Cycle_Add_Fragment extends Fragment {
         etStartDate.setClickable(true);
         etStartDate.setOnClickListener(v -> showDatePicker());
 
-        btnSave.setOnClickListener(v -> saveCycleToDb(view));
+        btnSave.setOnClickListener(v -> {
+            NotificationHelper.hideKeyboard(v);
+            saveCycleToDb(view);
+        });
     }
 
     /**
@@ -197,7 +201,19 @@ public class Cycle_Add_Fragment extends Fragment {
                 Navigation.findNavController(view).popBackStack();
             } else {
                 btnSave.setEnabled(true);
-                NotificationHelper.showError(requireContext(), "Error saving cycle");
+                Log.e(TAG, "Failed to save cycle", task.getException());
+                // addCycle() -> checkCycleOperatorPermission() throws a specific,
+                // safe "you are not assigned to this device" PERMISSION_DENIED
+                // reason - previously discarded for a bare, non-actionable
+                // "Error saving cycle" with no indication of what to do next.
+                String message = "Unable to save this cycle. Please try again.";
+                Exception exception = task.getException();
+                if (exception instanceof FirebaseFirestoreException
+                        && ((FirebaseFirestoreException) exception).getCode()
+                                == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                    message = exception.getMessage();
+                }
+                NotificationHelper.showError(requireContext(), message);
             }
         });
     }

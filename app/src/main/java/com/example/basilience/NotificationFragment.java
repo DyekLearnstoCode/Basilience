@@ -199,6 +199,7 @@ public class NotificationFragment extends Fragment {
                             }
                         })
                         .addOnFailureListener(e -> {
+                            if (!isAdded()) return;
                             Log.e(TAG, "Failed to resolve assigned devices for notifications", e);
                             showEmptyState("Could not find registered device.");
                         });
@@ -214,6 +215,11 @@ public class NotificationFragment extends Fragment {
 
     private void startListeningToNotifications() {
         if (notificationListener != null) notificationListener.remove();
+
+        if (getView() != null) {
+            NotificationHelper.bindDeviceLabel(
+                    getView().findViewById(R.id.tvDeviceScopeLabel), dbHelper.getSelectedDeviceId());
+        }
 
         paginationStarted = false;
         olderNotifications.clear();

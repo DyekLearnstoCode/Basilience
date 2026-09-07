@@ -188,6 +188,7 @@ public class SystemReportsFragment extends Fragment {
             Toast.makeText(getContext(), "Please select a device first", Toast.LENGTH_SHORT).show();
         } else {
             dbHelper.setSelectedDeviceId(selectedDeviceId);
+            NotificationHelper.bindDeviceLabel(view.findViewById(R.id.tvDeviceScopeLabel), selectedDeviceId);
         }
 
         spinnerCycle = view.findViewById(R.id.spinnerCycle);
@@ -631,6 +632,7 @@ public class SystemReportsFragment extends Fragment {
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        if (!isAdded()) return;
                         minPhThreshold = numberValue(snapshot.child("minPH"));
                         maxPhThreshold = numberValue(snapshot.child("maxPH"));
                         phTargetMinThreshold = numberValue(snapshot.child("phTargetMin"));

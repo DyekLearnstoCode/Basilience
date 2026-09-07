@@ -60,8 +60,118 @@
                 android:textColor="#757575"
                 android:textSize="14sp"
                 android:fontFamily="sans-serif-medium"
-                android:layout_marginTop="6dp"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginTop="6dp" />
+
+            <!-- Confirms which device every control on this screen is
+                 scoped to, so a multi-device account can never mistake this
+                 for a DIFFERENT device's settings. Set once the device
+                 document resolves in onViewCreated(); shows the raw ID
+                 until then, and if the name lookup fails. -->
+            <TextView
+                android:id="@+id/tvDevOptionsDeviceLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:textColor="#3D8B3D"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="24dp" />
+
+            <!-- ================= DEVICE CLOCK ================= -->
+            <!-- Device Configuration (Admin) only - hidden for Developer
+                 Options in configureAccessMode(). Reads status/rtc, written
+                 by RTCManager on the ESP32; this is passive/read-only, no
+                 command path exists here to set the clock from the app. -->
+            <TextView
+                style="@style/Basilience.SectionEyebrow"
+                android:id="@+id/tvRtcHealthEyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:text="Device Clock" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardRtcHealth"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="20dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                app:strokeColor="#E0E0E0"
+                app:strokeWidth="1dp"
+                app:cardBackgroundColor="@android:color/white">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Real-Time Clock"
+                        android:fontFamily="sans-serif-bold"
+                        android:textColor="#212121"
+                        android:textSize="18sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="Status of the ESP32's DS3231 clock, used for scheduling and event timestamps."
+                        android:textColor="#757575"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/tvRtcBanner"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:gravity="center"
+                        android:padding="10dp"
+                        android:text="RTC STATUS UNAVAILABLE"
+                        android:textColor="@color/sensor_no_data"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvRtcConnected"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="Connected: --"
+                        android:textColor="@color/sensor_no_data"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/tvRtcSyncSource"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Source: --"
+                        android:textColor="@color/sensor_no_data"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/tvRtcDeviceTime"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Device time: --"
+                        android:textColor="@color/sensor_no_data"
+                        android:textSize="13sp"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ================= DIAGNOSTICS & SIMULATION ================= -->
+            <TextView
+                style="@style/Basilience.SectionEyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:text="Diagnostics &amp; Simulation" />
 
             <!-- FILTER CHIPS BAR -->
             <LinearLayout
@@ -81,6 +191,7 @@
                     android:layout_marginEnd="3dp"
                     android:paddingStart="0dp"
                     android:paddingEnd="0dp"
+                    app:iconPadding="0dp"
                     android:insetTop="0dp"
                     android:insetBottom="0dp"
                     android:insetLeft="0dp"
@@ -113,7 +224,6 @@
                     android:layout_height="42dp"
                     android:layout_weight="1"
                     android:layout_marginStart="3dp"
-                    android:layout_marginEnd="3dp"
                     android:paddingStart="0dp"
                     android:paddingEnd="0dp"
                     app:iconPadding="0dp"
@@ -123,76 +233,6 @@
                     android:insetRight="0dp"
                     android:text="Refill"
                     android:textSize="10sp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnFilterCanopyPwm"
-                    style="@style/DeveloperFilterChip"
-                    android:layout_width="0dp"
-                    android:layout_height="42dp"
-                    android:layout_weight="1"
-                    android:layout_marginStart="3dp"
-                    android:paddingStart="0dp"
-                    android:paddingEnd="0dp"
-                    app:iconPadding="0dp"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    android:insetLeft="0dp"
-                    android:insetRight="0dp"
-                    android:text="Canopy PWM"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <!-- PARAMETER TARGET RANGES - Admin-only, not chip-toggled like the
-                 tabs above; a fixed link to its own screen, visible only in
-                 Device Configuration mode (see DevOptionsFragment.configureAccessMode). -->
-            <LinearLayout
-                android:id="@+id/rowTargetRangesLink"
-                android:layout_width="match_parent"
-                android:layout_height="90dp"
-                android:layout_marginBottom="20dp"
-                android:background="@drawable/card_option"
-                android:clickable="true"
-                android:focusable="true"
-                android:foreground="?attr/selectableItemBackground"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="12dp"
-                android:visibility="gone">
-
-                <ImageView
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:padding="0dp"
-                    android:scaleType="fitCenter"
-                    android:src="@drawable/ic_science_24" />
-
-                <TextView
-                    style="@style/Basilience.CardOptionLabel"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:layout_weight="1"
-                    android:text="Parameter Target Ranges" />
-
-                <FrameLayout
-                    android:layout_width="50dp"
-                    android:layout_height="50dp"
-                    android:background="@drawable/circle_button"
-                    android:clickable="false"
-                    android:duplicateParentState="true"
-                    android:focusable="false"
-                    android:gravity="center"
-                    android:importantForAccessibility="no">
-
-                    <ImageView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center"
-                        android:src="@drawable/enter_arrow"
-                        app:tint="@color/state_primary_text" />
-
-                </FrameLayout>
-
             </LinearLayout>
 
             <!-- 1. PHYSICAL SENSOR TEST CONTAINER -->
@@ -611,15 +651,15 @@
 
                         <!-- Push Mock Data Button -->
                         <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnPush"
-                    style="@style/BasilienceButton.Primary"
+                            android:id="@+id/btnPush"
+                            style="@style/BasilienceButton.Primary"
                             android:layout_width="match_parent"
                             android:layout_height="52dp"
                             android:text="Push Mock Values to ESP32"
                             app:cornerRadius="12dp"
                             app:backgroundTint="@color/primary"
                             android:textColor="@color/onPrimary"
-                            android:textStyle="bold"/>
+                            android:textStyle="bold" />
 
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -715,132 +755,77 @@
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
 
-            <!-- 4. CANOPY FAN PWM TEST CONTAINER -->
-            <LinearLayout
-                android:id="@+id/containerCanopyPwm"
-                android:layout_width="match_parent"
+            <!-- ================= PARAMETER CONFIGURATION ================= -->
+            <TextView
+                android:id="@+id/tvParameterConfigEyebrow"
+                style="@style/Basilience.SectionEyebrow"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="10dp"
+                android:text="Parameter Configuration" />
+
+            <!-- PARAMETER TARGET RANGES - Admin-only, not chip-toggled like the
+                 tabs above; a fixed link to its own screen, visible only in
+                 Developer Options mode (see DevOptionsFragment.configureAccessMode). -->
+            <LinearLayout
+                android:id="@+id/rowTargetRangesLink"
+                android:layout_width="match_parent"
+                android:layout_height="90dp"
+                android:layout_marginBottom="20dp"
+                android:background="@drawable/card_option"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="12dp"
                 android:visibility="gone">
 
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="match_parent"
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:padding="0dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_science_24" />
+
+                <TextView
+                    style="@style/Basilience.CardOptionLabel"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="16dp"
-                    app:cardCornerRadius="16dp"
-                    app:cardElevation="2dp"
-                    app:strokeColor="#E0E0E0"
-                    app:strokeWidth="1dp"
-                    app:cardBackgroundColor="@android:color/white">
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:text="Parameter Target Ranges" />
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
+                <FrameLayout
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:background="@drawable/circle_button"
+                    android:clickable="false"
+                    android:duplicateParentState="true"
+                    android:focusable="false"
+                    android:gravity="center"
+                    android:importantForAccessibility="no">
+
+                    <ImageView
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="20dp">
+                        android:layout_gravity="center"
+                        android:src="@drawable/enter_arrow"
+                        app:tint="@color/state_primary_text" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Canopy Fan PWM Test"
-                            android:fontFamily="sans-serif-bold"
-                            android:textColor="#212121"
-                            android:textSize="18sp" />
+                </FrameLayout>
 
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:text="Commands the Canopy Fan directly at a fixed percentage, independent of temperature/humidity automation. Requires Manual Mode (enable it on the Monitoring screen first). This verifies the commanded PWM output only - the ESP32 Serial log shows the resulting [CANOPY-PWM] duty value. The hardware has no tachometer, so actual physical RPM can never be confirmed from software."
-                            android:textColor="#757575"
-                            android:textSize="13sp" />
-
-                        <TextView
-                            android:id="@+id/tvCanopyPwmManualModeWarning"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="14dp"
-                            android:gravity="center"
-                            android:padding="10dp"
-                            android:text="MANUAL MODE IS OFF - enable it on the Monitoring screen to send test commands"
-                            android:textColor="@color/state_warning"
-                            android:textStyle="bold" />
-
-                        <GridLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="14dp"
-                            android:columnCount="3"
-                            android:orientation="horizontal">
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnCanopyPwm0"
-                                style="@style/BasilienceButton.Primary"
-                                android:layout_width="0dp"
-                                android:layout_height="48dp"
-                                android:layout_columnWeight="1"
-                                android:layout_margin="4dp"
-                                android:text="0%"
-                                android:textSize="13sp"
-                                app:cornerRadius="10dp" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnCanopyPwm30"
-                                style="@style/BasilienceButton.Primary"
-                                android:layout_width="0dp"
-                                android:layout_height="48dp"
-                                android:layout_columnWeight="1"
-                                android:layout_margin="4dp"
-                                android:text="30%"
-                                android:textSize="13sp"
-                                app:cornerRadius="10dp" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnCanopyPwm50"
-                                style="@style/BasilienceButton.Primary"
-                                android:layout_width="0dp"
-                                android:layout_height="48dp"
-                                android:layout_columnWeight="1"
-                                android:layout_margin="4dp"
-                                android:text="50%"
-                                android:textSize="13sp"
-                                app:cornerRadius="10dp" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnCanopyPwm75"
-                                style="@style/BasilienceButton.Primary"
-                                android:layout_width="0dp"
-                                android:layout_height="48dp"
-                                android:layout_columnWeight="1"
-                                android:layout_margin="4dp"
-                                android:text="75%"
-                                android:textSize="13sp"
-                                app:cornerRadius="10dp" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnCanopyPwm100"
-                                style="@style/BasilienceButton.Primary"
-                                android:layout_width="0dp"
-                                android:layout_height="48dp"
-                                android:layout_columnWeight="1"
-                                android:layout_margin="4dp"
-                                android:text="100%"
-                                android:textSize="13sp"
-                                app:cornerRadius="10dp" />
-                        </GridLayout>
-
-                        <TextView
-                            android:id="@+id/tvCanopyPwmStatus"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="14dp"
-                            android:text="No test command sent yet."
-                            android:textColor="#757575"
-                            android:textSize="12sp" />
-
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
+
+            <!-- ================= AUTOMATION TESTING ================= -->
+            <TextView
+                android:id="@+id/tvAutomationTestingEyebrow"
+                style="@style/Basilience.SectionEyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:text="Automation Testing" />
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardAutomationTestMode"
@@ -872,9 +857,9 @@
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
                         android:layout_marginTop="10dp"
-                        android:background="@drawable/card_option"
+                        android:background="@drawable/card_option_spinner_bg"
                         android:paddingStart="12dp"
-                        android:paddingEnd="12dp" />
+                        android:paddingEnd="36dp" />
 
                     <TextView
                         android:id="@+id/tvAutomationTestModeStatus"
@@ -944,63 +929,93 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- ================= SAFETY OVERRIDES ================= -->
+            <TextView
+                android:id="@+id/tvSafetyOverridesEyebrow"
+                style="@style/Basilience.SectionEyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="10dp"
+                android:text="Safety Overrides" />
+
             <!-- Developer testing override: bypasses ONLY the automatic
                  water-level/refill gate. Physical water-level sensing, alerts,
                  and manual refill are unaffected - see DevOptionsFragment's
-                 confirmation dialog for the exact scope shown to the user. -->
-            <LinearLayout
+                 confirmation dialog for the exact scope shown to the user.
+                 Card-wrapped to match cardAutomationTestMode's treatment
+                 above, rather than sitting as a bare, unbordered section. -->
+            <com.google.android.material.card.MaterialCardView
                 android:id="@+id/containerIgnoreWaterLevel"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
                 android:layout_marginTop="4dp"
-                android:layout_marginBottom="12dp">
+                android:layout_marginBottom="12dp"
+                app:cardCornerRadius="14dp"
+                app:cardElevation="1dp"
+                app:strokeColor="#E0E0E0"
+                app:strokeWidth="1dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:background="@drawable/card_option"
-                    android:padding="14dp"
-                    android:gravity="center_vertical">
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Ignore Water Level Automation"
+                            android:fontFamily="sans-serif-medium"
+                            android:textSize="15sp"
+                            android:textColor="#212121" />
+
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switchIgnoreWaterLevel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:thumbTint="@color/switch_thumb_tint"
+                            android:trackTint="@color/switch_track_tint" />
+                    </LinearLayout>
 
                     <TextView
-                        android:layout_width="0dp"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Ignore Water Level Automation"
-                        android:fontFamily="sans-serif-medium"
-                        android:textSize="15sp"
-                        android:textColor="#212121" />
+                        android:layout_marginTop="8dp"
+                        android:text="The system temporarily ignores automatic refill and low-water actuator safety while continuing to monitor and report the real water level."
+                        android:textColor="#757575"
+                        android:textSize="12sp" />
 
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/switchIgnoreWaterLevel"
-                        android:layout_width="wrap_content"
+                    <TextView
+                        android:id="@+id/tvIgnoreWaterLevelIndicator"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:thumbTint="@color/switch_thumb_tint"
-                        android:trackTint="@color/switch_track_tint" />
+                        android:layout_marginTop="10dp"
+                        android:gravity="center"
+                        android:padding="10dp"
+                        android:text="LOW-WATER SAFETY OVERRIDE ACTIVE"
+                        android:textColor="@color/state_warning"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
                 </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:text="The system temporarily ignores automatic refill and low-water actuator safety while continuing to monitor and report the real water level."
-                    android:textColor="#757575"
-                    android:textSize="12sp" />
-
-                <TextView
-                    android:id="@+id/tvIgnoreWaterLevelIndicator"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:gravity="center"
-                    android:padding="10dp"
-                    android:text="LOW-WATER SAFETY OVERRIDE ACTIVE"
-                    android:textColor="@color/state_warning"
-                    android:textStyle="bold"
-                    android:visibility="gone" />
-            </LinearLayout>
+            <!-- ================= DEVICE ACTIONS ================= -->
+            <TextView
+                android:id="@+id/tvDeviceActionsEyebrow"
+                style="@style/Basilience.SectionEyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="10dp"
+                android:text="Device Actions" />
 
             <!-- Always visible below either tab: developer/recovery actions that
                  aren't part of either Sensor Test or Mock Data. -->
@@ -1009,7 +1024,6 @@
                 style="@style/BasilienceButton.Primary"
                 android:layout_width="match_parent"
                 android:layout_height="52dp"
-                android:layout_marginTop="4dp"
                 android:text="Enable Provisioning/AP Mode"
                 android:textStyle="bold"
                 app:cornerRadius="12dp"/>

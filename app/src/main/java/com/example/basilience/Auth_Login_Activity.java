@@ -125,6 +125,7 @@ public class Auth_Login_Activity extends AppCompatActivity {
         btnlogin.setOnClickListener(v -> doLogin());
         txtpassword.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                NotificationHelper.hideKeyboard(v);
                 doLogin();
                 return true;
             }

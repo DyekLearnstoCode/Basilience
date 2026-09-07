@@ -68,7 +68,10 @@ public class AccountFragment extends Fragment {
 
         view.findViewById(R.id.btnEditProfile).setOnClickListener(v -> showEditMode());
         view.findViewById(R.id.btnCancelEdit).setOnClickListener(v -> showViewMode());
-        btnSaveProfile.setOnClickListener(v -> updateProfile());
+        btnSaveProfile.setOnClickListener(v -> {
+            NotificationHelper.hideKeyboard(v);
+            updateProfile();
+        });
         view.findViewById(R.id.btnChangePassword).setOnClickListener(v -> showChangePasswordDialog());
         btnLogout.setOnClickListener(v -> logout());
 

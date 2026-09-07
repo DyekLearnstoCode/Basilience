@@ -62,6 +62,18 @@
                 android:letterSpacing="-0.02"
                 android:textAlignment="center"/>
 
+            <!-- Confirms which device these target ranges apply to. -->
+            <TextView
+                android:id="@+id/tvDeviceScopeLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:textColor="#3D8B3D"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="12dp" />
+
             <!-- PAGE DESCRIPTION -->
             <TextView
                 android:id="@+id/tvTargetRangesIntro"

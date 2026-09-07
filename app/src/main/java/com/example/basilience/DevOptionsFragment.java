@@ -50,8 +50,7 @@ public class DevOptionsFragment extends Fragment {
     private DatabaseReference ignoreWaterLevelStatusRef;
     private DatabaseReference automationTestModeCommandRef;
     private DatabaseReference automationTestModeStatusRef;
-    private DatabaseReference manualModeCommandRef;
-    private ValueEventListener manualModeStatusListener;
+    private DatabaseReference rtcStatusRef;
 
     private SwitchMaterial switchMockEnable;
     private SwitchMaterial switchDynamicMock;
@@ -60,6 +59,10 @@ public class DevOptionsFragment extends Fragment {
     private boolean suppressIgnoreWaterLevelSwitchCallback = false;
     private ValueEventListener ignoreWaterLevelStatusListener;
     private ValueEventListener automationTestModeStatusListener;
+    private ValueEventListener rtcStatusListener;
+    private View cardRtcHealth;
+    private TextView tvRtcHealthEyebrow;
+    private TextView tvRtcBanner, tvRtcConnected, tvRtcSyncSource, tvRtcDeviceTime;
     private Spinner spinnerAutomationTestMode;
     private TextView tvAutomationTestModeStatus;
     private boolean automationTestModeStatusLoaded = false;
@@ -101,6 +104,7 @@ public class DevOptionsFragment extends Fragment {
 
     private MaterialButton btnPush, btnEnableProvisioningAp, btnDisableDeveloperMode;
     private MaterialButton btnFilterSensorTest, btnFilterMock, btnFilterRefill, btnSensorTest;
+    private View containerToolFilters;
     private MaterialButton btnSaveRefillThresholds;
     private TextInputLayout layoutRefillStart, layoutRefillStop;
     private TextInputEditText etRefillStart, etRefillStop;
@@ -114,30 +118,22 @@ public class DevOptionsFragment extends Fragment {
     // the accepted EC calibration is unchanged.
     private TextView tvDiagnosticEcVoltage;
 
-    private View containerSensorTest, containerMockData, containerRefill, containerCanopyPwm;
+    private View containerSensorTest, containerMockData, containerRefill;
     private View cardAutomationTestMode, containerIgnoreWaterLevel;
     // Admin-only navigation link, not a chip-toggled tab like the containers
-    // above - visible whenever this screen is in Device Configuration
-    // (maintenanceMode) rather than Developer Options.
+    // above - visible whenever this screen is in Developer Options rather
+    // than Device Configuration (maintenanceMode) - see configureAccessMode().
+    // Moved here from Device Configuration by request; target ranges belong
+    // with the other developer/testing tools now.
     private View rowTargetRangesLink;
-    private MaterialButton btnFilterCanopyPwm;
 
-    // Isolated Canopy Fan PWM diagnostic (real-hardware Canopy/Blower PWM
-    // verification follow-up) - reuses the existing manual actuator command
-    // path (Database_Helper.updateActuatorState) rather than a parallel test
-    // mechanism, so it inherits manual ownership arbitration, admin
-    // authorization, and the firmware's own [CANOPY-PWM] duty logging for
-    // free. Does not touch automationTestMode, mockSensors, or any other
-    // subsystem - only commands/canopyFan.
-    private Database_Helper dbHelper;
-    private MaterialButton btnCanopyPwm0, btnCanopyPwm30, btnCanopyPwm50, btnCanopyPwm75, btnCanopyPwm100;
-    private TextView tvCanopyPwmStatus, tvCanopyPwmManualModeWarning;
-    private boolean canopyManualModeOn = false;
-    // True only while this screen has commanded a non-zero test percentage
-    // and hasn't yet commanded it back off - drives the safe-state restore
-    // in onDestroyView(), mirroring how sensorTestActive/Requested are
-    // cleaned up on exit.
-    private boolean canopyPwmTestActive = false;
+    // Section headers for the four Developer-Options-only groups above -
+    // configureAccessMode() hides their content in Device Configuration
+    // mode but previously left these titles rendering with nothing under
+    // them (confirmed live: four stacked headers, no controls). Hidden
+    // alongside their content for the same reason rowTargetRangesLink is.
+    private View tvParameterConfigEyebrow, tvAutomationTestingEyebrow,
+            tvSafetyOverridesEyebrow, tvDeviceActionsEyebrow;
 
     // True only for accounts with users/{uid}.isDeveloper == true in Firestore
     // (see Auth_Login_Activity, which caches it into this same "is_developer"
@@ -145,8 +141,8 @@ public class DevOptionsFragment extends Fragment {
     // above that gates entry to this screen at all. Never settable from
     // within the app (see firestore.rules); gates the subset of Developer
     // Options that can act on a live grow (Mock Sensors, Automation Test
-    // Mode, the Ignore Water Level safety bypass, Canopy PWM raw commands),
-    // while Sensor Test/Refill thresholds stay available to any Admin.
+    // Mode, the Ignore Water Level safety bypass), while Sensor Test/Refill
+    // thresholds stay available to any Admin.
     private boolean isDeveloper = false;
 
     private boolean loadingMockState = true;
@@ -155,6 +151,13 @@ public class DevOptionsFragment extends Fragment {
     private boolean sensorTestRequested = false;
     private ValueEventListener sensorTestStatusListener;
     private ValueEventListener diagnosticSensorsListener;
+    // waitForMockAcknowledgement()'s listener - untracked before, so it never
+    // appeared in onDestroyView()'s cleanup list like every other listener in
+    // this file, and pushMockValues()/disableMockMode() could each attach a
+    // second one on top of an already in-flight instance within the same 15s
+    // acknowledgement window.
+    private DatabaseReference mockAckRef;
+    private ValueEventListener mockAckListener;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private static final String PREFS_NAME = "basilience_prefs";
     private static final String KEY_DEVELOPER_MODE_ENABLED = "developer_mode_enabled";
@@ -200,16 +203,19 @@ public class DevOptionsFragment extends Fragment {
         btnFilterSensorTest = view.findViewById(R.id.btnFilterSensorTest);
         btnFilterMock = view.findViewById(R.id.btnFilterMock);
         btnFilterRefill = view.findViewById(R.id.btnFilterRefill);
-        btnFilterCanopyPwm = view.findViewById(R.id.btnFilterCanopyPwm);
+        containerToolFilters = view.findViewById(R.id.containerToolFilters);
 
         // Containers
         containerSensorTest = view.findViewById(R.id.containerSensorTest);
         containerMockData = view.findViewById(R.id.containerMockData);
         containerRefill = view.findViewById(R.id.containerRefill);
-        containerCanopyPwm = view.findViewById(R.id.containerCanopyPwm);
         cardAutomationTestMode = view.findViewById(R.id.cardAutomationTestMode);
         containerIgnoreWaterLevel = view.findViewById(R.id.containerIgnoreWaterLevel);
         rowTargetRangesLink = view.findViewById(R.id.rowTargetRangesLink);
+        tvParameterConfigEyebrow = view.findViewById(R.id.tvParameterConfigEyebrow);
+        tvAutomationTestingEyebrow = view.findViewById(R.id.tvAutomationTestingEyebrow);
+        tvSafetyOverridesEyebrow = view.findViewById(R.id.tvSafetyOverridesEyebrow);
+        tvDeviceActionsEyebrow = view.findViewById(R.id.tvDeviceActionsEyebrow);
         if (rowTargetRangesLink != null) {
             // Navigates by destination ID rather than a named <action>, since
             // this row is now only ever shown from the devOptionsFragment
@@ -221,15 +227,6 @@ public class DevOptionsFragment extends Fragment {
             rowTargetRangesLink.setOnClickListener(v ->
                     navController.navigate(R.id.parameterTargetRangesFragment));
         }
-
-        // Canopy Fan PWM test components
-        btnCanopyPwm0 = view.findViewById(R.id.btnCanopyPwm0);
-        btnCanopyPwm30 = view.findViewById(R.id.btnCanopyPwm30);
-        btnCanopyPwm50 = view.findViewById(R.id.btnCanopyPwm50);
-        btnCanopyPwm75 = view.findViewById(R.id.btnCanopyPwm75);
-        btnCanopyPwm100 = view.findViewById(R.id.btnCanopyPwm100);
-        tvCanopyPwmStatus = view.findViewById(R.id.tvCanopyPwmStatus);
-        tvCanopyPwmManualModeWarning = view.findViewById(R.id.tvCanopyPwmManualModeWarning);
 
         // Water level automation override
         switchIgnoreWaterLevel = view.findViewById(R.id.switchIgnoreWaterLevel);
@@ -277,21 +274,40 @@ public class DevOptionsFragment extends Fragment {
         btnEnableProvisioningAp = view.findViewById(R.id.btnEnableProvisioningAp);
         btnDisableDeveloperMode = view.findViewById(R.id.btnDisableDeveloperMode);
 
+        // RTC health (Device Configuration / Admin only)
+        cardRtcHealth = view.findViewById(R.id.cardRtcHealth);
+        tvRtcHealthEyebrow = view.findViewById(R.id.tvRtcHealthEyebrow);
+        tvRtcBanner = view.findViewById(R.id.tvRtcBanner);
+        tvRtcConnected = view.findViewById(R.id.tvRtcConnected);
+        tvRtcSyncSource = view.findViewById(R.id.tvRtcSyncSource);
+        tvRtcDeviceTime = view.findViewById(R.id.tvRtcDeviceTime);
+
         configureAccessMode(view);
 
-        Database_Helper helper = new Database_Helper();
-        dbHelper = helper;
-        String currentDeviceId = helper.getSelectedDeviceId();
-        if (currentDeviceId == null && getContext() != null) {
+        // Read straight from SharedPreferences - the only actual source of
+        // truth for "which device is selected" (see the task report: a
+        // freshly-constructed Database_Helper's in-memory selectedDeviceId
+        // is always null here, so checking it first, as this used to do,
+        // was dead code that could never take effect).
+        String currentDeviceId = null;
+        if (getContext() != null) {
             android.content.SharedPreferences prefs = getContext().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
             currentDeviceId = prefs.getString("selected_device_id", null);
         }
 
         if (currentDeviceId == null) {
+            // Previously left the user stranded on this screen with every
+            // ref below unset (deviceRef, mockSensorsRef, etc.) and no way
+            // to recover short of manually leaving and re-entering - see
+            // the task report's "no escape hatch" finding. Send them back
+            // out instead so the failure is recoverable.
             Toast.makeText(getContext(), "No device selected", Toast.LENGTH_SHORT).show();
+            Navigation.findNavController(view).popBackStack();
             return;
         }
-        helper.setSelectedDeviceId(currentDeviceId);
+
+        NotificationHelper.bindDeviceLabel(
+                (TextView) view.findViewById(R.id.tvDevOptionsDeviceLabel), currentDeviceId);
 
         String rtdbUrl = "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app";
         deviceRef = FirebaseDatabase.getInstance(rtdbUrl).getReference("devices/" + currentDeviceId);
@@ -304,7 +320,10 @@ public class DevOptionsFragment extends Fragment {
         ignoreWaterLevelStatusRef = deviceRef.child("status/ignoreWaterLevelAutomation");
         automationTestModeCommandRef = deviceRef.child("commands/automationTestMode");
         automationTestModeStatusRef = deviceRef.child("status/automationTestMode");
-        manualModeCommandRef = deviceRef.child("commands/manualMode");
+        // Whole status/ node, not just status/rtc - online/lastServerSeen are
+        // needed alongside rtc/* to tell a live reading apart from a stale
+        // one RTDB is still holding from before the device went offline.
+        rtcStatusRef = deviceRef.child("status");
 
         // Confirmed live bug: this used to run whenever the ACCOUNT had ever
         // been granted developer status, regardless of which mode this
@@ -445,20 +464,18 @@ public class DevOptionsFragment extends Fragment {
         btnFilterSensorTest.setOnClickListener(v -> updateFilterSelection("Sensor"));
         btnFilterMock.setOnClickListener(v -> updateFilterSelection("Mock"));
         btnFilterRefill.setOnClickListener(v -> updateFilterSelection("Refill"));
-        if (btnFilterCanopyPwm != null) {
-            btnFilterCanopyPwm.setOnClickListener(v -> updateFilterSelection("CanopyPwm"));
-        }
 
         if (isDeveloper && !maintenanceMode) {
-            if (btnCanopyPwm0 != null) btnCanopyPwm0.setOnClickListener(v -> sendCanopyPwmTest(0));
-            if (btnCanopyPwm30 != null) btnCanopyPwm30.setOnClickListener(v -> sendCanopyPwmTest(30));
-            if (btnCanopyPwm50 != null) btnCanopyPwm50.setOnClickListener(v -> sendCanopyPwmTest(50));
-            if (btnCanopyPwm75 != null) btnCanopyPwm75.setOnClickListener(v -> sendCanopyPwmTest(75));
-            if (btnCanopyPwm100 != null) btnCanopyPwm100.setOnClickListener(v -> sendCanopyPwmTest(100));
-            btnPush.setOnClickListener(v -> pushMockValues());
+            btnPush.setOnClickListener(v -> {
+                NotificationHelper.hideKeyboard(v);
+                pushMockValues();
+            });
         }
         if (btnSaveRefillThresholds != null) {
-            btnSaveRefillThresholds.setOnClickListener(v -> saveRefillThresholds());
+            btnSaveRefillThresholds.setOnClickListener(v -> {
+                NotificationHelper.hideKeyboard(v);
+                saveRefillThresholds();
+            });
         }
         btnSensorTest.setOnClickListener(v -> handleSensorTestButton());
         if (btnEnableProvisioningAp != null) {
@@ -471,10 +488,10 @@ public class DevOptionsFragment extends Fragment {
         if (maintenanceMode) {
             observeSensorTest();
             updateFilterSelection("Sensor");
+            observeRtcHealth();
         } else {
             observeIgnoreWaterLevelOverride();
             observeAutomationTestMode();
-            observeManualModeForCanopyPwm();
             updateFilterSelection("Mock");
         }
     }
@@ -487,14 +504,16 @@ public class DevOptionsFragment extends Fragment {
             if (title != null) title.setText("Device Configuration");
             if (subtitle != null) subtitle.setText("Safe device diagnostics and production settings.");
             btnFilterMock.setVisibility(View.GONE);
-            btnFilterCanopyPwm.setVisibility(View.GONE);
             containerMockData.setVisibility(View.GONE);
-            containerCanopyPwm.setVisibility(View.GONE);
             cardAutomationTestMode.setVisibility(View.GONE);
             containerIgnoreWaterLevel.setVisibility(View.GONE);
             btnEnableProvisioningAp.setVisibility(View.GONE);
             btnDisableDeveloperMode.setVisibility(View.GONE);
             if (rowTargetRangesLink != null) rowTargetRangesLink.setVisibility(View.GONE);
+            if (tvParameterConfigEyebrow != null) tvParameterConfigEyebrow.setVisibility(View.GONE);
+            if (tvAutomationTestingEyebrow != null) tvAutomationTestingEyebrow.setVisibility(View.GONE);
+            if (tvSafetyOverridesEyebrow != null) tvSafetyOverridesEyebrow.setVisibility(View.GONE);
+            if (tvDeviceActionsEyebrow != null) tvDeviceActionsEyebrow.setVisibility(View.GONE);
         } else {
             if (title != null) title.setText("Developer Options");
             if (subtitle != null) subtitle.setText("For IT experts and developers - testing and maintenance tools only.");
@@ -502,6 +521,14 @@ public class DevOptionsFragment extends Fragment {
             btnFilterRefill.setVisibility(View.GONE);
             containerSensorTest.setVisibility(View.GONE);
             containerRefill.setVisibility(View.GONE);
+            // RTC health is an Admin/Device Configuration concern, not a
+            // developer testing tool - never shown in Developer Options.
+            if (cardRtcHealth != null) cardRtcHealth.setVisibility(View.GONE);
+            if (tvRtcHealthEyebrow != null) tvRtcHealthEyebrow.setVisibility(View.GONE);
+            // Mock Data is the only tool left in this mode, so the filter
+            // chip row has nothing left to filter between - hide it rather
+            // than show a single, unclickable-feeling "selection".
+            if (containerToolFilters != null) containerToolFilters.setVisibility(View.GONE);
             // Moved here from Device Configuration by request - target
             // ranges belong with the other developer/testing tools now.
             // ParameterTargetRangesFragment's own canEdit bounce-back still
@@ -534,6 +561,7 @@ public class DevOptionsFragment extends Fragment {
                 new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        if (!isAdded()) return;
                         if (!snapshot.hasChild("enabled") || !snapshot.hasChild("subsystem")) {
                             if (tvAutomationTestModeStatus != null) {
                                 tvAutomationTestModeStatus.setText("Firmware confirmed: waiting for device");
@@ -671,7 +699,7 @@ public class DevOptionsFragment extends Fragment {
      *
      * The shared layout has two authorized presentations: Device Maintenance
      * permits only Sensor Test/Refill, while Developer Options permits only
-     * Mock Data/Canopy PWM. Wi-Fi Configuration remains in Device Management.
+     * Mock Data. Wi-Fi Configuration remains in Device Management.
      */
     private void updateFilterSelection(String selectedFilter) {
         if (maintenanceMode && !"Sensor".equalsIgnoreCase(selectedFilter)
@@ -681,108 +709,14 @@ public class DevOptionsFragment extends Fragment {
         boolean sensor = "Sensor".equalsIgnoreCase(selectedFilter);
         boolean mock = "Mock".equalsIgnoreCase(selectedFilter);
         boolean refill = "Refill".equalsIgnoreCase(selectedFilter);
-        boolean canopyPwm = "CanopyPwm".equalsIgnoreCase(selectedFilter);
 
         btnFilterSensorTest.setSelected(sensor);
         btnFilterMock.setSelected(mock);
         btnFilterRefill.setSelected(refill);
-        if (btnFilterCanopyPwm != null) btnFilterCanopyPwm.setSelected(canopyPwm);
 
         containerSensorTest.setVisibility(sensor ? View.VISIBLE : View.GONE);
         containerMockData.setVisibility(mock ? View.VISIBLE : View.GONE);
         containerRefill.setVisibility(refill ? View.VISIBLE : View.GONE);
-        if (containerCanopyPwm != null) containerCanopyPwm.setVisibility(canopyPwm ? View.VISIBLE : View.GONE);
-    }
-
-    /**
-     * Read-only observation of commands/manualMode - this screen never
-     * writes that flag itself (Manual Mode is owned by
-     * Parameters_Monitoring_Fragment's own switch); it only gates whether
-     * the Canopy PWM test buttons are allowed to send a command, since
-     * Database_Helper.updateActuatorState() rejects manual actuator writes
-     * outright when manual mode is off (see its own Javadoc).
-     */
-    private void observeManualModeForCanopyPwm() {
-        if (manualModeCommandRef == null) return;
-        manualModeStatusListener = manualModeCommandRef.addValueEventListener(new ValueEventListener() {
-            @Override
-            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                Boolean enabled = snapshot.getValue(Boolean.class);
-                canopyManualModeOn = Boolean.TRUE.equals(enabled);
-                renderCanopyPwmManualModeState();
-            }
-
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {
-                canopyManualModeOn = false;
-                renderCanopyPwmManualModeState();
-            }
-        });
-    }
-
-    private void renderCanopyPwmManualModeState() {
-        if (tvCanopyPwmManualModeWarning != null) {
-            tvCanopyPwmManualModeWarning.setVisibility(canopyManualModeOn ? View.GONE : View.VISIBLE);
-        }
-        boolean enable = canopyManualModeOn;
-        if (btnCanopyPwm0 != null) btnCanopyPwm0.setEnabled(enable);
-        if (btnCanopyPwm30 != null) btnCanopyPwm30.setEnabled(enable);
-        if (btnCanopyPwm50 != null) btnCanopyPwm50.setEnabled(enable);
-        if (btnCanopyPwm75 != null) btnCanopyPwm75.setEnabled(enable);
-        if (btnCanopyPwm100 != null) btnCanopyPwm100.setEnabled(enable);
-    }
-
-    /**
-     * Sends a Canopy Fan-only manual command at a fixed test percentage,
-     * reusing the same commands/canopyFan path and manual-ownership
-     * arbitration as the Monitoring screen's own actuator controls - this
-     * does not invoke automation, does not require DHT (no sensor validity
-     * check gates a manual command), and touches no other actuator. The
-     * firmware's own change-detection logging (ActuatorManager.cpp) prints
-     * "[CANOPY-PWM] requested=X% duty=<duty>/<max duty>" to Serial whenever
-     * the commanded percentage changes - that is the only place the actual
-     * PWM duty value can be confirmed, since there is no RTDB duty field and
-     * no tachometer feedback to report real RPM.
-     */
-    private void sendCanopyPwmTest(int percent) {
-        if (dbHelper == null) return;
-        if (!canopyManualModeOn) {
-            Toast.makeText(getContext(), "Enable Manual Mode on the Monitoring screen first", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        // Defensive re-resolution: onViewCreated() sets dbHelper's device ID
-        // exactly once. If that happened to run before selected_device_id
-        // was actually available (a real observed failure mode - "No device
-        // selected" on every attempt to control the fan, for the rest of
-        // this screen's life), dbHelper's device stayed permanently unset
-        // with no way to recover short of leaving and re-entering the
-        // screen. Re-check and self-heal here instead, the same defensive
-        // pattern Parameters_Monitoring_Fragment already uses for its own
-        // connectivity listener.
-        if (dbHelper.getSelectedDeviceId() == null && getContext() != null) {
-            String retryDeviceId = getContext()
-                    .getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE)
-                    .getString("selected_device_id", null);
-            if (retryDeviceId != null) dbHelper.setSelectedDeviceId(retryDeviceId);
-        }
-
-        canopyPwmTestActive = percent > 0;
-        showLoading("Canopy PWM Test...", "Commanding Canopy Fan to " + percent + "%...");
-        dbHelper.updateActuatorState("canopyFan", percent > 0, false, percent)
-                .addOnSuccessListener(unused -> {
-                    hideLoading();
-                    if (!isAdded() || tvCanopyPwmStatus == null) return;
-                    tvCanopyPwmStatus.setText("Commanded canopyFan=" + percent
-                            + "%. Check the ESP32 Serial log for the matching [CANOPY-PWM] requested="
-                            + percent + "% duty=... line to confirm the PWM output.");
-                })
-                .addOnFailureListener(error -> {
-                    hideLoading();
-                    if (isAdded()) {
-                        NotificationHelper.showError(requireContext(), "Canopy PWM Test Failed", error.getMessage());
-                    }
-                });
     }
 
     private void handleSensorTestButton() {
@@ -815,6 +749,7 @@ public class DevOptionsFragment extends Fragment {
         sensorTestStatusListener = sensorTestStatusRef.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!isAdded()) return;
                 Boolean active = snapshot.getValue(Boolean.class);
                 sensorTestActive = Boolean.TRUE.equals(active);
                 sensorTestRequested = sensorTestActive;
@@ -824,6 +759,7 @@ public class DevOptionsFragment extends Fragment {
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
+                if (!isAdded()) return;
                 hideLoading();
             }
         });
@@ -831,6 +767,7 @@ public class DevOptionsFragment extends Fragment {
         diagnosticSensorsListener = diagnosticSensorsRef.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!isAdded()) return;
                 renderDiagnostic(tvDiagnosticPh, "pH", snapshot.child("ph").getValue(), "");
                 renderDiagnostic(tvDiagnosticEc, "EC", snapshot.child("ec").getValue(), " mS/cm");
                 renderDiagnostic(tvDiagnosticEcVoltage, "EC Voltage", snapshot.child("ecVoltage").getValue(), " V");
@@ -845,6 +782,7 @@ public class DevOptionsFragment extends Fragment {
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
+                if (!isAdded()) return;
                 renderAllDiagnosticsUnavailable();
             }
         });
@@ -912,6 +850,99 @@ public class DevOptionsFragment extends Fragment {
         tvIgnoreWaterLevelIndicator.setVisibility(enabled ? View.VISIBLE : View.GONE);
     }
 
+    // Read-only: shows RTCManager's own status/rtc write from the ESP32.
+    // There is no command path here to set the clock from the app - see
+    // FirebaseManager::syncRTC()'s comment on why RTC recovery is firmware-
+    // only (bounded SNTP), never a Firebase-echoed value.
+    private void observeRtcHealth() {
+        if (rtcStatusRef == null) return;
+        rtcStatusListener = rtcStatusRef.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!isAdded()) return;
+                renderRtcHealth(snapshot);
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                if (!isAdded()) return;
+                renderRtcUnavailable();
+            }
+        });
+    }
+
+    private void renderRtcHealth(DataSnapshot statusSnapshot) {
+        if (tvRtcBanner == null) return;
+
+        // The same presence rule the rest of the app uses (see
+        // FoggingReportsFragment's resolveRunningStateAndRender): rtc/* is
+        // last-known data that stays in RTDB after the device drops offline,
+        // so it must not be shown as current until presence is confirmed.
+        Boolean backendOnline = statusSnapshot.child("online").getValue(Boolean.class);
+        Long lastServerSeen = DeviceConnectionManager.readLongValue(statusSnapshot.child("lastServerSeen"));
+        boolean deviceLive = DeviceConnectionManager.resolveState(
+                backendOnline, lastServerSeen, System.currentTimeMillis())
+                == DeviceConnectivityState.ONLINE;
+        String lastKnownSuffix = deviceLive ? "" : " (last known)";
+
+        DataSnapshot snapshot = statusSnapshot.child("rtc");
+        if (!snapshot.exists()) {
+            renderRtcUnavailable();
+            return;
+        }
+
+        boolean connected = Boolean.TRUE.equals(snapshot.child("connected").getValue(Boolean.class));
+        boolean valid = Boolean.TRUE.equals(snapshot.child("valid").getValue(Boolean.class));
+        String syncSource = snapshot.child("syncSource").getValue(String.class);
+
+        tvRtcConnected.setText((connected ? "Connected: Yes" : "Connected: No") + lastKnownSuffix);
+        tvRtcConnected.setTextColor(ContextCompat.getColor(requireContext(),
+                connected && deviceLive ? R.color.sensor_reading : R.color.state_warning));
+        tvRtcSyncSource.setText("Source: " + (syncSource != null ? syncSource : "UNKNOWN") + lastKnownSuffix);
+        tvRtcSyncSource.setTextColor(ContextCompat.getColor(requireContext(),
+                deviceLive ? R.color.sensor_reading : R.color.state_warning));
+
+        if (!deviceLive) {
+            tvRtcBanner.setText("DEVICE OFFLINE - LAST KNOWN STATUS ONLY");
+            tvRtcBanner.setTextColor(ContextCompat.getColor(requireContext(), R.color.state_warning));
+        } else if (valid) {
+            tvRtcBanner.setText("RTC OK");
+            tvRtcBanner.setTextColor(ContextCompat.getColor(requireContext(), R.color.sensor_reading));
+        } else {
+            tvRtcBanner.setText(connected ? "RTC TIME INVALID" : "RTC NOT DETECTED");
+            tvRtcBanner.setTextColor(ContextCompat.getColor(requireContext(), R.color.state_warning));
+        }
+
+        Long year = snapshot.child("year").getValue(Long.class);
+        Long month = snapshot.child("month").getValue(Long.class);
+        Long day = snapshot.child("day").getValue(Long.class);
+        Long hour = snapshot.child("hour").getValue(Long.class);
+        Long minute = snapshot.child("minute").getValue(Long.class);
+        Long second = snapshot.child("second").getValue(Long.class);
+        if (valid && year != null && month != null && day != null
+                && hour != null && minute != null && second != null) {
+            // Local Asia/Manila calendar fields, matching RTCManager's own
+            // contract - never the epochUtc field here.
+            tvRtcDeviceTime.setText(String.format(Locale.US,
+                    "Device time: %04d-%02d-%02d %02d:%02d:%02d%s",
+                    year, month, day, hour, minute, second, lastKnownSuffix));
+            tvRtcDeviceTime.setVisibility(View.VISIBLE);
+        } else {
+            tvRtcDeviceTime.setVisibility(View.GONE);
+        }
+    }
+
+    private void renderRtcUnavailable() {
+        if (tvRtcBanner == null) return;
+        tvRtcBanner.setText("RTC STATUS UNAVAILABLE");
+        tvRtcBanner.setTextColor(ContextCompat.getColor(requireContext(), R.color.sensor_no_data));
+        tvRtcConnected.setText("Connected: --");
+        tvRtcConnected.setTextColor(ContextCompat.getColor(requireContext(), R.color.sensor_no_data));
+        tvRtcSyncSource.setText("Source: --");
+        tvRtcSyncSource.setTextColor(ContextCompat.getColor(requireContext(), R.color.sensor_no_data));
+        tvRtcDeviceTime.setVisibility(View.GONE);
+    }
+
     private void renderSensorTestState() {
         if (tvSensorTestIndicator == null || btnSensorTest == null) return;
         boolean pendingStart = sensorTestRequested && !sensorTestActive;
@@ -967,6 +998,7 @@ public class DevOptionsFragment extends Fragment {
         mockSensorsRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!isAdded()) return;
                 if (snapshot.exists()) {
                     Boolean enabled = snapshot.child("enabled").getValue(Boolean.class);
                     if (enabled != null) switchMockEnable.setChecked(enabled);
@@ -1186,7 +1218,15 @@ public class DevOptionsFragment extends Fragment {
     }
 
     private void waitForMockAcknowledgement(boolean expectedEnabled, boolean expectedDynamic) {
+        // Remove any still-in-flight instance from a previous call (e.g. Push
+        // then Disable tapped within the same 15s acknowledgement window)
+        // before attaching a new one, so at most one is ever active.
+        if (mockAckRef != null && mockAckListener != null) {
+            mockAckRef.removeEventListener(mockAckListener);
+        }
+
         DatabaseReference ackRef = deviceRef.child("status");
+        mockAckRef = ackRef;
         final ValueEventListener[] listenerHolder = new ValueEventListener[1];
         Runnable timeout = () -> {
             if (listenerHolder[0] != null) ackRef.removeEventListener(listenerHolder[0]);
@@ -1195,7 +1235,7 @@ public class DevOptionsFragment extends Fragment {
                     "Firebase accepted the mock command, but the ESP32 did not confirm it yet.");
         };
 
-        listenerHolder[0] = ackRef.addValueEventListener(new ValueEventListener() {
+        listenerHolder[0] = mockAckListener = ackRef.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 Boolean acknowledged = snapshot.child("mockData").getValue(Boolean.class);
@@ -1237,10 +1277,12 @@ public class DevOptionsFragment extends Fragment {
                     showLoading("Starting AP Mode...", "Sending developer command to ESP32...");
                     deviceRef.child("commands").child("startProvisioning").setValue(System.currentTimeMillis())
                             .addOnSuccessListener(aVoid -> {
+                                if (!isAdded()) return;
                                 showLoading("AP command sent", "Connect this phone to Basilience-Setup, then send Wi-Fi credentials locally.");
                                 new Handler(Looper.getMainLooper()).postDelayed(this::hideLoading, 3000);
                             })
                             .addOnFailureListener(e -> {
+                                if (!isAdded()) return;
                                 hideLoading();
                                 Toast.makeText(getContext(), "Unable to trigger AP mode: " + e.getMessage(), Toast.LENGTH_LONG).show();
                             });
@@ -1274,15 +1316,6 @@ public class DevOptionsFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
-        if (canopyPwmTestActive && dbHelper != null && canopyManualModeOn) {
-            // Restore safe/off state on exit - a non-zero PWM test command is
-            // never left standing after this screen is torn down.
-            dbHelper.updateActuatorState("canopyFan", false, false, 0);
-            canopyPwmTestActive = false;
-        }
-        if (manualModeCommandRef != null && manualModeStatusListener != null) {
-            manualModeCommandRef.removeEventListener(manualModeStatusListener);
-        }
         if ((sensorTestActive || sensorTestRequested) && sensorTestCommandRef != null) {
             sensorTestCommandRef.setValue(false);
         }
@@ -1297,6 +1330,12 @@ public class DevOptionsFragment extends Fragment {
         }
         if (automationTestModeStatusRef != null && automationTestModeStatusListener != null) {
             automationTestModeStatusRef.removeEventListener(automationTestModeStatusListener);
+        }
+        if (rtcStatusRef != null && rtcStatusListener != null) {
+            rtcStatusRef.removeEventListener(rtcStatusListener);
+        }
+        if (mockAckRef != null && mockAckListener != null) {
+            mockAckRef.removeEventListener(mockAckListener);
         }
         mainHandler.removeCallbacksAndMessages(null);
         super.onDestroyView();

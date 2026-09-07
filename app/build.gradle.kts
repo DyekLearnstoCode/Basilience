@@ -33,6 +33,19 @@ android {
     }
 }
 
+// Gradle's own default output name is "<module>-<buildType>.apk" (app-debug.apk,
+// app-release.apk) - renamed here to something recognizable instead of tracing
+// it back to the module name.
+androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            if (output is com.android.build.api.variant.impl.VariantOutputImpl) {
+                output.outputFileName.set("Basilience.apk")
+            }
+        }
+    }
+}
+
 dependencies {
     implementation(libs.appcompat)
     implementation(libs.material)
