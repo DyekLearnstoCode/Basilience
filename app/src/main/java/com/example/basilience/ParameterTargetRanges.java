@@ -21,7 +21,7 @@ public enum ParameterTargetRanges {
     EC("EC", "minEC", "maxEC", 1.2f, 2.0f, 0f, 10f, 2, " mS/cm"),
     AIR_TEMPERATURE("Air Temperature", "minAirTemp", "maxAirTemp", 20f, 28f, -40f, 80f, 1, "°C"),
     HUMIDITY("Humidity", "minHumidity", "maxHumidity", 60f, 75f, 0f, 100f, 1, "%"),
-    WATER_TEMPERATURE("Water Temperature", "minWaterTemp", "maxWaterTemp", 18f, 25f, 0f, 100f, 1, "°C"),
+    WATER_TEMPERATURE("Water Temperature", "minWaterTemp", "maxWaterTemp", 18f, 28f, 0f, 100f, 1, "°C"),
     WATER_LEVEL("Water Level", "minWaterLevel", "maxWaterLevel", 20f, 75f, 0f, 100f, 1, "%");
 
     public final String displayName;

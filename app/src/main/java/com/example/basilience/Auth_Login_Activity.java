@@ -363,10 +363,29 @@ public class Auth_Login_Activity extends AppCompatActivity {
                     showLoading(false, null);
                     if (isBackendReachabilityFailure(e)) {
                         NotificationHelper.showError(this, BACKEND_UNAVAILABLE_MESSAGE);
-                    } else {
+                    } else if (isInvalidCredentialsFailure(e)) {
                         NotificationHelper.showError(this, "Email or password is incorrect.");
+                    } else {
+                        // Anything Firebase Auth couldn't complete that is neither a
+                        // recognized network failure nor a specific bad-credentials
+                        // response (e.g. the phone is on a Wi-Fi network with no real
+                        // internet, such as a Basilience device's own setup AP) must
+                        // not be reported as a wrong password - that is a different,
+                        // misleading claim about the user's account.
+                        NotificationHelper.showError(this,
+                                "Unable to sign in. Check your internet connection and try again.");
                     }
                 });
+    }
+
+    /**
+     * True only for exceptions Firebase Auth throws specifically because the
+     * supplied email/password do not match an account - never for network,
+     * timeout, or other backend failures. See doLogin()'s failure handler.
+     */
+    private boolean isInvalidCredentialsFailure(Exception e) {
+        return e instanceof com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
+                || e instanceof com.google.firebase.auth.FirebaseAuthInvalidUserException;
     }
 
     private void revalidateRememberedSession(String uid) {

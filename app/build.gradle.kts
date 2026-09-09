@@ -1,7 +1,20 @@
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.google.gms.google.services)
+}
+
+// Release signing credentials live in keystore/keystore.properties (gitignored,
+// never committed - see the repo's own .gitignore comment on why) rather than
+// hardcoded here. Absent entirely on a fresh checkout/CI machine that hasn't
+// been given the keystore, in which case releaseSigningConfig below stays
+// null and the release build type simply falls back to being unsigned
+// (buildable, just not installable) instead of failing the whole build.
+val keystorePropertiesFile = rootProject.file("keystore/keystore.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
 }
 
 android {
@@ -12,10 +25,27 @@ android {
         applicationId = "com.example.basilience"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            create("release") {
+                // keystore.properties' own storeFile value is relative to
+                // the keystore/ directory it lives in (e.g.
+                // "../keystore/basilience-release.jks" from Gradle's
+                // perspective) - resolved from rootProject instead of parsed
+                // out of that string, which is simpler and avoids depending
+                // on the property's exact path format.
+                storeFile = rootProject.file("keystore/basilience-release.jks")
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -25,6 +55,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {

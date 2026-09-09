@@ -692,8 +692,8 @@ exports.onAutomaticOperationLifecycleUpdated = onValueWritten({
 // by - PH/EC/REFILL). Success tracking is therefore backend-only, correlated
 // purely from data the firmware already publishes.
 //
-// waterTempOutOfRange (highWaterTemp, 25C) and cooling completion
-// (coolerOffTemp, 22.5C) are two different thresholds by firmware design -
+// waterTempOutOfRange (highWaterTemp, 28C) and cooling completion
+// (coolerOffTemp, 25.5C) are two different thresholds by firmware design -
 // the alert clears well before cooling actually finishes, while
 // coolingDemandActive/Peltier keep running through that hysteresis gap. So
 // episode OPEN is still driven by the alert (onAlertUpdated below), but
@@ -1044,7 +1044,7 @@ exports.onCoolingPeltierUpdated = onValueWritten({
 
     const waterTemp = (sensorsSnapshot.val() || {}).waterTemperature;
     const waterTempValid = typeof waterTemp === "number" && Number.isFinite(waterTemp);
-    const coolerOffTemp = resolveTargetSetting(settingsSnapshot, "coolerOffTemp", 22.5, {deviceId});
+    const coolerOffTemp = resolveTargetSetting(settingsSnapshot, "coolerOffTemp", 25.5, {deviceId});
     const targetSatisfied = waterTempValid && waterTemp <= coolerOffTemp;
 
     if (!targetSatisfied) {

@@ -19,3 +19,11 @@ firebase-debug.log
 firebase-debug.*.log
 database-debug.log
 .firebase/
+
+# Release signing - the keystore and its passwords must never be committed.
+# Losing this file means losing the ability to publish updates under the
+# same signing identity, but committing it to a shared/public repo is worse -
+# back it up somewhere private (password manager, encrypted drive) instead.
+/keystore/*.jks
+/keystore/*.keystore
+/keystore/keystore.properties

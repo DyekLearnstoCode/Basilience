@@ -268,7 +268,7 @@ public class HarvestLogFragment extends Fragment {
         Timestamp now = Timestamp.now();
 
         if (nextHarvest == null || now.compareTo(nextHarvest) >= 0) {
-            showHarvestDialog(null);
+            showAddHarvestChoiceDialog();
             return;
         }
 
@@ -281,7 +281,96 @@ public class HarvestLogFragment extends Fragment {
             return;
         }
         String countdown = "(" + diffDays + " days remaining)\n\nAn administrator override will reset the schedule frequency from today.";
-        NotificationHelper.showHarvestNotReadyDialog(requireContext(), dateStr, countdown, () -> showHarvestDialog(null));
+        NotificationHelper.showHarvestNotReadyDialog(requireContext(), dateStr, countdown, this::showAddHarvestChoiceDialog);
+    }
+
+    // Entry point for the FAB, once readiness checks above pass. Offers a
+    // choice between the existing manual form (unchanged - see
+    // showHarvestDialog()) and reading straight from a paired Harvest
+    // Scale with no form step at all (see addHarvestFromScale()). Skips
+    // straight to the manual form when no scale is paired, matching
+    // showHarvestDialog()'s own "hide the control rather than offer one
+    // that can only fail" reasoning for the same pairing check.
+    private void showAddHarvestChoiceDialog() {
+        if (pairedHarvestScaleId == null || pairedHarvestScaleId.isEmpty()) {
+            showHarvestDialog(null);
+            return;
+        }
+
+        NotificationHelper.showSelectionDialog(requireContext(), "Add Harvest",
+                new String[]{"Manual Entry", "Read from Scale"}, index -> {
+                    if (index == 0) {
+                        showHarvestDialog(null);
+                    } else {
+                        addHarvestFromScale();
+                    }
+                });
+    }
+
+    // "Read from Scale" path from the chooser above: fetches the harvest
+    // scale's latest stability-CONFIRMED reading (see
+    // Database_Helper.readLatestHarvestScaleReading()) and saves it
+    // directly as a new harvest entry, with a loading state while
+    // fetching and a success confirmation once saved - no intermediate
+    // form to review or edit first. (showHarvestDialog()'s own "Read from
+    // Harvest Scale" button is the alternative path for anyone who wants
+    // to review/adjust the value or add notes before saving.)
+    private void addHarvestFromScale() {
+        if (isHarvestSubmitting) return;
+        if (currentCycle == null) {
+            NotificationHelper.showError(getContext(), "Cycle data is still loading. Please try again in a moment.");
+            return;
+        }
+        isHarvestSubmitting = true;
+
+        loadingHandle = NotificationHelper.showLoading(requireContext(), "Reading harvest scale...", () -> {
+            isHarvestSubmitting = false;
+            if (!isAdded()) return;
+            NotificationHelper.showError(requireContext(), "Request timed out. Please refresh before trying again.");
+        });
+
+        dbHelper.readLatestHarvestScaleReading(pairedHarvestScaleId)
+                .addOnSuccessListener(weightGrams -> {
+                    if (!isAdded()) { isHarvestSubmitting = false; return; }
+
+                    currentHarvestSource = "SCALE";
+                    Harvest newHarvest = new Harvest(
+                            Timestamp.now(),
+                            weightGrams,
+                            FirebaseAuth.getInstance().getUid(),
+                            userName,
+                            currentHarvestSource,
+                            ""
+                    );
+
+                    dbHelper.addHarvestTransaction(cycleId, newHarvest)
+                            .addOnSuccessListener(aVoid -> {
+                                isHarvestSubmitting = false;
+                                if (!isAdded()) return;
+                                dismissLoading(() -> {
+                                    if (!isAdded()) return;
+                                    NotificationHelper.showSuccess(requireContext(), "Harvest saved");
+                                    loadChartData(); // Refresh chart manually
+                                });
+                            })
+                            .addOnFailureListener(e -> {
+                                isHarvestSubmitting = false;
+                                if (!isAdded()) return;
+                                dismissLoading();
+                                Log.e(TAG, "Failed to save scale-read harvest for cycleId=" + cycleId, e);
+                                NotificationHelper.showError(requireContext(), specificOrGenericMessage(e,
+                                        "Unable to save this harvest entry. Please try again.",
+                                        FirebaseFirestoreException.Code.ABORTED));
+                            });
+                })
+                .addOnFailureListener(e -> {
+                    isHarvestSubmitting = false;
+                    if (!isAdded()) return;
+                    dismissLoading();
+                    Log.e(TAG, "Failed to read harvest scale reading", e);
+                    NotificationHelper.showError(getContext(),
+                            "Unable to read the harvest scale. Check that it's powered on, connected to Wi-Fi, and has a stable weighing on the platform.");
+                });
     }
 
     private void showHarvestDialog(@Nullable Harvest harvest) {
