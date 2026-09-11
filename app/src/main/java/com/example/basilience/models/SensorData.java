@@ -32,6 +32,35 @@ public class SensorData {
     // display-only metadata, it never gates automation.
     public Boolean phConfirming;
 
+    // Rail-proximity hardware-fault state (firmware Config.h's PH_FAULT_*/
+    // EC_FAULT_*, SensorManager::readPH()/readEC()) - conservative, debounced
+    // evidence of a probable disconnected/unpowered/shorted probe or module,
+    // distinct from ph/ec simply being outside the configured target range
+    // (a normal, dosing-correctable chemistry state, not a fault). While
+    // true, ph/ec are held null by firmware (never a stale last-known
+    // number for these two sensors - unlike DHT below, pH/EC never hold a
+    // retained value). *Available mirrors "is ph/ec a currently-trusted
+    // reading right now" (roughly isfinite server-side) - published
+    // explicitly rather than inferred, matching dhtAvailable's own pattern.
+    // All four null only on records from before this field existed; treat
+    // that the same as false/not-yet-known, never as "confirmed fine."
+    public Boolean phFault;
+    public Boolean phAvailable;
+    public Boolean ecFault;
+    public Boolean ecAvailable;
+
+    // Air temperature/humidity health/staleness pair (firmware
+    // SensorManager::readDHT()) - airTemperature/humidity above may be a
+    // held last-known-good value rather than a fresh sample; dhtAvailable is
+    // true only for a currently fresh reading, dhtStale is true only when
+    // there IS a genuine last-known value being held (never true merely
+    // because nothing has ever been read - that case is dhtAvailable=false,
+    // dhtStale=false, airTemperature/humidity=null, the plain "No Data"
+    // state). A UI consumer must gate on these, never on the number's
+    // presence alone, since a present number no longer implies freshness.
+    public Boolean dhtAvailable;
+    public Boolean dhtStale;
+
     public Long timestamp;
 
     // Coherent initial sensor snapshot metadata (see the real-time sensor

@@ -446,12 +446,12 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                             && !operationContext.refillSubsystemLocked
                             && !operationContext.coolingSubsystemLocked) {
                         NotificationHelper.showInfo(requireContext(), "Nothing to Reset",
-                                "No safety subsystem is currently locked.");
+                                "No safety lock is currently active.");
                         return;
                     }
                     NotificationHelper.showConfirmation(requireContext(),
                             "Reset Safety Lock",
-                            "Are you sure you want to reset the FSM safety lock? This will return the system to normal operations.",
+                            "Are you sure you want to reset the safety lock? This will return the system to normal operations.",
                             "Yes", "No", () -> {
                                 isActuatorBusy = true;
                                 updateActuatorControls();
@@ -809,7 +809,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                                 modeSwitch.setOnCheckedChangeListener((btn, ch) -> onModeSwitchChanged(modeSwitch, ch));
 
                                 String title = "Enable Manual Mode";
-                                String message = "In Manual Mode, automated safety protocols and schedules are paused. Are you sure you want to proceed?";
+                                String message = "Manual Mode lets an Admin control system functions directly. Built-in safety checks remain active, so some actions may be prevented when conditions are unsafe. Are you sure you want to proceed?";
 
                                 if (isReservoirLocked) {
                                     title = "Automatic Operation Active";
@@ -1065,6 +1065,47 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                             Log.d("Monitoring", "[MANUAL-APP] Override confirmed actuator=" + actuator.dbKey + " target=" + targetChecked);
                             sendActuatorCommand(card, actuator, targetChecked, true);
                         });
+                return;
+            }
+
+            // Manual chemistry dosing clarification: a manual ON for pH Up/pH
+            // Down/Nutrients is a single bounded ~5-second pump pulse
+            // (MANUAL_PUMP_RUNTIME - see ActuatorManager::validateCommand's
+            // PH_UP_PUMP/PH_DOWN_PUMP/GROW_PUMP/BLOOM_PUMP case), not a
+            // persistent ON state, and it does not run the automatic pH/EC
+            // stabilization/reevaluation lifecycle. Confirmed here - reusing
+            // the same confirmation dialog SOFT_CONFLICT already uses just
+            // above, rather than a new dialog system - so the Admin knows
+            // this before tapping, not just from watching the switch snap
+            // back off a few seconds later. OFF is unaffected: stopping an
+            // already-bounded pulse early needs no such framing.
+            if (checked && (key == ManualOverrideAdvisor.ActuatorKey.PH_UP
+                    || key == ManualOverrideAdvisor.ActuatorKey.PH_DOWN
+                    || key == ManualOverrideAdvisor.ActuatorKey.NUTRIENTS)) {
+                toggle.setOnCheckedChangeListener(null);
+                toggle.setChecked(actuator.physicalRunning);
+                setupActuatorUI(card, actuator);
+
+                final String doseTitle;
+                final String doseQuestion;
+                if (key == ManualOverrideAdvisor.ActuatorKey.PH_UP) {
+                    doseTitle = "Manual pH Up Dose";
+                    doseQuestion = "Run pH Up dose for 5 seconds?";
+                } else if (key == ManualOverrideAdvisor.ActuatorKey.PH_DOWN) {
+                    doseTitle = "Manual pH Down Dose";
+                    doseQuestion = "Run pH Down dose for 5 seconds?";
+                } else {
+                    doseTitle = "Manual Nutrient Dose";
+                    doseQuestion = "Run nutrient dose for 5 seconds?";
+                }
+
+                NotificationHelper.showConfirmation(requireContext(),
+                        doseTitle,
+                        doseQuestion + " The pump stops automatically afterward and does not"
+                                + " re-check or adjust the reading - this is a single manual"
+                                + " pulse, not the automatic correction cycle.",
+                        "Run Dose", "Cancel",
+                        () -> sendActuatorCommand(card, actuator, true, false));
                 return;
             }
 
@@ -1704,19 +1745,36 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private void updateSensorUI() {
         if (!isAdded() || getView() == null) return;
         SensorData data = sensorLiveData.getValue();
+        // Rail-proximity hardware-fault state (see SensorData's own comment).
+        // Checked ahead of the normal accepted/confirming branches below so a
+        // confirmed fault always wins the value cell - a faulted probe has
+        // nothing valid to confirm or display.
+        boolean phFault = data != null && Boolean.TRUE.equals(data.phFault);
+        boolean ecFault = data != null && Boolean.TRUE.equals(data.ecFault);
         if (tvPH != null) {
             boolean phAccepted = data != null && data.ph != null
                     && !data.ph.isNaN() && !data.ph.isInfinite();
             boolean phBeingConfirmed = data != null && Boolean.TRUE.equals(data.phConfirming);
-            if (!phAccepted && phBeingConfirmed) {
+            if (phFault) {
+                tvPH.setText("Check pH sensor");
+            } else if (!phAccepted && phBeingConfirmed) {
                 tvPH.setText("Stabilizing…");
             } else {
                 tvPH.setText(formatSensor(
                         data != null ? data.ph : null, 0.0, 14.0, 2, "", null));
             }
         }
-        if (tvEC != null) tvEC.setText(formatSensor(
-                data != null ? data.ec : null, 0.0, Double.MAX_VALUE, 2, " mS/cm", null));
+        if (tvEC != null) {
+            tvEC.setText(ecFault ? "Check EC sensor" : formatSensor(
+                    data != null ? data.ec : null, 0.0, Double.MAX_VALUE, 2, " mS/cm", null));
+        }
+        // Retained last-known-good value while dhtStale is true (firmware
+        // never blanks temperature/humidity for a stale hold - see
+        // SensorData's own comment) - the NUMBER shown is unchanged either
+        // way; applyParameterStateColor()'s stale parameter below is what
+        // marks it, so a stale reading sitting inside the target range is
+        // never colored/labelled "Normal".
+        boolean dhtStale = data != null && Boolean.TRUE.equals(data.dhtStale);
         if (tvTemp != null) tvTemp.setText(formatSensor(
                 data != null ? data.airTemperature : null, -40.0, 80.0, 1, "°C", null));
         if (tvHumidity != null) tvHumidity.setText(formatSensor(
@@ -1750,11 +1808,14 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
         applyParameterStateColor(tvPH, tvPHStatus, phAlertActive, phBelowRange, phAboveRange);
         applyParameterStateColor(tvEC, tvECStatus, ecAlertActive, ecBelowRange, ecAboveRange);
+        // dhtStale takes priority over range/alert coloring in the overload
+        // below - a retained last-known value that happens to fall inside
+        // the target range must never read "Normal".
         applyParameterStateColor(tvTemp, tvTempStatus, airTemperatureAlertActive,
-                airTempBelowRange, airTempAboveRange);
+                airTempBelowRange, airTempAboveRange, dhtStale);
         // Humidity now has a real target range instead of always reading Normal.
         applyParameterStateColor(tvHumidity, tvHumidityStatus, humidityAlertActive,
-                humidityBelowRange, humidityAboveRange);
+                humidityBelowRange, humidityAboveRange, dhtStale);
         applyParameterStateColor(tvWaterTemp, tvWaterTempStatus, waterTemperatureAlertActive,
                 waterTempBelowRange, waterTempAboveRange);
         applyParameterStateColor(tvWaterLevel, tvWaterLevelStatus, waterLevelAlertActive,
@@ -1800,10 +1861,45 @@ public class Parameters_Monitoring_Fragment extends Fragment {
      */
     private void applyParameterStateColor(TextView valueView, TextView statusView,
                                           boolean alertActive, boolean belowRange, boolean aboveRange) {
+        applyParameterStateColor(valueView, statusView, alertActive, belowRange, aboveRange, false);
+    }
+
+    /**
+     * Same as the 5-argument overload above, with an explicit `stale`
+     * parameter for a sensor (currently DHT air temperature/humidity) whose
+     * VALUE TEXT stays a normal-looking formatted number even while stale -
+     * unlike pH/EC fault or the Stabilizing/No Data cases below, which are
+     * already distinguishable by the literal text set in updateSensorUI(),
+     * a stale-but-numeric reading needs its own signal so it is never
+     * colored/labelled "Normal" just because the retained number happens to
+     * sit inside the target range.
+     */
+    private void applyParameterStateColor(TextView valueView, TextView statusView,
+                                          boolean alertActive, boolean belowRange, boolean aboveRange,
+                                          boolean stale) {
         if (valueView == null) return;
         final int colorRes;
         final String statusText;
-        if ("Stabilizing…".contentEquals(valueView.getText())) {
+        if (stale && !"--".contentEquals(valueView.getText())) {
+            // Retained last-known value - reuses the same "Last known"
+            // language already applied to actuator status text when a
+            // device goes offline (see updateConnectionUI()), rather than
+            // inventing a new visual pattern. Takes priority over every
+            // other branch below so a stale reading is never shown as
+            // Normal/Warning/Below/Above Range.
+            colorRes = R.color.state_no_data;
+            statusText = "Last known";
+        } else if ("Check pH sensor".contentEquals(valueView.getText())
+                || "Check EC sensor".contentEquals(valueView.getText())) {
+            // Confirmed pH/EC hardware fault (see SensorData's own comment) -
+            // distinct from a plain "--"/No Data (never read anything yet)
+            // and from Below/Above Range (a valid, dosing-correctable
+            // chemistry reading). Colored the same as an active alert since
+            // this needs attention, but labelled with its own status text
+            // rather than "Warning" so it reads as a hardware issue.
+            colorRes = R.color.state_critical;
+            statusText = "Sensor unavailable";
+        } else if ("Stabilizing…".contentEquals(valueView.getText())) {
             // See updateSensorUI()'s own comment - a live pH candidate is
             // actively being gathered/reconfirmed, distinct from "No Data"
             // (no candidate at all) and from a real out-of-range/warning
@@ -2043,9 +2139,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 {"The other actuators",
                         "Water Pump (Valve) refills the reservoir. Circulation Pump keeps nutrient solution mixed and readings representative. pH Up/pH Down and the Nutrients pumps dose small amounts to correct pH and EC. Fogger and Reservoir Fan (Blower) work together to raise humidity and cool the canopy. Peltier (Temp) cools the reservoir when water temperature runs high. Canopy Fan circulates air, and Grow Lights follow the automatic lighting schedule."},
                 {"Fan speed",
-                        "Canopy Fan and Reservoir Fan (Blower) run at a speed the firmware decides on its own - there is no speed control in the app. Turning them on or off here still works like every other actuator."},
+                        "Canopy Fan and Reservoir Fan (Blower) run at a speed the device decides on its own - there is no speed control in the app. Turning them on or off here still works like every other actuator."},
                 {"Rejected / blocked status",
-                        "A 'Rejected' or 'blocked' status with a reason means the firmware refused that specific command - most often because a safety interlock is active, a sensor reading is invalid, or another operation currently owns that equipment. It clears on its own once the blocking condition ends; it does not mean the actuator is stuck."}
+                        "A 'Rejected' or 'blocked' status with a reason means the device refused that specific command - most often because a safety interlock is active, a sensor reading is invalid, or another operation currently owns that equipment. It clears on its own once the blocking condition ends; it does not mean the actuator is stuck."}
         };
         NotificationHelper.showGuideDialog(requireContext(), "How to use Actuator Control",
                 sections, "Got it");

@@ -301,13 +301,13 @@ public final class ManualOverrideAdvisor {
     private static final String SAFETY_LOCK_MESSAGE =
             "Basilience is currently in a safety-lock state. Manual actuator control is unavailable until the safety condition is cleared.";
     private static final String PH_SUBSYSTEM_LOCK_MESSAGE =
-            "Basilience has temporarily locked the pH correction subsystem because a safety or correction limit was reached. pH dosing is unavailable until the lock is cleared.";
+            "Basilience has temporarily paused pH dosing because a safety limit was reached. It will resume automatically once the issue is resolved.";
     private static final String EC_SUBSYSTEM_LOCK_MESSAGE =
-            "Basilience has temporarily locked the EC correction subsystem because a safety or correction limit was reached. Nutrient dosing is unavailable until the lock is cleared.";
+            "Basilience has temporarily paused nutrient dosing because a safety limit was reached. It will resume automatically once the issue is resolved.";
     private static final String REFILL_SUBSYSTEM_LOCK_MESSAGE =
-            "Basilience has temporarily locked the refill subsystem because a safety or correction limit was reached. Refill/dilution is unavailable until the lock is cleared.";
+            "Basilience has temporarily paused refilling because a safety limit was reached. It will resume automatically once the issue is resolved.";
     private static final String COOLING_SUBSYSTEM_LOCK_MESSAGE =
-            "Basilience has temporarily locked the cooling subsystem because a safety or correction limit was reached. Cooling is unavailable until the lock is cleared.";
+            "Basilience has temporarily paused cooling because a safety limit was reached. It will resume automatically once the issue is resolved.";
     private static final String RESERVOIR_LOCKED_MESSAGE =
             "Basilience currently has the reservoir locked for another automatic operation. This action is unavailable until that operation finishes.";
     private static final String DOSING_BLOCKED_BY_REFILL_MESSAGE =
@@ -501,8 +501,8 @@ public final class ManualOverrideAdvisor {
                 // fires and the two combine into one message, same as Fogger.
                 if (!ownedAutomatically) return null;
                 return requestedOn
-                        ? "Basilience is already running an automatic refill. Activating the Solenoid manually would overlap the current refill operation."
-                        : "Basilience is currently running an automatic refill. Turning off the Solenoid will interrupt the refill in progress.";
+                        ? "Basilience is already running an automatic refill. Activating the Water Pump (Valve) manually would overlap the current refill operation."
+                        : "Basilience is currently running an automatic refill. Turning off the Water Pump (Valve) will interrupt the refill in progress.";
             case PELTIER:
                 if (!ownedAutomatically) return null;
                 return requestedOn
@@ -520,7 +520,7 @@ public final class ManualOverrideAdvisor {
                         : "Basilience is currently running the Blower automatically as part of the current fogging cycle. Turning it off will interrupt that cycle.";
             case CANOPY_FAN:
                 if (requestedOn || !isAutomaticallyRunning(all.canopyFan)) return null;
-                return "Basilience is currently running the Canopy Fan automatically for humidity control. Turning it off will interrupt that correction.";
+                return "Basilience is currently running the Canopy Fan automatically to help manage humidity. Turning it off will interrupt that.";
             case GROW_LIGHT:
                 if (requestedOn || !isAutomaticallyRunning(all.growLight)) return null;
                 return "Basilience is currently running the automatic grow-light schedule. Turning off the Grow Light will interrupt the scheduled lighting.";
@@ -581,49 +581,49 @@ public final class ManualOverrideAdvisor {
     private static String phPumpClause(boolean isUp, OperationContext ops, boolean phActive) {
         if (!phActive) {
             // An EC operation is active but not a pH one - generic wording, no direction.
-            return "Activating the " + (isUp ? "pH Up" : "pH Down") + " Pump may affect the ongoing EC correction.";
+            return "Activating " + (isUp ? "pH Up" : "pH Down") + " may affect the ongoing EC correction.";
         }
         boolean directionUp = "up".equalsIgnoreCase(ops.phDirection);
         boolean directionDown = "down".equalsIgnoreCase(ops.phDirection);
         String verb = ops.currentMode == MODE_DOSING_PH ? "correcting" : "stabilizing";
 
         if (isUp && directionUp) {
-            return "Basilience is currently " + verb + " the pH level after a pH Up correction. Activating the pH Up Pump again may affect the "
+            return "Basilience is currently " + verb + " the pH level after a pH Up correction. Activating pH Up again may affect the "
                     + (ops.currentMode == MODE_DOSING_PH ? "correction" : "stabilization reading") + " and cause the pH level to overshoot the target range.";
         }
         if (!isUp && directionDown) {
-            return "Basilience is currently " + verb + " the pH level after a pH Down correction. Activating the pH Down Pump again may affect the "
+            return "Basilience is currently " + verb + " the pH level after a pH Down correction. Activating pH Down again may affect the "
                     + (ops.currentMode == MODE_DOSING_PH ? "correction" : "stabilization reading") + " and cause the pH level to overshoot the target range.";
         }
         if (isUp && directionDown) {
             return "Basilience is currently " + verb + " the pH level after lowering it. The current pH is still above the target range. "
-                    + "Activating the pH Up Pump would counteract the ongoing correction.";
+                    + "Activating pH Up would counteract the ongoing correction.";
         }
         if (!isUp && directionUp) {
             return "Basilience is currently " + verb + " the pH level after increasing it. The current pH is still below the target range. "
-                    + "Activating the pH Down Pump would counteract the ongoing correction.";
+                    + "Activating pH Down would counteract the ongoing correction.";
         }
         // Direction unknown (old firmware, or phDirection=="none")
-        return "Basilience is currently " + verb + " the pH level. Activating the " + (isUp ? "pH Up" : "pH Down")
-                + " Pump may affect the ongoing correction.";
+        return "Basilience is currently " + verb + " the pH level. Activating " + (isUp ? "pH Up" : "pH Down")
+                + " may affect the ongoing correction.";
     }
 
     private static String ecPumpClause(OperationContext ops, boolean ecActive) {
         if (!ecActive) {
-            return "Activating the Nutrient Pump may affect the ongoing pH correction.";
+            return "Activating Nutrients may affect the ongoing pH correction.";
         }
         boolean raising = "raise".equalsIgnoreCase(ops.ecDirection);
         boolean diluting = "dilute".equalsIgnoreCase(ops.ecDirection);
         String verb = ops.currentMode == MODE_DOSING_EC ? "correcting" : "stabilizing";
 
         if (raising) {
-            return "Basilience is currently " + verb + " the EC level by adding nutrients. Activating the Nutrient Pump again may affect the "
+            return "Basilience is currently " + verb + " the EC level by adding nutrients. Activating Nutrients again may affect the "
                     + (ops.currentMode == MODE_DOSING_EC ? "correction" : "stabilization reading") + " and cause the EC level to overshoot the target range.";
         }
         if (diluting) {
-            return "Basilience is currently " + verb + " the EC level by diluting the reservoir. Activating the Nutrient Pump would counteract the ongoing dilution.";
+            return "Basilience is currently " + verb + " the EC level by diluting the reservoir. Activating Nutrients would counteract the ongoing dilution.";
         }
-        return "Basilience is currently " + verb + " the EC level. Activating the Nutrient Pump may affect the ongoing correction.";
+        return "Basilience is currently " + verb + " the EC level. Activating Nutrients may affect the ongoing correction.";
     }
 
     private static String solenoidStabilizationClause(OperationContext ops, boolean phActive, boolean ecActive) {
@@ -631,21 +631,21 @@ public final class ManualOverrideAdvisor {
             boolean diluting = "dilute".equalsIgnoreCase(ops.ecDirection);
             String verb = ops.currentMode == MODE_DOSING_EC ? "correcting" : "stabilizing";
             if (diluting) {
-                return "Basilience is currently " + verb + " the EC level by diluting the reservoir. Opening the Solenoid again may affect the ongoing dilution.";
+                return "Basilience is currently " + verb + " the EC level by diluting the reservoir. Opening the Water Pump (Valve) again may affect the ongoing dilution.";
             }
-            return "Basilience is currently " + verb + " the EC level by adding nutrients. Opening the Solenoid may dilute the reservoir and counteract the ongoing correction.";
+            return "Basilience is currently " + verb + " the EC level by adding nutrients. Opening the Water Pump (Valve) may dilute the reservoir and counteract the ongoing correction.";
         }
         // pH-only active - generic wording, no EC direction concept.
         String verb = ops.currentMode == MODE_DOSING_PH ? "correcting" : "stabilizing";
-        return "Basilience is currently " + verb + " the pH level. Opening the Solenoid may affect the ongoing correction.";
+        return "Basilience is currently " + verb + " the pH level. Opening the Water Pump (Valve) may affect the ongoing correction.";
     }
 
     private static String displayName(ActuatorKey key) {
         switch (key) {
-            case PH_UP: return "pH Up Pump";
-            case PH_DOWN: return "pH Down Pump";
-            case NUTRIENTS: return "Nutrient Pump";
-            case SOLENOID: return "Solenoid";
+            case PH_UP: return "pH Up";
+            case PH_DOWN: return "pH Down";
+            case NUTRIENTS: return "Nutrients";
+            case SOLENOID: return "Water Pump (Valve)";
             case PELTIER: return "Peltier";
             case CIRCULATION_PUMP: return "Circulation Pump";
             case FOGGER: return "Fogger";

@@ -74,11 +74,14 @@ final class MobileGuideContent {
                 .image(com.example.basilience.R.drawable.guide_actuators)
                 .imagePlaceholder("Monitoring screen scrolled down to the actuator list")
                 .steps(Arrays.asList(
-                        "Manual Mode (the switch at the top of the section) allows you to control individual actuators by hand. The automatic system keeps running underneath even while Manual Mode is on.",
+                        "Manual Mode (the switch at the top of the section) is available to Admin accounts and lets you control individual actuators by hand. The automatic system keeps running underneath even while Manual Mode is on.",
+                        "Built-in safety checks stay active while Manual Mode is on — a request can still be turned down (shown as \"Rejected\") if conditions aren't safe, with a short reason shown when that happens.",
+                        "Manual Mode turns itself off automatically after 15 minutes with no manual action, and normal automatic control resumes on its own — no action is needed from you when that happens.",
                         "Each actuator row shows its name (for example \"Fogger\" or \"Grow Lights\") and a status word.",
                         "Off, Command Sent, Validating, Starting, Running, and Stopping describe where a command currently is.",
                         "A small · Auto, · Manual, or · App tag after the status shows what triggered it — the automatic system, a physical control, or this app.",
-                        "Toggling a switch while Manual Mode is on sends a command directly to that actuator."))
+                        "Toggling a switch while Manual Mode is on sends a command directly to that actuator. pH Up, pH Down, and Nutrients are the exception: each request runs the pump for a single 5-second dose and then stops it automatically — turning the switch back off yourself isn't needed. This is a one-time manual dose, not the same as the system's full automatic correction, which keeps checking the reading afterward.",
+                        "Turning on the Fogger by hand also runs the Root Blower together with it to move the fog through the root area — you don't need to turn the blower on separately. After you stop the Fogger, the blower keeps running a little longer to clear the remaining fog before switching off on its own."))
                 .warning("Actuator switches are disabled unless Manual Mode is turned on.")
                 .build());
 
@@ -199,7 +202,9 @@ final class MobileGuideContent {
                         "Enter the device's token code and tap \"Claim Device\" to add it to your account.",
                         "Registered Devices lists everything claimed to your account, with a live status dot.",
                         "Tap a device to select it — the rest of the app will then work with that device.",
-                        "Press and hold a device to choose \"Configure Wi-Fi\" or \"Unclaim Device.\""))
+                        "Press and hold a device to choose \"Configure Wi-Fi,\" \"Rename Device,\" \"Pair Harvest Scale,\" or \"Unclaim Device.\"",
+                        "\"Rename Device\" changes only the name shown in the app — it doesn't affect the device itself.",
+                        "\"Pair Harvest Scale\" links a Basilience Harvest Scale to this device by entering the scale's own device ID (found on the scale itself) — this is not a Bluetooth pairing, so no phone-side Bluetooth setup is needed. Leave the field blank to unpair."))
                 .build());
 
         list.add(GuideSection.builder("Settings")
@@ -251,7 +256,8 @@ final class MobileGuideContent {
                         "Return to Basilience and open Wi-Fi Configuration — from Device Management by pressing and holding a device and choosing \"Configure Wi-Fi,\" from Monitoring's \"Retry Wi-Fi Configuration\" button, or by tapping a Wi-Fi setup notification.",
                         "Enter your home/facility Wi-Fi Network Name and Password.",
                         "Tap \"Save & Reconnect.\" Basilience sends the credentials to the device directly over the local setup connection — no internet connection is required for this step.",
-                        "Once saved, the device reconnects to your network and the Current Device Status card updates automatically."))
+                        "Wait for the device to reconnect. When the Current Device Status card shows Online, Wi-Fi setup is complete.",
+                        "If it doesn't reconnect, make sure your phone is still connected to \"Basilience-Setup\" and try again, or double-check the network name and password you entered."))
                 .build());
 
         // ------------------------------------------------------------
