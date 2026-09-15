@@ -204,10 +204,22 @@ public class DeviceFragment extends Fragment {
                 String scaleId = etHarvestScaleId.getText() != null
                         ? etHarvestScaleId.getText().toString().trim() : "";
                 btnSavePairing.setEnabled(false);
+                // Now a callable (pairHarvestScale) that does the admin/ownership
+                // check, the Firestore write, AND the deviceAccess/parentDeviceId
+                // mirror in the same request (see setHarvestScaleId()) - noticeably
+                // slower than the old raw Firestore write it replaced, so the
+                // button-disable alone isn't enough feedback anymore.
+                if (layoutLoading != null && tvLoadingTitle != null) {
+                    tvLoadingTitle.setText(scaleId.isEmpty() ? "Unpairing harvest scale..." : "Pairing harvest scale...");
+                    layoutLoadingShownAt = SystemClock.elapsedRealtime();
+                    layoutLoading.setVisibility(View.VISIBLE);
+                    layoutLoading.bringToFront();
+                }
                 dbHelper.setHarvestScaleId(device.getDeviceId(), scaleId)
                         .addOnSuccessListener(aVoid -> {
                             if (!isAdded()) return;
                             btnSavePairing.setEnabled(true);
+                            hideLayoutLoading();
                             NotificationHelper.showSuccess(requireContext(),
                                     scaleId.isEmpty() ? "Harvest scale unpaired" : "Harvest scale paired");
                             if (dialog != null) dialog.dismiss();
@@ -216,6 +228,7 @@ public class DeviceFragment extends Fragment {
                         .addOnFailureListener(e -> {
                             if (!isAdded()) return;
                             btnSavePairing.setEnabled(true);
+                            hideLayoutLoading();
                             Log.e(TAG, "Failed to pair harvest scale for deviceId=" + device.getDeviceId(), e);
                             NotificationHelper.showError(requireContext(), "Unable to save this pairing. Please try again.");
                         });

@@ -28,6 +28,14 @@
             android:textColor="@color/black" />
     </com.google.android.material.textfield.TextInputLayout>
 
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Reminder: the scale zeroes itself to whatever is on its platform when it powers on. Make sure the platform is empty of any harvest item before/while it boots, or that item's weight will be silently zeroed out too."
+        android:textColor="@color/nav_inactive"
+        android:textSize="12sp" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

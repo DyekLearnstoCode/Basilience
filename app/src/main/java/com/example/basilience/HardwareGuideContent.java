@@ -132,6 +132,17 @@ final class HardwareGuideContent {
                         "Water Pump (Valve) handles refilling. An Admin can also start a refill manually from Monitoring's \"Start Reservoir Refill\" action."))
                 .build());
 
+        list.add(GuideSection.builder("Harvest Scale")
+                .description("A Basilience Harvest Scale is a separate, dedicated device that weighs harvested crop and can fill in a harvest entry automatically once paired to this device (Device Management > Pair Harvest Scale).")
+                .imagePlaceholder("Basilience Harvest Scale with a harvested item on its platform")
+                .steps(Arrays.asList(
+                        "It runs on its own hardware and Wi-Fi connection, separate from the main controller - it stays usable even while the main controller is offline.",
+                        "On every power-on, it re-zeroes itself to whatever is currently resting on its platform, then a short countdown follows before it starts trusting readings.",
+                        "Once ready, place the item to be weighed on the platform and hold it still. The scale detects when the reading has settled and logs the weight on its own, without needing a button press.",
+                        "The weight becomes available in the app a few seconds after the scale detects and logs it, from Recording Harvest Weight's \"Read from Harvest Scale\" button."))
+                .warning("The platform must be empty of any harvest item during that power-on zeroing step. Whatever is on it at that moment - even a real item - gets zeroed out right along with the platform, and its weight goes silently missing from every reading afterward until the scale is next power-cycled with the platform actually clear.")
+                .build());
+
         list.add(GuideSection.builder("Automatic vs. Manual Control")
                 .imagePlaceholder("Monitoring screen with the Manual Mode switch and an actuator row")
                 .steps(Arrays.asList(

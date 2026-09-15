@@ -205,6 +205,7 @@ final class MobileGuideContent {
                         "Press and hold a device to choose \"Configure Wi-Fi,\" \"Rename Device,\" \"Pair Harvest Scale,\" or \"Unclaim Device.\"",
                         "\"Rename Device\" changes only the name shown in the app. It doesn't affect the device itself.",
                         "\"Pair Harvest Scale\" links a Basilience Harvest Scale to this device by entering the scale's own device ID (found on the scale itself). This is not a Bluetooth pairing, so no phone-side Bluetooth setup is needed. Leave the field blank to unpair."))
+                .tip("The scale zeroes itself to whatever is on its platform each time it powers on. Keep the platform clear of any harvest item while it boots, or that item's weight gets silently zeroed out along with the platform itself.")
                 .build());
 
         list.add(GuideSection.builder("Settings")
