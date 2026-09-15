@@ -59,6 +59,37 @@
             android:textColor="@color/state_no_data"
             android:layout_marginTop="2dp"/>
 
+        <!-- STABILIZING LOADER - shown instead of tvValue/tvStatus above
+             while the reading is known to be untrustworthy (actively dosing,
+             or still in the initial settle window after a correction). See
+             Parameters_Monitoring_Fragment's updateStabilizingLoader(). -->
+        <FrameLayout
+            android:id="@+id/stabilizingLoader"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginTop="8dp"
+            android:visibility="gone">
+
+            <com.google.android.material.progressindicator.CircularProgressIndicator
+                android:id="@+id/progressStabilizing"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                app:indicatorSize="36dp"
+                app:trackThickness="3dp"
+                app:indicatorColor="@color/primary" />
+
+            <TextView
+                android:id="@+id/tvStabilizeSeconds"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="--"
+                android:textSize="9sp"
+                android:textStyle="bold"
+                android:textColor="@color/state_primary_text"/>
+
+        </FrameLayout>
+
     </LinearLayout>
 
 </com.google.android.material.card.MaterialCardView>

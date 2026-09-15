@@ -382,7 +382,7 @@ public class SystemReportsFragment extends Fragment {
     private String cycleSpinnerLabel(Cycle c) {
         String name = (c.getCycleName() != null && !c.getCycleName().isEmpty()) ? c.getCycleName() : ("Cycle #" + c.getCycleNumber());
         String status = normalizeCycleStatus(c.getStatus());
-        String range = DateUtils.formatDate(c.getStartDate()) + " – "
+        String range = DateUtils.formatDate(c.getStartDate()) + " to "
                 + ("COMPLETED".equals(status) ? DateUtils.formatDate(c.getEndDate()) : "Present");
         return name + " • " + ("ACTIVE".equals(status) ? "In Progress" : "Completed") + " • " + range;
     }
@@ -398,6 +398,16 @@ public class SystemReportsFragment extends Fragment {
         hideLayoutLoading();
         currentFilter = null;
         currentReadings = new ArrayList<>();
+    }
+
+    /** Shows the report loading overlay. Shared by loadReportData() and the export actions below. */
+    private void showLayoutLoading() {
+        View layoutLoading = getView() != null ? getView().findViewById(R.id.layoutLoading) : null;
+        layoutLoadingShownAt = SystemClock.elapsedRealtime();
+        if (layoutLoading != null) {
+            layoutLoading.setVisibility(View.VISIBLE);
+            layoutLoading.bringToFront();
+        }
     }
 
     /** Hides the report loading overlay, never sooner than the minimum visible duration. */
@@ -716,7 +726,7 @@ public class SystemReportsFragment extends Fragment {
 
         if (tvEffectiveRange != null) {
             tvEffectiveRange.setText("Showing " + DateUtils.formatDate(filter.effectiveStartMs)
-                    + " – " + DateUtils.formatDate(filter.effectiveEndMs));
+                    + " to " + DateUtils.formatDate(filter.effectiveEndMs));
         }
 
         dbHelper.getParameterLogs(filter.effectiveStartMs, filter.effectiveEndMs)
@@ -1436,65 +1446,86 @@ public class SystemReportsFragment extends Fragment {
         }
 
         final ParameterReportFilter filter = currentFilter;
-        Toast.makeText(getContext(), "Generating PDF...", Toast.LENGTH_SHORT).show();
 
-        List<Entry> entries = new ArrayList<>();
-        int index = 0;
-        for (ParameterReading r : currentReadings) {
-            entries.add(new Entry(index++, r.value));
+        // Chart capture + PDF generation below all run synchronously on this
+        // thread - showing the overlay and immediately doing that work in the
+        // same call would never actually let it paint first, so the heavy
+        // work is posted one frame out. btnShare is still tappable in that
+        // one-frame gap; the overlay's own bringToFront()+full-bleed touch
+        // interception (see actuatorLoadingOverlay's matching pattern) is
+        // what actually prevents a second tap from doing anything once it
+        // shows, not a disabled-state check here.
+        showLayoutLoading();
+        View root = getView();
+        if (root == null) {
+            hideLayoutLoading();
+            return;
         }
-        // getChartBitmap() captures the chart exactly as drawn, so a marker
-        // left over from a tap would otherwise be baked into the PDF. The
-        // static export should show a clean trend line and no point labels.
-        //
-        // The export must always reflect the full selected report range, not
-        // whatever the farmer happens to be zoomed into on screen - so both
-        // the viewport and the adaptive label spacing are reset to the full
-        // range before capture and restored afterward (by re-deriving from
-        // the restored viewport's own visible range, rather than caching a
-        // separate saved value that could drift out of sync), without
-        // requerying or altering any data.
-        lineChart.highlightValue(null);
-        android.graphics.Matrix savedMatrix = new android.graphics.Matrix(lineChart.getViewPortHandler().getMatrixTouch());
-        if (adaptiveXFormatter != null) {
-            float fullSpanMinutes = (filter.effectiveEndMs - filter.effectiveStartMs) / 60000f;
-            adaptiveXFormatter.updateVisibleRange(0f, fullSpanMinutes);
-            applyAdaptiveXAxis(lineChart.getXAxis());
-        }
-        lineChart.fitScreen();
-        Bitmap chartBitmap = lineChart.getChartBitmap();
-        lineChart.getViewPortHandler().refresh(savedMatrix, lineChart, true);
-        if (adaptiveXFormatter != null) {
-            adaptiveXFormatter.updateVisibleRange(lineChart.getLowestVisibleX(), lineChart.getHighestVisibleX());
-            applyAdaptiveXAxis(lineChart.getXAxis());
-        }
-        lineChart.invalidate();
+        root.post(() -> {
+            if (!isAdded() || getContext() == null) {
+                hideLayoutLoading();
+                return;
+            }
+            try {
+                List<Entry> entries = new ArrayList<>();
+                int index = 0;
+                for (ParameterReading r : currentReadings) {
+                    entries.add(new Entry(index++, r.value));
+                }
+                // getChartBitmap() captures the chart exactly as drawn, so a marker
+                // left over from a tap would otherwise be baked into the PDF. The
+                // static export should show a clean trend line and no point labels.
+                //
+                // The export must always reflect the full selected report range, not
+                // whatever the farmer happens to be zoomed into on screen - so both
+                // the viewport and the adaptive label spacing are reset to the full
+                // range before capture and restored afterward (by re-deriving from
+                // the restored viewport's own visible range, rather than caching a
+                // separate saved value that could drift out of sync), without
+                // requerying or altering any data.
+                lineChart.highlightValue(null);
+                android.graphics.Matrix savedMatrix = new android.graphics.Matrix(lineChart.getViewPortHandler().getMatrixTouch());
+                if (adaptiveXFormatter != null) {
+                    float fullSpanMinutes = (filter.effectiveEndMs - filter.effectiveStartMs) / 60000f;
+                    adaptiveXFormatter.updateVisibleRange(0f, fullSpanMinutes);
+                    applyAdaptiveXAxis(lineChart.getXAxis());
+                }
+                lineChart.fitScreen();
+                Bitmap chartBitmap = lineChart.getChartBitmap();
+                lineChart.getViewPortHandler().refresh(savedMatrix, lineChart, true);
+                if (adaptiveXFormatter != null) {
+                    adaptiveXFormatter.updateVisibleRange(lineChart.getLowestVisibleX(), lineChart.getHighestVisibleX());
+                    applyAdaptiveXAxis(lineChart.getXAxis());
+                }
+                lineChart.invalidate();
 
-        try {
-            CycleReportGenerator generator = new CycleReportGenerator(requireContext());
-            String userName = "Basilience User";
+                CycleReportGenerator generator = new CycleReportGenerator(requireContext());
+                String userName = "Basilience User";
 
-            File pdfFile = generator.generateSensorReportPdf(filter, chartBitmap, entries,
-                    currentAvg, currentHigh, currentLow, getUnitForParameter(filter.canonicalParameter),
-                    currentInsight.status, currentInsight.targetRangeText, currentInsight.evidenceText,
-                    currentInsight.interpretation, userName);
+                File pdfFile = generator.generateSensorReportPdf(filter, chartBitmap, entries,
+                        currentAvg, currentHigh, currentLow, getUnitForParameter(filter.canonicalParameter),
+                        currentInsight.status, currentInsight.targetRangeText, currentInsight.evidenceText,
+                        currentInsight.interpretation, userName);
 
-            Uri contentUri = FileProvider.getUriForFile(requireContext(), requireContext().getPackageName() + ".fileprovider", pdfFile);
-            // ACTION_SEND (matching the CSV export just below), not ACTION_VIEW -
-            // a "share sheet" is meant to hand the file to another app (Drive,
-            // email, Messenger, etc.), not just open it in a PDF viewer.
-            Intent intent = new Intent(Intent.ACTION_SEND);
-            intent.setType("application/pdf");
-            intent.putExtra(Intent.EXTRA_SUBJECT, "Basilience " + filter.displayParameter + " Report - " + filter.cycleLabel);
-            intent.putExtra(Intent.EXTRA_TEXT, "Attached is the " + filter.displayParameter + " report for "
-                    + filter.cycleLabel + " (" + filter.periodLabel + ").");
-            intent.putExtra(Intent.EXTRA_STREAM, contentUri);
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(intent, "Export Report via:"));
-        } catch (IOException e) {
-            Log.e("PDF_EXPORT_ERROR", "Error generating PDF", e);
-            NotificationHelper.showError(getContext(), "We couldn't generate the PDF report. Please try again.");
-        }
+                Uri contentUri = FileProvider.getUriForFile(requireContext(), requireContext().getPackageName() + ".fileprovider", pdfFile);
+                // ACTION_SEND (matching the CSV export just below), not ACTION_VIEW -
+                // a "share sheet" is meant to hand the file to another app (Drive,
+                // email, Messenger, etc.), not just open it in a PDF viewer.
+                Intent intent = new Intent(Intent.ACTION_SEND);
+                intent.setType("application/pdf");
+                intent.putExtra(Intent.EXTRA_SUBJECT, "Basilience " + filter.displayParameter + " Report - " + filter.cycleLabel);
+                intent.putExtra(Intent.EXTRA_TEXT, "Attached is the " + filter.displayParameter + " report for "
+                        + filter.cycleLabel + " (" + filter.periodLabel + ").");
+                intent.putExtra(Intent.EXTRA_STREAM, contentUri);
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivity(Intent.createChooser(intent, "Export Report via:"));
+            } catch (IOException e) {
+                Log.e("PDF_EXPORT_ERROR", "Error generating PDF", e);
+                NotificationHelper.showError(getContext(), "We couldn't generate the PDF report. Please try again.");
+            } finally {
+                hideLayoutLoading();
+            }
+        });
     }
 
     private void exportDataToCSV() {
@@ -1509,58 +1540,72 @@ public class SystemReportsFragment extends Fragment {
         }
 
         final ParameterReportFilter filter = currentFilter;
-        Toast.makeText(getContext(), "Preparing data for export...", Toast.LENGTH_SHORT).show();
 
-        String unit = getUnitForParameter(filter.canonicalParameter).trim();
-        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-        dateFormat.setTimeZone(TimeZone.getTimeZone(TIMEZONE_ID));
-
-        StringBuilder csvBuilder = new StringBuilder();
-        csvBuilder.append("# Basilience Parameter Report\n");
-        csvBuilder.append("# Device: ").append(filter.deviceId).append('\n');
-        csvBuilder.append("# Cycle: ").append(filter.cycleLabel).append('\n');
-        csvBuilder.append("# Cycle ID: ").append(filter.cycleId).append('\n');
-        csvBuilder.append("# Parameter: ").append(filter.displayParameter).append('\n');
-        csvBuilder.append("# Report Period: ").append(filter.periodLabel).append(" (")
-                .append(DateUtils.formatDate(filter.effectiveStartMs)).append(" - ")
-                .append(DateUtils.formatDate(filter.effectiveEndMs)).append(")\n");
-        csvBuilder.append("Timestamp,Parameter,Value,Unit\n");
-
-        for (ParameterReading r : currentReadings) {
-            csvBuilder.append(dateFormat.format(new Date(r.timestampMs))).append(',')
-                    .append(filter.displayParameter).append(',')
-                    .append(String.format(Locale.US, "%.2f", r.value)).append(',')
-                    .append(unit).append('\n');
+        // Same one-frame-deferred pattern as exportToPdf() - see its comment.
+        showLayoutLoading();
+        View root = getView();
+        if (root == null) {
+            hideLayoutLoading();
+            return;
         }
-
-        try {
-            File cachePath = new File(getContext().getCacheDir(), "exports");
-            if (!cachePath.exists()) cachePath.mkdirs();
-
-            String filename = "Basilience_Report_" + CycleReportGenerator.sanitizeForFilename(filter.deviceId) + "_"
-                    + CycleReportGenerator.sanitizeForFilename(filter.cycleLabel) + "_"
-                    + filter.canonicalParameter.replace(" ", "") + "_" + System.currentTimeMillis() + ".csv";
-            File csvFile = new File(cachePath, filename);
-            try (FileWriter writer = new FileWriter(csvFile)) {
-                writer.append(csvBuilder.toString());
-                writer.flush();
+        root.post(() -> {
+            if (!isAdded() || getContext() == null) {
+                hideLayoutLoading();
+                return;
             }
+            try {
+                String unit = getUnitForParameter(filter.canonicalParameter).trim();
+                SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+                dateFormat.setTimeZone(TimeZone.getTimeZone(TIMEZONE_ID));
 
-            Uri contentUri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", csvFile);
-            if (contentUri != null) {
-                Intent shareIntent = new Intent(Intent.ACTION_SEND);
-                shareIntent.setType("text/csv");
-                shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Basilience " + filter.displayParameter + " Report - " + filter.cycleLabel);
-                shareIntent.putExtra(Intent.EXTRA_TEXT, "Attached is the " + filter.displayParameter + " report for "
-                        + filter.cycleLabel + " (" + filter.periodLabel + ").");
-                shareIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
-                shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                startActivity(Intent.createChooser(shareIntent, "Export Report via:"));
+                StringBuilder csvBuilder = new StringBuilder();
+                csvBuilder.append("# Basilience Parameter Report\n");
+                csvBuilder.append("# Device: ").append(filter.deviceId).append('\n');
+                csvBuilder.append("# Cycle: ").append(filter.cycleLabel).append('\n');
+                csvBuilder.append("# Cycle ID: ").append(filter.cycleId).append('\n');
+                csvBuilder.append("# Parameter: ").append(filter.displayParameter).append('\n');
+                csvBuilder.append("# Report Period: ").append(filter.periodLabel).append(" (")
+                        .append(DateUtils.formatDate(filter.effectiveStartMs)).append(" - ")
+                        .append(DateUtils.formatDate(filter.effectiveEndMs)).append(")\n");
+                csvBuilder.append("Timestamp,Parameter,Value,Unit\n");
+
+                for (ParameterReading r : currentReadings) {
+                    csvBuilder.append(dateFormat.format(new Date(r.timestampMs))).append(',')
+                            .append(filter.displayParameter).append(',')
+                            .append(String.format(Locale.US, "%.2f", r.value)).append(',')
+                            .append(unit).append('\n');
+                }
+
+                File cachePath = new File(getContext().getCacheDir(), "exports");
+                if (!cachePath.exists()) cachePath.mkdirs();
+
+                String filename = "Basilience_Report_" + CycleReportGenerator.sanitizeForFilename(filter.deviceId) + "_"
+                        + CycleReportGenerator.sanitizeForFilename(filter.cycleLabel) + "_"
+                        + filter.canonicalParameter.replace(" ", "") + "_" + System.currentTimeMillis() + ".csv";
+                File csvFile = new File(cachePath, filename);
+                try (FileWriter writer = new FileWriter(csvFile)) {
+                    writer.append(csvBuilder.toString());
+                    writer.flush();
+                }
+
+                Uri contentUri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", csvFile);
+                if (contentUri != null) {
+                    Intent shareIntent = new Intent(Intent.ACTION_SEND);
+                    shareIntent.setType("text/csv");
+                    shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Basilience " + filter.displayParameter + " Report - " + filter.cycleLabel);
+                    shareIntent.putExtra(Intent.EXTRA_TEXT, "Attached is the " + filter.displayParameter + " report for "
+                            + filter.cycleLabel + " (" + filter.periodLabel + ").");
+                    shareIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
+                    shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    startActivity(Intent.createChooser(shareIntent, "Export Report via:"));
+                }
+            } catch (IOException e) {
+                Log.e("CSV_EXPORT_ERROR", "Error writing CSV file", e);
+                NotificationHelper.showError(getContext(), "We couldn't generate the CSV file. Please try again.");
+            } finally {
+                hideLayoutLoading();
             }
-        } catch (IOException e) {
-            Log.e("CSV_EXPORT_ERROR", "Error writing CSV file", e);
-            NotificationHelper.showError(getContext(), "We couldn't generate the CSV file. Please try again.");
-        }
+        });
     }
 
     // ------------------------------------------------------------------
@@ -1678,7 +1723,7 @@ public class SystemReportsFragment extends Fragment {
         if (tvEffectiveRange != null) {
             if (currentFilter != null) {
                 tvEffectiveRange.setText("Showing " + DateUtils.formatDate(currentFilter.effectiveStartMs)
-                        + " – " + DateUtils.formatDate(currentFilter.effectiveEndMs));
+                        + " to " + DateUtils.formatDate(currentFilter.effectiveEndMs));
             } else {
                 tvEffectiveRange.setText("");
             }

@@ -20,6 +20,7 @@ import androidx.core.content.ContextCompat;
 
 import com.google.android.material.switchmaterial.SwitchMaterial;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.progressindicator.CircularProgressIndicator;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.example.basilience.repository.SensorRepository;
@@ -105,6 +106,140 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private Double configuredHighWaterTemp = null;
     /** status/currentMode, phDirection, ecDirection and the subsystem/global locks - all from the same statusListener below. */
     private final ManualOverrideAdvisor.OperationContext operationContext = new ManualOverrideAdvisor.OperationContext();
+
+    // status/currentMode ordinals - mirrors firmware's SystemMode enum
+    // (Types.h), same values ManualOverrideAdvisor.java already duplicates
+    // for its own currentMode checks (that copy is private to that class).
+    private static final int MODE_REFILLING = 3;
+    private static final int MODE_DOSING_PH = 4;
+    private static final int MODE_STABILIZING_PH = 5;
+    private static final int MODE_DOSING_EC = 6;
+    private static final int MODE_STABILIZING_EC = 7;
+
+    // Mirrors firmware's PH_STABILIZATION_TIME/EC_STABILIZATION_TIME
+    // (Config.h), in seconds - the fixed silent-settle window length, used
+    // only to size the pH/EC loader's determinate progress ring. Display
+    // only; firmware's own phStabilizeSecondsRemaining/ecStabilizeSecondsRemaining
+    // remain the source of truth for the actual countdown number.
+    private static final int PH_EC_STABILIZE_TOTAL_SECONDS = 90;
+
+    private StabilizeLoader phLoader, ecLoader, waterLevelLoader;
+
+    /**
+     * Drives one parameter card's "reading is currently untrustworthy"
+     * loader: a one-time "Stabilizing"/"Refilling" popup the first time the
+     * card goes unstable, then a small circular countdown replacing the
+     * value/status text until it becomes trustworthy again. See the "Hide
+     * unreliable readings during dosing/refilling" plan for the full design.
+     */
+    private final class StabilizeLoader {
+        private final View valueView;
+        private final View statusView;
+        private final View loaderContainer;
+        private final CircularProgressIndicator progress;
+        private final TextView secondsLabel;
+        private final int totalSeconds; // 0 for the refill loader - no fixed total, indeterminate ring
+        private final String popupTitle;
+        private final String popupMessage;
+
+        private boolean active = false;
+        private boolean popupShown = false;
+        private int remainingSeconds = 0;
+        private final Runnable tick = this::onTick;
+
+        StabilizeLoader(View card, View valueView, View statusView, int totalSeconds,
+                         String popupTitle, String popupMessage) {
+            this.valueView = valueView;
+            this.statusView = statusView;
+            this.loaderContainer = card.findViewById(R.id.stabilizingLoader);
+            this.progress = card.findViewById(R.id.progressStabilizing);
+            this.secondsLabel = card.findViewById(R.id.tvStabilizeSeconds);
+            this.totalSeconds = totalSeconds;
+            this.popupTitle = popupTitle;
+            this.popupMessage = popupMessage;
+            if (progress != null) {
+                progress.setIndeterminate(totalSeconds <= 0);
+            }
+        }
+
+        /** Called on every fresh /status snapshot with this parameter's current unstable state and server-reported seconds remaining. */
+        void update(boolean unstable, int serverSecondsRemaining) {
+            if (loaderContainer == null) return;
+
+            if (!unstable) {
+                if (active) stop();
+                popupShown = false;
+                return;
+            }
+
+            remainingSeconds = Math.max(0, serverSecondsRemaining);
+
+            if (!active) {
+                active = true;
+                if (!popupShown) {
+                    popupShown = true;
+                    NotificationHelper.showAutomationAcknowledgement(
+                            requireContext(), popupTitle, popupMessage, this::show);
+                } else {
+                    // Popup already shown earlier in this same episode (e.g.
+                    // fragment view was recreated mid-episode) - go straight
+                    // to the loader.
+                    show();
+                }
+            } else {
+                // Already showing - just resync the ticker to the fresh
+                // server value instead of drifting on the local 1s ticks.
+                mainHandler.removeCallbacks(tick);
+                render();
+                scheduleNextTick();
+            }
+        }
+
+        private void show() {
+            if (!isAdded()) return;
+            valueView.setVisibility(View.GONE);
+            statusView.setVisibility(View.GONE);
+            loaderContainer.setVisibility(View.VISIBLE);
+            render();
+            mainHandler.removeCallbacks(tick);
+            scheduleNextTick();
+        }
+
+        private void stop() {
+            active = false;
+            mainHandler.removeCallbacks(tick);
+            loaderContainer.setVisibility(View.GONE);
+            valueView.setVisibility(View.VISIBLE);
+            statusView.setVisibility(View.VISIBLE);
+        }
+
+        private void onTick() {
+            if (!active || !isAdded()) return;
+            if (remainingSeconds > 0) remainingSeconds--;
+            render();
+            scheduleNextTick();
+        }
+
+        private void scheduleNextTick() {
+            // Refill's "0" is the documented sentinel for "no countdown
+            // published" (manual/continuous refill), not a real countdown
+            // finishing - never worth ticking on. pH/EC's 0 is a genuine,
+            // very-transient "about to become trustworthy" moment.
+            if (remainingSeconds > 0) {
+                mainHandler.postDelayed(tick, 1000);
+            }
+        }
+
+        private void render() {
+            if (secondsLabel != null) {
+                secondsLabel.setText(remainingSeconds > 0 ? (remainingSeconds + "s") : "");
+            }
+            if (progress != null && totalSeconds > 0) {
+                progress.setProgressCompat(
+                        (int) (100L * (totalSeconds - remainingSeconds) / totalSeconds), true);
+            }
+        }
+    }
     private DatabaseReference highWaterTempRef;
     private ValueEventListener highWaterTempListener;
 
@@ -180,7 +315,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     // updateSensorUI()'s own existing per-field "--"/"Stabilizing..." logic,
     // never by re-showing this overlay.
     // Quick-response refinement task: was 8s - firmware readiness no longer
-    // waits out SENSOR_STABILIZATION_TIME (10s), so a fresh boot now
+    // waits out SENSOR_STABILIZATION_TIME (60s), so a fresh boot now
     // normally reports ready within ~1-2s (SENSOR_READY_MIN_MS/MAX_MS on
     // the firmware side); this is now purely the hard UI fallback for a
     // missing/stuck snapshot, not the expected normal wait.
@@ -494,6 +629,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             if (label != null) label.setText("pH");
             ImageView icon = cardPH.findViewById(R.id.imgIcon);
             if (icon != null) icon.setImageResource(R.drawable.ic_ph);
+            phLoader = new StabilizeLoader(cardPH, tvPH, tvPHStatus, PH_EC_STABILIZE_TOTAL_SECONDS,
+                    "Stabilizing",
+                    "pH is currently being corrected. The reading will be hidden until it settles. This usually takes about a minute and a half.");
         }
         if (cardEC != null) {
             tvEC = cardEC.findViewById(R.id.tvValue);
@@ -502,6 +640,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             if (label != null) label.setText("EC");
             ImageView icon = cardEC.findViewById(R.id.imgIcon);
             if (icon != null) icon.setImageResource(R.drawable.ic_ec);
+            ecLoader = new StabilizeLoader(cardEC, tvEC, tvECStatus, PH_EC_STABILIZE_TOTAL_SECONDS,
+                    "Stabilizing",
+                    "EC is currently being corrected. The reading will be hidden until it settles. This usually takes about a minute and a half.");
         }
         if (cardTemp != null) {
             tvTemp = cardTemp.findViewById(R.id.tvValue);
@@ -530,6 +671,11 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             tvWaterLevelStatus = cardWaterLevel.findViewById(R.id.tvStatus);
             TextView label = cardWaterLevel.findViewById(R.id.tvLabel);
             if (label != null) label.setText("Water Level");
+            // 0 total = indeterminate ring - refill has no single fixed
+            // duration to size a determinate ring against (1-3 attempts).
+            waterLevelLoader = new StabilizeLoader(cardWaterLevel, tvWaterLevel, tvWaterLevelStatus, 0,
+                    "Refilling",
+                    "The reservoir is currently refilling. The water level reading will be hidden until the refill finishes.");
         }
     }
 
@@ -759,6 +905,26 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 operationContext.ecSubsystemLocked = Boolean.TRUE.equals(snapshot.child("ecSubsystemLocked").getValue(Boolean.class));
                 operationContext.refillSubsystemLocked = Boolean.TRUE.equals(snapshot.child("refillSubsystemLocked").getValue(Boolean.class));
                 operationContext.coolingSubsystemLocked = Boolean.TRUE.equals(snapshot.child("coolingSubsystemLocked").getValue(Boolean.class));
+
+                // Stabilizing-loader state - see StabilizeLoader's own
+                // comment. Same /status node, just fields this listener
+                // wasn't pulling out before.
+                int mode = operationContext.currentMode;
+                boolean phWatchPhaseActive = Boolean.TRUE.equals(snapshot.child("phWatchPhaseActive").getValue(Boolean.class));
+                boolean ecWatchPhaseActive = Boolean.TRUE.equals(snapshot.child("ecWatchPhaseActive").getValue(Boolean.class));
+                Long phSecs = snapshot.child("phStabilizeSecondsRemaining").getValue(Long.class);
+                Long ecSecs = snapshot.child("ecStabilizeSecondsRemaining").getValue(Long.class);
+                Long refillSecs = snapshot.child("refillSecondsRemaining").getValue(Long.class);
+
+                boolean phUnstable = mode == MODE_DOSING_PH
+                        || (mode == MODE_STABILIZING_PH && !phWatchPhaseActive);
+                boolean ecUnstable = mode == MODE_DOSING_EC
+                        || (mode == MODE_STABILIZING_EC && !ecWatchPhaseActive);
+                boolean waterLevelUnstable = mode == MODE_REFILLING;
+
+                if (phLoader != null) phLoader.update(phUnstable, phSecs != null ? phSecs.intValue() : 0);
+                if (ecLoader != null) ecLoader.update(ecUnstable, ecSecs != null ? ecSecs.intValue() : 0);
+                if (waterLevelLoader != null) waterLevelLoader.update(waterLevelUnstable, refillSecs != null ? refillSecs.intValue() : 0);
             }
 
             @Override
@@ -2092,6 +2258,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         sensorsRevealed = false;
         lastLoggedSensorReady = null;
         sensorStabilizingOverlay = null;
+        phLoader = null;
+        ecLoader = null;
+        waterLevelLoader = null;
         if (connectivityExecutor != null) {
             connectivityExecutor.shutdownNow();
             connectivityExecutor = null;
@@ -2141,7 +2310,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 {"Fan speed",
                         "Canopy Fan and Reservoir Fan (Blower) run at a speed the device decides on its own - there is no speed control in the app. Turning them on or off here still works like every other actuator."},
                 {"Rejected / blocked status",
-                        "A 'Rejected' or 'blocked' status with a reason means the device refused that specific command - most often because a safety interlock is active, a sensor reading is invalid, or another operation currently owns that equipment. It clears on its own once the blocking condition ends; it does not mean the actuator is stuck."}
+                        "A 'Rejected' or 'blocked' status with a reason means the device refused that specific command - most often because a safety interlock is active, a sensor reading is invalid, or another operation currently owns that equipment. It clears on its own once the blocking condition ends. It does not mean the actuator is stuck."}
         };
         NotificationHelper.showGuideDialog(requireContext(), "How to use Actuator Control",
                 sections, "Got it");

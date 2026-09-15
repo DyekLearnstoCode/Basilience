@@ -50,6 +50,10 @@ public class Database_Helper {
 
     private static boolean isConnectedListenerRegistered = false;
 
+    // Must match firestore.rules' isNotDuplicateHarvest() guard window exactly -
+    // see addHarvestTransaction()'s duplicate-submission check.
+    private static final long HARVEST_DUPLICATE_GUARD_MS = 60_000L;
+
     private String selectedDeviceId;
     private String cachedRole;
 
@@ -422,6 +426,15 @@ public class Database_Helper {
      * reproduced across multiple installs - never a single shared/global
      * scale - so this is per-device data on the devices/{deviceId}
      * document, not a fixed app-wide value.
+     *
+     * Goes through the pairHarvestScale callable rather than a raw Firestore
+     * write - the server-side trigger that used to mirror this pairing onto
+     * the scale (deviceAccess/parentDeviceId) was found to silently drop
+     * every event via Eventarc, so a plain write here could show success
+     * while nothing ever actually synced. The callable does the write and
+     * the mirror in the same request, so success here means it's really
+     * done. Admin/ownership checks happen server-side in the callable now,
+     * not via checkAdminTask() here.
      */
     /**
      * Renames a claimed device (the friendly deviceName shown throughout
@@ -449,8 +462,13 @@ public class Database_Helper {
         String trimmed = scaleDeviceId == null ? null : scaleDeviceId.trim();
         String normalized = (trimmed == null || trimmed.isEmpty()) ? null : trimmed;
 
-        return checkAdminTask().onSuccessTask(aVoid ->
-                db.collection("devices").document(deviceId).update("harvestScaleId", normalized));
+        Map<String, Object> data = new HashMap<>();
+        data.put("deviceId", deviceId);
+        data.put("harvestScaleId", normalized);
+        return FirebaseFunctions.getInstance("asia-southeast1")
+                .getHttpsCallable("pairHarvestScale")
+                .call(data)
+                .onSuccessTask(result -> Tasks.forResult(null));
     }
 
     /**
@@ -1015,6 +1033,28 @@ public class Database_Helper {
             if (!"ACTIVE".equalsIgnoreCase(status)) {
                 throw new FirebaseFirestoreException("Cycle is completed and can no longer be modified.",
                         FirebaseFirestoreException.Code.ABORTED);
+            }
+
+            // Duplicate-submission guard: nothing else here (or in
+            // firestore.rules' window check) stops two harvest entries from
+            // being created back to back - an Admin override has no window
+            // restriction at all, and even a Farmer's UI double-tap guard
+            // (isHarvestSubmitting) is only a client-side flag that a retry,
+            // a second device, or a second app session never sees. Reject
+            // outright if this cycle's own lastHarvestDate is within the
+            // same short guard window firestore.rules' isNotDuplicateHarvest()
+            // enforces, so a stray double-submission fails fast with a clear
+            // reason instead of quietly creating two harvest logs (or, absent
+            // this check, being rejected by the rule anyway but surfaced as a
+            // generic permission error).
+            Timestamp lastHarvest = cycleSnap.getTimestamp("lastHarvestDate");
+            if (lastHarvest != null) {
+                long deltaMs = harvest.getHarvestDate().toDate().getTime() - lastHarvest.toDate().getTime();
+                if (deltaMs < HARVEST_DUPLICATE_GUARD_MS) {
+                    throw new FirebaseFirestoreException(
+                            "A harvest was just recorded for this cycle. Please wait a moment before logging another.",
+                            FirebaseFirestoreException.Code.ABORTED);
+                }
             }
 
             double currentWeight = 0;

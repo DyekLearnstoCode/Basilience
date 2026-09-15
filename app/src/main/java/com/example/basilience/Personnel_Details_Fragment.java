@@ -39,6 +39,7 @@ import java.util.TimeZone;
 public class Personnel_Details_Fragment extends Fragment {
 
     private static final String TAG = "Personnel_Details_Fragment";
+    private boolean loadingAssignDeviceOptions;
 
     private TextInputEditText etName, etRole, etEmail, etPhone;
     private TextView tvName, tvRole, tvEmail, tvPhone, tvDateAdded, tvLoadingTitle;
@@ -209,7 +210,7 @@ public class Personnel_Details_Fragment extends Fragment {
 
         tvDeviceName.setText("Device");
         tvDeviceId.setText("Device ID: " + deviceId);
-        tvStatus.setText("Status: —");
+        tvStatus.setText("Status: --");
         tvAssigned.setText("Date Assigned: " + formatDate(assignedAt));
 
         helper.getDeviceDocument(deviceId).addOnSuccessListener(device -> {
@@ -243,9 +244,14 @@ public class Personnel_Details_Fragment extends Fragment {
     }
 
     private void showAssignDeviceDialog() {
+        if (loadingAssignDeviceOptions) return;
+        loadingAssignDeviceOptions = true;
+        showLoading(true, "Loading devices...");
         helper.getMyDevices().addOnSuccessListener(devices -> {
             if (!isAdded()) return;
             if (devices.isEmpty()) {
+                loadingAssignDeviceOptions = false;
+                showLoading(false, null);
                 NotificationHelper.showError(requireContext(), "You have no claimed devices to assign.");
                 return;
             }
@@ -264,6 +270,8 @@ public class Personnel_Details_Fragment extends Fragment {
                     labels[i] = assignedIds.contains(deviceIds.get(i))
                             ? deviceIds.get(i) + " (Assigned)" : deviceIds.get(i);
                 }
+                loadingAssignDeviceOptions = false;
+                showLoading(false, null);
                 NotificationHelper.showSelectionDialog(requireContext(), "Assign Device", labels, index -> {
                     String selectedId = deviceIds.get(index);
                     if (assignedIds.contains(selectedId)) {
@@ -298,11 +306,15 @@ public class Personnel_Details_Fragment extends Fragment {
                             });
                 });
             }).addOnFailureListener(e -> {
+                loadingAssignDeviceOptions = false;
+                showLoading(false, null);
                 Log.e(TAG, "Failed to load existing assignments", e);
                 if (isAdded()) NotificationHelper.showError(requireContext(),
                         "Unable to load existing assignments. Please try again.");
             });
         }).addOnFailureListener(e -> {
+            loadingAssignDeviceOptions = false;
+            showLoading(false, null);
             Log.e(TAG, "Failed to load claimed devices", e);
             if (isAdded()) NotificationHelper.showError(requireContext(),
                     "Unable to load your devices. Please try again.");
@@ -500,7 +512,7 @@ public class Personnel_Details_Fragment extends Fragment {
     }
 
     private static String formatDate(Long epochMillis) {
-        if (epochMillis == null || epochMillis <= 0) return "—";
+        if (epochMillis == null || epochMillis <= 0) return "--";
         SimpleDateFormat format = new SimpleDateFormat("MMM d, yyyy", Locale.US);
         format.setTimeZone(TimeZone.getTimeZone("Asia/Manila"));
         return format.format(new Date(epochMillis));
@@ -515,6 +527,6 @@ public class Personnel_Details_Fragment extends Fragment {
     }
 
     private static String display(String value) {
-        return value == null || value.trim().isEmpty() ? "—" : value;
+        return value == null || value.trim().isEmpty() ? "--" : value;
     }
 }

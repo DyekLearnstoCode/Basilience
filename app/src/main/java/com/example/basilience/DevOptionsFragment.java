@@ -374,8 +374,23 @@ public class DevOptionsFragment extends Fragment {
                 btnMockGrowLightTime.setOnClickListener(v -> showMockGrowLightTimePicker());
             }
 
-            loadCurrentValues();
-            loadMockGrowLightTime();
+            // loadCurrentValues()/loadMockGrowLightTime() are NOT called here.
+            // They used to be, in addition to the unconditional call just
+            // below (whenever !maintenanceMode) - that duplicate registered
+            // two concurrent addListenerForSingleValueEvent reads of the same
+            // mock-sensor state. Both eventually resolved and called
+            // switchMockEnable.setChecked(enabled) (see loadCurrentValues()),
+            // but that call isn't wrapped in suppressMockSwitchCallback like
+            // every other programmatic switch update in this file - it only
+            // relies on loadingMockState. Whichever of the two reads finished
+            // first flipped loadingMockState to false, so the SECOND read's
+            // setChecked(true) then fired this listener for real, popping the
+            // "Enable Mock Sensors?" dialog as if the user had just tapped
+            // it - and since this listener is a one-shot never cancelled in
+            // onDestroyView(), it could resolve after the user had already
+            // navigated away (e.g. into Parameter Target Ranges and back out
+            // to the Dashboard), making the dialog appear to come from a
+            // completely unrelated screen.
             switchMockEnable.setOnCheckedChangeListener((buttonView, isChecked) -> {
                 if (suppressMockSwitchCallback || loadingMockState) return;
                 if (isChecked) {
@@ -677,7 +692,16 @@ public class DevOptionsFragment extends Fragment {
     // no cleanup write is required here.
     private void setMockGrowLightTimeEnabled(boolean enabled) {
         if (automationTestModeCommandRef == null) return;
-        automationTestModeCommandRef.child("mockGrowLightTimeEnabled").setValue(enabled);
+        showLoading(enabled ? "Enabling Mock Grow Light Time..." : "Disabling Mock Grow Light Time...",
+                "Sending to device...");
+        automationTestModeCommandRef.child("mockGrowLightTimeEnabled").setValue(enabled)
+                .addOnSuccessListener(unused -> hideLoading())
+                .addOnFailureListener(error -> {
+                    hideLoading();
+                    if (isAdded()) {
+                        NotificationHelper.showError(requireContext(), "Mock Grow Light Time Failed", error.getMessage());
+                    }
+                });
     }
 
     // Writes only to commands/automationTestMode/mockGrowLightMinutes -
@@ -685,7 +709,15 @@ public class DevOptionsFragment extends Fragment {
     // lightOffMinute schedule) and never to any RTC/time path.
     private void setMockGrowLightMinutes(int minutes) {
         if (automationTestModeCommandRef == null) return;
-        automationTestModeCommandRef.child("mockGrowLightMinutes").setValue(minutes);
+        showLoading("Updating Mock Grow Light Time...", "Sending to device...");
+        automationTestModeCommandRef.child("mockGrowLightMinutes").setValue(minutes)
+                .addOnSuccessListener(unused -> hideLoading())
+                .addOnFailureListener(error -> {
+                    hideLoading();
+                    if (isAdded()) {
+                        NotificationHelper.showError(requireContext(), "Mock Grow Light Time Failed", error.getMessage());
+                    }
+                });
     }
 
     /**
@@ -1000,10 +1032,18 @@ public class DevOptionsFragment extends Fragment {
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (!isAdded()) return;
                 if (snapshot.exists()) {
+                    // Guarded like every other programmatic switch update in
+                    // this file (see switchMockEnable's own listener below) -
+                    // loadingMockState alone was the only guard here before,
+                    // and a duplicate concurrent load could flip it to false
+                    // out from under this callback (see the comment above
+                    // switchMockEnable's listener for the bug this caused).
+                    suppressMockSwitchCallback = true;
                     Boolean enabled = snapshot.child("enabled").getValue(Boolean.class);
                     if (enabled != null) switchMockEnable.setChecked(enabled);
                     Boolean dynamic = snapshot.child("dynamic").getValue(Boolean.class);
                     switchDynamicMock.setChecked(Boolean.TRUE.equals(dynamic));
+                    suppressMockSwitchCallback = false;
                     
                     Double ph = snapshot.child("ph").getValue(Double.class);
                     if (ph != null) etPh.setText(String.valueOf(ph));

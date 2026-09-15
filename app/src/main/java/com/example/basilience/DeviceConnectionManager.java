@@ -19,9 +19,22 @@ public class DeviceConnectionManager {
     private final MutableLiveData<DeviceConnectivityState> connectivityState =
             new MutableLiveData<>(DeviceConnectivityState.RECONNECTING);
 
-    public static final long HEARTBEAT_INTERVAL_MS = 10_000L;
+    // Matches the firmware's real sensor-publish cadence (FirebaseManager.cpp's
+    // SENSOR_UPLOAD_INTERVAL_MS, 5s), which is what actually drives
+    // trackDeviceHeartbeat in functions/index.js. This used to say 10s, left
+    // over from before that cadence was sped up to 5s - retuned so a missed
+    // heartbeat is flagged (RECONNECTING) after genuinely missing two real
+    // heartbeats, not four.
+    public static final long HEARTBEAT_INTERVAL_MS = 5_000L;
     public static final long FRESH_HEARTBEAT_MAX_AGE_MS = HEARTBEAT_INTERVAL_MS * 2L;
-    public static final long OFFLINE_TIMEOUT_MS = 40_000L;
+    // Kept equal to functions/index.js's own OFFLINE_TIMEOUT_MS on purpose, so
+    // this client-side staleness fallback (which only ever downgrades to
+    // RECONNECTING, never to a hard OFFLINE - that label is authoritative from
+    // the backend's own trackDeviceHeartbeat/delayedOfflineCheck) lines up with
+    // when the backend will actually flag the device offline. Retuned from 40s
+    // to 30s alongside that backend value - see its own comment for why 30s
+    // is the right number now that the real heartbeat cadence is 5s, not 10s.
+    public static final long OFFLINE_TIMEOUT_MS = 30_000L;
     private static final long STATE_REFRESH_INTERVAL_MS = 2_000L;
     private static final String RTDB_URL =
             "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app";

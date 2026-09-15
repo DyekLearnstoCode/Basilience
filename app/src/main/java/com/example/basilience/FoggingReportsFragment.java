@@ -520,7 +520,7 @@ public class FoggingReportsFragment extends Fragment {
     private String cycleSpinnerLabel(Cycle c) {
         String name = (c.getCycleName() != null && !c.getCycleName().isEmpty()) ? c.getCycleName() : ("Cycle #" + c.getCycleNumber());
         String status = normalizeCycleStatus(c.getStatus());
-        String range = DateUtils.formatDate(c.getStartDate()) + " – "
+        String range = DateUtils.formatDate(c.getStartDate()) + " to "
                 + ("COMPLETED".equals(status) ? DateUtils.formatDate(c.getEndDate()) : "Present");
         return name + " • " + ("ACTIVE".equals(status) ? "In Progress" : "Completed") + " • " + range;
     }
@@ -819,7 +819,7 @@ public class FoggingReportsFragment extends Fragment {
 
         if (tvEffectiveRange != null) {
             tvEffectiveRange.setText("Showing " + DateUtils.formatDate(filter.effectiveStartMs)
-                    + " – " + DateUtils.formatDate(filter.effectiveEndMs));
+                    + " to " + DateUtils.formatDate(filter.effectiveEndMs));
         }
 
         fetchFoggingLogs(filter, requestGeneration);
@@ -1730,7 +1730,16 @@ public class FoggingReportsFragment extends Fragment {
             return;
         }
 
-        Toast.makeText(getContext(), "Generating PDF...", Toast.LENGTH_SHORT).show();
+        // Full-screen, touch-intercepting overlay (same as loadData()'s own
+        // use of it) rather than the old transient Toast - PDF generation
+        // runs on a real background Thread below, so without this the button
+        // stayed tappable for the whole generation window and a second tap
+        // could start a second concurrent generation/share sheet.
+        layoutLoadingShownAt = SystemClock.elapsedRealtime();
+        if (layoutLoading != null) {
+            layoutLoading.setVisibility(View.VISIBLE);
+            layoutLoading.bringToFront();
+        }
 
         final FoggingReportFilter filter = currentFilter;
         final List<FoggingSession> sessions = new ArrayList<>(processedSessions);
@@ -1791,8 +1800,12 @@ public class FoggingReportsFragment extends Fragment {
             final File result = pdfFile;
             final Exception error = failure;
             hostActivity.runOnUiThread(() -> {
-                if (!isAdded()) return;
+                if (!isAdded()) {
+                    hideLayoutLoading();
+                    return;
+                }
                 if (error != null || result == null) {
+                    hideLayoutLoading();
                     Log.e("FoggingReports", "Error generating PDF", error);
                     NotificationHelper.showError(getContext(), "We couldn't generate the PDF report. Please try again.");
                     return;
@@ -1813,6 +1826,8 @@ public class FoggingReportsFragment extends Fragment {
                 } catch (Exception e) {
                     Log.e("FoggingReports", "Error opening PDF", e);
                     NotificationHelper.showError(getContext(), "We couldn't open the PDF report.");
+                } finally {
+                    hideLayoutLoading();
                 }
             });
         }).start();

@@ -562,7 +562,7 @@ public class HarvestLogFragment extends Fragment {
             String end = isCompleted
                     ? (cycle.getEndDate() != null ? DateUtils.formatDate(cycle.getEndDate()) : "Finished")
                     : "Present";
-            tvCycleRange.setText(start + " – " + end);
+            tvCycleRange.setText(start + " to " + end);
         }
 
         // Update Labels and Dates based on status

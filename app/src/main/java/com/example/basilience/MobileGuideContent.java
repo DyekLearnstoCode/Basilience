@@ -63,10 +63,10 @@ final class MobileGuideContent {
                         "From the Dashboard, tap the \"Parameters Monitoring\" card.",
                         "The top grid shows pH, EC, Air Temperature, and Humidity.",
                         "The Details section below shows Water Temperature and Water Level.",
-                        "Each card shows the current value with its unit (°C for temperature, % for humidity and water level, mS/cm for EC; pH has no unit).",
+                        "Each card shows the current value with its unit (°C for temperature, % for humidity and water level, mS/cm for EC). pH has no unit.",
                         "Each card also shows a status word: Normal, Below Range, Above Range, or No Data, matching the value's color.",
                         "Every parameter has a target range with a Minimum and a Maximum. The Minimum is the lowest reading still considered inside the target growing range, and the Maximum is the highest. A reading outside either limit is shown as Below Range or Above Range here, and appears in red on the Reports charts."))
-                .tip("If a card shows \"--\" and a No Data status, the sensor reading hasn't arrived yet or is currently invalid — this is not the same as a Warning.")
+                .tip("If a card shows \"--\" and a No Data status, the sensor reading hasn't arrived yet or is currently invalid. This is not the same as a Warning.")
                 .build());
 
         list.add(GuideSection.builder("Actuator & Automation Status")
@@ -75,13 +75,13 @@ final class MobileGuideContent {
                 .imagePlaceholder("Monitoring screen scrolled down to the actuator list")
                 .steps(Arrays.asList(
                         "Manual Mode (the switch at the top of the section) is available to Admin accounts and lets you control individual actuators by hand. The automatic system keeps running underneath even while Manual Mode is on.",
-                        "Built-in safety checks stay active while Manual Mode is on — a request can still be turned down (shown as \"Rejected\") if conditions aren't safe, with a short reason shown when that happens.",
-                        "Manual Mode turns itself off automatically after 15 minutes with no manual action, and normal automatic control resumes on its own — no action is needed from you when that happens.",
+                        "Built-in safety checks stay active while Manual Mode is on. A request can still be turned down (shown as \"Rejected\") if conditions aren't safe, with a short reason shown when that happens.",
+                        "Manual Mode turns itself off automatically after 15 minutes with no manual action, and normal automatic control resumes on its own. No action is needed from you when that happens.",
                         "Each actuator row shows its name (for example \"Fogger\" or \"Grow Lights\") and a status word.",
                         "Off, Command Sent, Validating, Starting, Running, and Stopping describe where a command currently is.",
-                        "A small · Auto, · Manual, or · App tag after the status shows what triggered it — the automatic system, a physical control, or this app.",
-                        "Toggling a switch while Manual Mode is on sends a command directly to that actuator. pH Up, pH Down, and Nutrients are the exception: each request runs the pump for a single 5-second dose and then stops it automatically — turning the switch back off yourself isn't needed. This is a one-time manual dose, not the same as the system's full automatic correction, which keeps checking the reading afterward.",
-                        "Turning on the Fogger by hand also runs the Root Blower together with it to move the fog through the root area — you don't need to turn the blower on separately. After you stop the Fogger, the blower keeps running a little longer to clear the remaining fog before switching off on its own."))
+                        "A small · Auto, · Manual, or · App tag after the status shows what triggered it: the automatic system, a physical control, or this app.",
+                        "Toggling a switch while Manual Mode is on sends a command directly to that actuator. pH Up, pH Down, and Nutrients are the exception: each request runs the pump for a single 5-second dose and then stops it automatically. Turning the switch back off yourself isn't needed. This is a one-time manual dose, not the same as the system's full automatic correction, which keeps checking the reading afterward.",
+                        "Turning on the Fogger by hand also runs the Root Blower together with it to move the fog through the root area. You don't need to turn the blower on separately. After you stop the Fogger, the blower keeps running a little longer to clear the remaining fog before switching off on its own."))
                 .warning("Actuator switches are disabled unless Manual Mode is turned on.")
                 .build());
 
@@ -105,7 +105,7 @@ final class MobileGuideContent {
                         "From Growth Cycles, tap \"Add New Cycle.\"",
                         "The Cycle Number is assigned automatically.",
                         "Tap the Start Date field to choose a date from the calendar.",
-                        "Enter Harvest Frequency in days — this sets how often the app expects a harvest to be recorded.",
+                        "Enter Harvest Frequency in days. This sets how often the app expects a harvest to be recorded.",
                         "Tap Save. If an active cycle already exists for this device, Basilience will ask you to complete it first."))
                 .build());
 
@@ -118,7 +118,7 @@ final class MobileGuideContent {
                         "The summary card shows Total Harvested weight and the number of Harvest Entries.",
                         "For an active cycle, the schedule shows \"Ready to Harvest\" (in green) once a harvest is due, or \"Next Harvest\" with the upcoming date beforehand.",
                         "For a completed cycle, the schedule shows the Completed Date instead, and no further harvests can be added.",
-                        "The Accumulated Harvest chart plots running total weight over the cycle; Harvest History below lists every individual entry, newest first."))
+                        "The Accumulated Harvest chart plots running total weight over the cycle. Harvest History below lists every individual entry, newest first."))
                 .build());
 
         list.add(GuideSection.builder("Recording Harvest Weight")
@@ -128,7 +128,7 @@ final class MobileGuideContent {
                 .steps(Arrays.asList(
                         "On an active cycle's Harvest screen, tap the + button.",
                         "The dialog shows the date this harvest will be recorded under.",
-                        "Enter the harvested weight in grams, or tap \"Read from Harvest Scale\" to fill it in from the device's paired scale instead of typing it — this button only appears once a harvest scale has been paired to the device.",
+                        "Enter the harvested weight in grams, or tap \"Read from Harvest Scale\" to fill it in from the device's paired scale instead of typing it. This button only appears once a harvest scale has been paired to the device.",
                         "Notes are optional.",
                         "Tap Save. The total, chart, and history update immediately."))
                 .warning("If a harvest isn't due yet, tapping + shows how many days remain instead of the entry form. Admin accounts can choose to override this and log the harvest early, which also resets the schedule from that date.")
@@ -166,8 +166,8 @@ final class MobileGuideContent {
                         "Choose a Cultivation Cycle and a Period, the same way as the Parameter Report.",
                         "Sessions, Runtime, and Avg Session summarize fogging activity for that period.",
                         "Fogging Control shows whether the fogger is currently running under Automatic or Manual control.",
-                        "Water Outlook estimates the reservoir level and when a refill may be needed — shown only when the app has enough recent data to estimate it.",
-                        "Recent Fogging Activity lists individual sessions; use the share icon to export a PDF."))
+                        "Water Outlook estimates the reservoir level and when a refill may be needed. It only shows when the app has enough recent data to estimate it.",
+                        "Recent Fogging Activity lists individual sessions. Use the share icon to export a PDF."))
                 .build());
 
         list.add(GuideSection.builder("Notifications")
@@ -201,10 +201,10 @@ final class MobileGuideContent {
                 .steps(Arrays.asList(
                         "Enter the device's token code and tap \"Claim Device\" to add it to your account.",
                         "Registered Devices lists everything claimed to your account, with a live status dot.",
-                        "Tap a device to select it — the rest of the app will then work with that device.",
+                        "Tap a device to select it. The rest of the app will then work with that device.",
                         "Press and hold a device to choose \"Configure Wi-Fi,\" \"Rename Device,\" \"Pair Harvest Scale,\" or \"Unclaim Device.\"",
-                        "\"Rename Device\" changes only the name shown in the app — it doesn't affect the device itself.",
-                        "\"Pair Harvest Scale\" links a Basilience Harvest Scale to this device by entering the scale's own device ID (found on the scale itself) — this is not a Bluetooth pairing, so no phone-side Bluetooth setup is needed. Leave the field blank to unpair."))
+                        "\"Rename Device\" changes only the name shown in the app. It doesn't affect the device itself.",
+                        "\"Pair Harvest Scale\" links a Basilience Harvest Scale to this device by entering the scale's own device ID (found on the scale itself). This is not a Bluetooth pairing, so no phone-side Bluetooth setup is needed. Leave the field blank to unpair."))
                 .build());
 
         list.add(GuideSection.builder("Settings")
@@ -212,12 +212,12 @@ final class MobileGuideContent {
                 .image(com.example.basilience.R.drawable.guide_settings)
                 .imagePlaceholder("Settings screen listing Account Information, About Basilience, and Terms and Agreements")
                 .steps(Arrays.asList(
-                        "Account Information — view and edit your profile.",
-                        "Device Configuration — Admin Only. Safe, always-available device diagnostics: the device's clock status, a physical sensor test, and refill threshold settings. See the Device Configuration section of this guide.",
-                        "About Basilience — general information about the app.",
-                        "Terms and Conditions — the app's terms of use.",
-                        "Privacy Policy — how your data is handled.",
-                        "Developer Options — appears only once your account has Developer Tester access and developer mode has been turned on for the selected device. Testing and simulation tools not needed for normal use — see the Developer Options section of this guide."))
+                        "Account Information: view and edit your profile.",
+                        "Device Configuration: Admin Only. Safe, always-available device diagnostics covering the device's clock status, a physical sensor test, and refill threshold settings. See the Device Configuration section of this guide.",
+                        "About Basilience: general information about the app.",
+                        "Terms and Conditions: the app's terms of use.",
+                        "Privacy Policy: how your data is handled.",
+                        "Developer Options: appears only once your account has Developer Tester access and developer mode has been turned on for the selected device. Testing and simulation tools not needed for normal use. See the Developer Options section of this guide."))
                 .build());
 
         // Device Configuration is a plain Admin-only screen (Settings >
@@ -232,9 +232,9 @@ final class MobileGuideContent {
                 .image(com.example.basilience.R.drawable.guide_device_config)
                 .imagePlaceholder("Device Configuration screen with the Device Clock card and Sensor Test/Refill tabs visible")
                 .steps(Arrays.asList(
-                        "Device Clock — shows whether the device's real-time clock is connected and what it's currently reading. Read-only; there's no way to set the clock from the app.",
-                        "Physical Sensor Test — tap \"Start Sensor Test\" to read live physical sensor values (pH, EC, Air Temperature, Humidity, Water Temperature, Water Level) directly from the hardware, bypassing Mock Sensors. Automatic control pauses while this runs; tap \"Stop Sensor Test\" or leave the screen to resume normal operation.",
-                        "Refill Thresholds — the Start and Stop water depth (in cm) that open and close the refill valve. This is different from a parameter's target range — it just controls when the valve turns on and off."))
+                        "Device Clock: shows whether the device's real-time clock is connected and what it's currently reading. This is read-only. There's no way to set the clock from the app.",
+                        "Physical Sensor Test: tap \"Start Sensor Test\" to read live physical sensor values (pH, EC, Air Temperature, Humidity, Water Temperature, Water Level) directly from the hardware, bypassing Mock Sensors. Automatic control pauses while this runs. Tap \"Stop Sensor Test\" or leave the screen to resume normal operation.",
+                        "Refill Thresholds: the Start and Stop water depth (in cm) that open and close the refill valve. This is different from a parameter's target range. It just controls when the valve turns on and off."))
                 .build());
 
         list.add(GuideSection.builder("Account Settings")
@@ -253,9 +253,9 @@ final class MobileGuideContent {
                 .imagePlaceholder("Wi-Fi Configuration screen with the device status card and network name/password fields")
                 .steps(Arrays.asList(
                         "On your phone's Wi-Fi settings, connect to the \"Basilience-Setup\" network broadcast by the device.",
-                        "Return to Basilience and open Wi-Fi Configuration — from Device Management by pressing and holding a device and choosing \"Configure Wi-Fi,\" from Monitoring's \"Retry Wi-Fi Configuration\" button, or by tapping a Wi-Fi setup notification.",
+                        "Return to Basilience and open Wi-Fi Configuration. You can get there from Device Management by pressing and holding a device and choosing \"Configure Wi-Fi,\" from Monitoring's \"Retry Wi-Fi Configuration\" button, or by tapping a Wi-Fi setup notification.",
                         "Enter your home/facility Wi-Fi Network Name and Password.",
-                        "Tap \"Save & Reconnect.\" Basilience sends the credentials to the device directly over the local setup connection — no internet connection is required for this step.",
+                        "Tap \"Save & Reconnect.\" Basilience sends the credentials to the device directly over the local setup connection. No internet connection is required for this step.",
                         "Wait for the device to reconnect. When the Current Device Status card shows Online, Wi-Fi setup is complete.",
                         "If it doesn't reconnect, make sure your phone is still connected to \"Basilience-Setup\" and try again, or double-check the network name and password you entered."))
                 .build());
@@ -284,22 +284,22 @@ final class MobileGuideContent {
                 .image(com.example.basilience.R.drawable.guide_developer_options)
                 .imagePlaceholder("Developer Options screen with the major diagnostic groups/buttons visible")
                 .steps(Arrays.asList(
-                        "Developer Options only appears once your account has Developer Tester access and developer mode has been turned on for the selected device — it will not appear for an ordinary Admin account, even though the screen exists in the app.",
+                        "Developer Options only appears once your account has Developer Tester access and developer mode has been turned on for the selected device. It will not appear for an ordinary Admin account, even though the screen exists in the app.",
                         "Once both are on, it's reached from Settings, in a \"Developer Options\" row that only shows up while they are.",
                         "The screen covers Mock Data, Parameter Target Ranges, Automation Testing, and Safety Overrides, with \"Enable Provisioning/AP Mode\" and \"Disable Developer Mode\" always visible at the bottom."))
-                .warning("Some of these tools change real device behavior or data — Mock Sensors, Automation Testing, the Safety Overrides, and Provisioning/AP Mode all affect the actual device, not just a preview. Use them only when testing or validating the system, and turn them back off when you're done.")
+                .warning("Some of these tools change real device behavior or data. Mock Sensors, Automation Testing, the Safety Overrides, and Provisioning/AP Mode all affect the actual device, not just a preview. Use them only when testing or validating the system, and turn them back off when you're done.")
                 .build());
 
-        list.add(GuideSection.builder("Developer Options — Data & Simulation Testing")
+        list.add(GuideSection.builder("Developer Options - Data & Simulation Testing")
                 .adminOnly(true)
-                .description("Mock Sensors replace the values used by the device's real automatic control with values you type in — useful for demonstrations or testing automation without needing real plant conditions.")
+                .description("Mock Sensors replace the values used by the device's real automatic control with values you type in. Useful for demonstrations or testing automation without needing real plant conditions.")
                 .steps(Arrays.asList(
-                        "Enable Mock Data Override — turns on simulated sensor values for this device, useful for demonstrations or for testing how automation reacts to a specific condition (like a low pH) without waiting for it to happen for real. A confirmation dialog explains that mock values will replace the real readings until you turn this off, and Monitoring will show your entered values instead of the actual sensors.",
-                        "pH / EC / Air Temperature / Humidity / Water Temperature / Water Level fields and \"Push Mock Values to ESP32\" — enter the values you want to simulate, then tap Push to send them to the device. You'll see a success message once the device confirms it got them, or a warning if it doesn't respond within about 15 seconds.",
-                        "Remember to turn Mock Data Override back off when you're done — the device keeps acting on the mock values until you do."))
+                        "Enable Mock Data Override: turns on simulated sensor values for this device. Useful for demonstrations or for testing how automation reacts to a specific condition (like a low pH) without waiting for it to happen for real. A confirmation dialog explains that mock values will replace the real readings until you turn this off, and Monitoring will show your entered values instead of the actual sensors.",
+                        "pH / EC / Air Temperature / Humidity / Water Temperature / Water Level fields and \"Push Mock Values to ESP32\": enter the values you want to simulate, then tap Push to send them to the device. You'll see a success message once the device confirms it got them, or a warning if it doesn't respond within about 15 seconds.",
+                        "Remember to turn Mock Data Override back off when you're done. The device keeps acting on the mock values until you do."))
                 .build());
 
-        list.add(GuideSection.builder("Developer Options — Parameter Target Ranges")
+        list.add(GuideSection.builder("Developer Options - Parameter Target Ranges")
                 .adminOnly(true)
                 .description("The acceptable growing range for each monitored parameter, grouped here with the other developer/testing tools.")
                 .imagePlaceholder("Parameter Target Ranges screen showing Minimum and Maximum for each parameter")
@@ -312,27 +312,27 @@ final class MobileGuideContent {
                 .tip("Each growth cycle keeps the target ranges that were in use when the cycle was created, so changing the ranges later does not change that cycle's report. Cycles created before this feature use the ranges configured now.")
                 .build());
 
-        list.add(GuideSection.builder("Developer Options — Automation Testing")
+        list.add(GuideSection.builder("Developer Options - Automation Testing")
                 .adminOnly(true)
                 .description("Lets a developer test one part of the automatic system on its own, without turning off real sensors, actuators, or safety checks.")
                 .steps(Arrays.asList(
-                        "Automation Test Mode — pick a subsystem from the dropdown to pause just that part's automatic control so it can be tested by hand. Manual controls and safety checks keep working the whole time.",
+                        "Automation Test Mode: pick a subsystem from the dropdown to pause just that part's automatic control so it can be tested by hand. Manual controls and safety checks keep working the whole time.",
                         "Grow Light Schedule test mode only: a \"Mock Grow Light Time\" switch and button let you test the light's on/off schedule against a time you choose, instead of waiting for the real clock to reach it. This never changes the device's actual clock, and stops having any effect once you switch to a different test mode."))
                 .build());
 
-        list.add(GuideSection.builder("Developer Options — Safety & Maintenance")
+        list.add(GuideSection.builder("Developer Options - Safety & Maintenance")
                 .adminOnly(true)
                 .steps(Arrays.asList(
-                        "Ignore Water Level Automation — for developer testing only. Temporarily turns off the automatic low-water/refill response while still showing the real water level. Turn it back off when you're done, since the device keeps ignoring low water until you do.",
-                        "Enable Provisioning/AP Mode — remotely tells an already-online device to start its local \"Basilience-Setup\" Wi-Fi network, so its Wi-Fi can be reconfigured without needing physical access to it. A confirmation dialog explains that no Wi-Fi credentials are sent by this step alone — afterward, connect to \"Basilience-Setup\" and send credentials as usual to finish.",
-                        "Disable Developer Mode — turns off developer mode for this device and returns to Settings. Developer Options won't appear again until it's turned back on; nothing else changes."))
+                        "Ignore Water Level Automation: for developer testing only. Temporarily turns off the automatic low-water/refill response while still showing the real water level. Turn it back off when you're done, since the device keeps ignoring low water until you do.",
+                        "Enable Provisioning/AP Mode: remotely tells an already-online device to start its local \"Basilience-Setup\" Wi-Fi network, so its Wi-Fi can be reconfigured without needing physical access to it. A confirmation dialog explains that no Wi-Fi credentials are sent by this step alone. Afterward, connect to \"Basilience-Setup\" and send credentials as usual to finish.",
+                        "Disable Developer Mode: turns off developer mode for this device and returns to Settings. Developer Options won't appear again until it's turned back on. Nothing else changes."))
                 .build());
 
         list.add(GuideSection.builder("When the Device is Offline")
                 .image(com.example.basilience.R.drawable.guide_monitoring)
                 .imagePlaceholder("Monitoring screen showing the Device Unreachable status banner")
                 .steps(Arrays.asList(
-                        "RECONNECTING... appears while Basilience is waiting to hear from the device again — this is often brief and needs no action.",
+                        "RECONNECTING... appears while Basilience is waiting to hear from the device again. This is often brief and needs no action.",
                         "DEVICE UNREACHABLE appears once the device has been silent long enough to be considered offline. Check that it has power and that its Wi-Fi network is available.",
                         "Once the device reports in again, the status returns to ONLINE automatically and you'll typically also see a \"Device Back Online\" notification."))
                 .build());
@@ -340,12 +340,12 @@ final class MobileGuideContent {
         list.add(GuideSection.builder("Common Messages")
                 .description("A quick reference for status text you may see around the app.")
                 .steps(Arrays.asList(
-                        "Below Range / Above Range \u2014 the reading is outside the parameter's configured Minimum or Maximum.",
-                        "No Data \u2014 a sensor reading hasn't arrived yet or is currently invalid. Not the same as being out of range.",
-                        "Device Unreachable — Basilience hasn't heard from the device recently enough to consider it online.",
-                        "Unable to load data — a screen couldn't refresh from Basilience's servers; check your phone's internet connection and try again.",
-                        "No growth cycles yet — this device has no cycles recorded yet; an Admin or assigned Personnel can add one.",
-                        "Harvest not ready — the next scheduled harvest date hasn't arrived yet for this cycle."))
+                        "Below Range / Above Range: the reading is outside the parameter's configured Minimum or Maximum.",
+                        "No Data: a sensor reading hasn't arrived yet or is currently invalid. Not the same as being out of range.",
+                        "Device Unreachable: Basilience hasn't heard from the device recently enough to consider it online.",
+                        "Unable to load data: a screen couldn't refresh from Basilience's servers. Check your phone's internet connection and try again.",
+                        "No growth cycles yet: this device has no cycles recorded yet. An Admin or assigned Personnel can add one.",
+                        "Harvest not ready: the next scheduled harvest date hasn't arrived yet for this cycle."))
                 .build());
 
         return list;

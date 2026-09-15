@@ -21,6 +21,8 @@ public class SettingsFragment extends Fragment {
 
     private View devOptionsContainer;
     private View deviceMaintenanceContainer;
+    private View btnLogout;
+    private NotificationHelper.LoadingHandle loadingHandle;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -73,7 +75,7 @@ public class SettingsFragment extends Fragment {
         updateDeveloperOptionsVisibility();
 
         // Logout
-        View btnLogout = view.findViewById(R.id.btnLogout);
+        btnLogout = view.findViewById(R.id.btnLogout);
         if (btnLogout != null) {
             btnLogout.setOnClickListener(v -> performLogout());
         }
@@ -134,8 +136,17 @@ public class SettingsFragment extends Fragment {
 
     private void performLogout() {
         NotificationHelper.showConfirmation(requireContext(), "Logout", "Are you sure you want to log out?", () -> {
+            if (btnLogout != null) btnLogout.setEnabled(false);
+            loadingHandle = NotificationHelper.showLoading(requireContext(), "Logging out...", () -> {
+                if (!isAdded()) return;
+                if (btnLogout != null) btnLogout.setEnabled(true);
+                NotificationHelper.showError(requireContext(), "Logout is taking longer than expected. Please check your connection and try again.");
+            });
+
             Database_Helper helper = new Database_Helper();
             helper.logout().addOnCompleteListener(task -> {
+                if (loadingHandle != null) loadingHandle.dismiss();
+                loadingHandle = null;
                 if (!isAdded() || getActivity() == null) return;
                 android.content.SharedPreferences prefs = getActivity().getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
                 // Clear only session/identity state (same keys Auth_Login_Activity's own

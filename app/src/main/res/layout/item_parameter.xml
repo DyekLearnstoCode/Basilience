@@ -1,4 +1,5 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
@@ -38,5 +39,33 @@
             android:textSize="11sp"
             android:textStyle="bold"
             android:textColor="@color/state_no_data"/>
+
+        <!-- STABILIZING LOADER - see item_parameter_card.xml's matching
+             element for what this is. -->
+        <FrameLayout
+            android:id="@+id/stabilizingLoader"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:visibility="gone">
+
+            <com.google.android.material.progressindicator.CircularProgressIndicator
+                android:id="@+id/progressStabilizing"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                app:indicatorSize="30dp"
+                app:trackThickness="3dp"
+                app:indicatorColor="@color/primary" />
+
+            <TextView
+                android:id="@+id/tvStabilizeSeconds"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="--"
+                android:textSize="8sp"
+                android:textStyle="bold"
+                android:textColor="@color/state_primary_text"/>
+
+        </FrameLayout>
     </LinearLayout>
 </LinearLayout>

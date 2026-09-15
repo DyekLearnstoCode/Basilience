@@ -896,18 +896,18 @@ public class MainActivity extends AppCompatActivity {
     private String buildParameterAlertContent() {
         if (activeParameterAlerts.size() == 1) {
             String only = activeParameterAlerts.values().iterator().next();
-            if ("Water Level — Low".equals(only)) return "Water Level is below the configured threshold.";
-            if ("Water Level — Critical".equals(only)) return "Reservoir water level is critically low. Refill is in progress; dependent automation remains paused until it recovers.";
-            if ("EC — Low".equals(only)) return "EC is below the configured range.";
-            if ("EC — High".equals(only)) return "Electrical conductivity is above the acceptable range.";
-            if ("pH — Low".equals(only)) return "pH is below the configured range.";
-            if ("pH — High".equals(only)) return "pH is above the configured range.";
-            if ("Air Temperature — Low".equals(only)) return "Air temperature is below the acceptable range.";
-            if ("Air Temperature — High".equals(only)) return "Air Temperature is above the configured range.";
-            if ("Water Temperature — Low".equals(only)) return "Water temperature is below the configured minimum range.";
-            if ("Humidity — Low".equals(only)) return "Humidity is below the configured minimum range.";
-            if ("Humidity — High".equals(only)) return "Humidity is above the configured maximum range.";
-            if ("Water Level — High".equals(only)) return "Reservoir water level is above the configured maximum range.";
+            if ("Water Level: Low".equals(only)) return "Water Level is below the configured threshold.";
+            if ("Water Level: Critical".equals(only)) return "Reservoir water level is critically low. Refill is in progress. Dependent automation remains paused until it recovers.";
+            if ("EC: Low".equals(only)) return "EC is below the configured range.";
+            if ("EC: High".equals(only)) return "Electrical conductivity is above the acceptable range.";
+            if ("pH: Low".equals(only)) return "pH is below the configured range.";
+            if ("pH: High".equals(only)) return "pH is above the configured range.";
+            if ("Air Temperature: Low".equals(only)) return "Air temperature is below the acceptable range.";
+            if ("Air Temperature: High".equals(only)) return "Air Temperature is above the configured range.";
+            if ("Water Temperature: Low".equals(only)) return "Water temperature is below the configured minimum range.";
+            if ("Humidity: Low".equals(only)) return "Humidity is below the configured minimum range.";
+            if ("Humidity: High".equals(only)) return "Humidity is above the configured maximum range.";
+            if ("Water Level: High".equals(only)) return "Reservoir water level is above the configured maximum range.";
             return "Water Temperature is outside the configured range.";
         }
         StringBuilder content = new StringBuilder(activeParameterAlerts.size()
@@ -997,20 +997,20 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private static String parameterLabel(String type) {
-        if ("lowWater".equalsIgnoreCase(type)) return "Water Level — Low";
-        if ("criticalLowWater".equalsIgnoreCase(type)) return "Water Level — Critical";
-        if ("ecLow".equalsIgnoreCase(type)) return "EC — Low";
-        if ("ecHigh".equalsIgnoreCase(type)) return "EC — High";
-        if ("phLow".equalsIgnoreCase(type)) return "pH — Low";
-        if ("phHigh".equalsIgnoreCase(type)) return "pH — High";
-        if ("lowAirTemperature".equalsIgnoreCase(type)) return "Air Temperature — Low";
-        if ("highTemperature".equalsIgnoreCase(type)) return "Air Temperature — High";
-        if ("waterTempOutOfRange".equalsIgnoreCase(type)) return "Water Temperature — Out of Range";
-        if ("waterTempLow".equalsIgnoreCase(type)) return "Water Temperature — Low";
-        if ("humidityLow".equalsIgnoreCase(type)) return "Humidity — Low";
-        if ("humidityHigh".equalsIgnoreCase(type)) return "Humidity — High";
-        if ("waterLevelLow".equalsIgnoreCase(type)) return "Water Level — Low";
-        if ("waterLevelHigh".equalsIgnoreCase(type)) return "Water Level — High";
+        if ("lowWater".equalsIgnoreCase(type)) return "Water Level: Low";
+        if ("criticalLowWater".equalsIgnoreCase(type)) return "Water Level: Critical";
+        if ("ecLow".equalsIgnoreCase(type)) return "EC: Low";
+        if ("ecHigh".equalsIgnoreCase(type)) return "EC: High";
+        if ("phLow".equalsIgnoreCase(type)) return "pH: Low";
+        if ("phHigh".equalsIgnoreCase(type)) return "pH: High";
+        if ("lowAirTemperature".equalsIgnoreCase(type)) return "Air Temperature: Low";
+        if ("highTemperature".equalsIgnoreCase(type)) return "Air Temperature: High";
+        if ("waterTempOutOfRange".equalsIgnoreCase(type)) return "Water Temperature: Out of Range";
+        if ("waterTempLow".equalsIgnoreCase(type)) return "Water Temperature: Low";
+        if ("humidityLow".equalsIgnoreCase(type)) return "Humidity: Low";
+        if ("humidityHigh".equalsIgnoreCase(type)) return "Humidity: High";
+        if ("waterLevelLow".equalsIgnoreCase(type)) return "Water Level: Low";
+        if ("waterLevelHigh".equalsIgnoreCase(type)) return "Water Level: High";
         return null;
     }
 

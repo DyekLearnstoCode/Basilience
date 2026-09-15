@@ -15,11 +15,17 @@ admin.initializeApp({
 
 setGlobalOptions({ maxInstances: 10, region: "asia-southeast1" });
 
-// Firmware publishes sensors every 10 seconds and now spends up to 20 seconds
-// restoring Wi-Fi. Forty seconds covers three missed heartbeats plus ordinary
-// write/jitter latency; the task runs after that threshold has safely elapsed.
-const OFFLINE_CHECK_DELAY_SECONDS = 45;
-const OFFLINE_TIMEOUT_MS = 40000;
+// Firmware publishes sensors every 5 seconds (SENSOR_UPLOAD_INTERVAL_MS in
+// FirebaseManager.cpp - this comment used to say 10 seconds, from before that
+// cadence was sped up) and can still spend up to 20 seconds restoring Wi-Fi
+// on its own (RECOVERY_TIMEOUT in WiFiManager.h, unrelated to the heartbeat
+// cadence and unchanged). Thirty seconds keeps a real 10 second margin above
+// that 20 second reconnect bound, so an ordinary brief Wi-Fi drop is never
+// mistaken for the device going offline, while still being comfortably more
+// than several real missed heartbeats plus ordinary write/jitter latency.
+// The task runs after that threshold has safely elapsed.
+const OFFLINE_CHECK_DELAY_SECONDS = 35;
+const OFFLINE_TIMEOUT_MS = 30000;
 const CONNECTIVITY_FCM_TTL_MS = 3 * 60 * 1000;
 // Manual setup commonly requires switching the phone to the ESP32 AP, entering
 // credentials, and waiting for a restart. Ten minutes avoids false alarms during
@@ -2016,6 +2022,70 @@ exports.onDeviceWrittenUpdateSmsRecipients = onDocumentWritten(
         }
     }
 );
+
+// Callable the Android app's "Pair Harvest Scale" dialog invokes directly,
+// instead of doing a raw Firestore write and relying on
+// onDeviceWrittenUpdateSmsRecipients above to pick it up. That trigger was
+// found to silently drop every event for this write - confirmed directly in
+// the Eventarc console (trigger correctly configured, correct IAM, zero
+// invocations ever recorded) rather than any bug in this codebase - so a
+// pairing could show a success toast while nothing downstream ever mirrored
+// deviceAccess/parentDeviceId onto the scale. This performs the
+// harvestScaleId write and its regenerateSmsRecipients() mirror in the same
+// request instead: pairing now either fully succeeds or fully fails,
+// synchronously, rather than appearing to succeed and quietly never syncing.
+exports.pairHarvestScale = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Authentication is required.");
+    }
+
+    const deviceId = typeof request.data?.deviceId === "string" ? request.data.deviceId.trim() : "";
+    if (!deviceId) {
+        throw new HttpsError("invalid-argument", "A deviceId is required.");
+    }
+
+    const rawScaleId = typeof request.data?.harvestScaleId === "string" ? request.data.harvestScaleId.trim() : "";
+    const harvestScaleId = rawScaleId || null;
+
+    const db = admin.firestore();
+    const [adminProfile, deviceSnap] = await Promise.all([
+        db.collection("users").doc(request.auth.uid).get(),
+        db.collection("devices").doc(deviceId).get()
+    ]);
+
+    if (!adminProfile.exists || String(adminProfile.data().role || "").toUpperCase() !== "ADMIN") {
+        throw new HttpsError("permission-denied", "Only an authenticated Admin may perform this action.");
+    }
+    if (!deviceSnap.exists) {
+        throw new HttpsError("not-found", "Device not found.");
+    }
+    if (deviceSnap.data().ownerUid !== request.auth.uid) {
+        throw new HttpsError("permission-denied", "Only the device owner can pair a harvest scale to it.");
+    }
+
+    // Read before the write below so a re-pair/unpair can still clean up the
+    // PREVIOUS scale's now-stale projection - same thing
+    // onDeviceWrittenUpdateSmsRecipients's before/after diff does, just
+    // computed from a snapshot taken first instead of a trigger event.
+    const oldScaleId = deviceSnap.data().harvestScaleId || null;
+
+    try {
+        await db.collection("devices").doc(deviceId).update({harvestScaleId});
+        await regenerateSmsRecipients(db, deviceId);
+
+        if (oldScaleId && oldScaleId !== harvestScaleId) {
+            await Promise.all([
+                admin.database().ref(`/deviceAccess/${oldScaleId}`).set({}),
+                db.collection("devices").doc(oldScaleId).set({parentDeviceId: null}, {merge: true})
+            ]);
+        }
+
+        return {success: true};
+    } catch (error) {
+        logger.error(`[SCALE-PAIR] device=${deviceId} pairing failed`, {error: error.message});
+        throw new HttpsError("internal", "Unable to save this pairing.");
+    }
+});
 
 // A cycle counts as active when explicitly marked ACTIVE, or when it predates
 // the status field entirely and was never completed - same legacy rule as

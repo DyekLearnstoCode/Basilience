@@ -289,6 +289,6 @@ public class AccountFragment extends Fragment {
     }
 
     private static String display(String value) {
-        return value == null || value.trim().isEmpty() ? "—" : value;
+        return value == null || value.trim().isEmpty() ? "--" : value;
     }
 }

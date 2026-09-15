@@ -30,6 +30,21 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/deviceAssignments/$(assignmentId));
     }
 
+    // Rejects a new harvestLogs entry if the parent cycle's own
+    // lastHarvestDate is within this same short guard window - an Admin's
+    // harvest create has no window/day restriction at all (that's the
+    // intended override), and a Farmer's client-side double-tap guard
+    // (isHarvestSubmitting) is only a UI flag a retry, a second device, or a
+    // second app session never sees. This is the actual server-side
+    // guarantee against two harvest entries landing back to back; the
+    // matching client-side check (Database_Helper.addHarvestTransaction's
+    // HARVEST_DUPLICATE_GUARD_MS) exists only to fail fast with a clearer
+    // message - this rule is what a bypass of that client code still hits.
+    function isNotDuplicateHarvest(deviceId, cycleId) {
+      let lastHarvest = get(/databases/$(database)/documents/devices/$(deviceId)/cycles/$(cycleId)).data.get('lastHarvestDate', null);
+      return lastHarvest == null || request.time - lastHarvest > duration.value(60, 's');
+    }
+
     // USERS collection
     match /users/{uid} {
       allow read: if isSignedIn();
@@ -159,12 +174,14 @@ service cloud.firestore {
           allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
           // Only an admin may edit/delete history.  A FARMER can add a new entry only
           // once the parent cycle's scheduled harvest time has arrived.
-          allow create: if (isAdmin() && isAssignedToDevice(deviceId)) ||
+          allow create: if (isAdmin() && isAssignedToDevice(deviceId) &&
+                             isNotDuplicateHarvest(deviceId, cycleId)) ||
             (isFarmer() && isAssignedToDevice(deviceId) &&
              (get(/databases/$(database)/documents/devices/$(deviceId)/cycles/$(cycleId)).data.nextHarvestDate == null ||
               get(/databases/$(database)/documents/devices/$(deviceId)/cycles/$(cycleId)).data.nextHarvestDate <= request.time) &&
              request.resource.data.recordedBy == request.auth.uid &&
-             request.resource.data.harvestDate <= request.time);
+             request.resource.data.harvestDate <= request.time &&
+             isNotDuplicateHarvest(deviceId, cycleId));
           allow update, delete: if isAdmin() && isAssignedToDevice(deviceId);
         }
       }

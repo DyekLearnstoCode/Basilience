@@ -46,6 +46,7 @@ public class DeviceFragment extends Fragment {
     private List<Device> deviceList;
     private TextView tvLoadingDevices;
     private boolean deviceMutationInProgress;
+    private boolean unclaimCheckInProgress;
 
     @Nullable
     @Override
@@ -336,9 +337,19 @@ public class DeviceFragment extends Fragment {
      * that call knowingly instead of the confirmation dialog looking the same either way.
      */
     private void confirmUnclaim(Device device) {
+        if (unclaimCheckInProgress) return;
+        unclaimCheckInProgress = true;
         String deviceName = device.getDeviceName() != null ? device.getDeviceName() : "Device";
+        if (layoutLoading != null && tvLoadingTitle != null) {
+            tvLoadingTitle.setText("Checking cultivation cycle...");
+            layoutLoadingShownAt = SystemClock.elapsedRealtime();
+            layoutLoading.setVisibility(View.VISIBLE);
+            layoutLoading.bringToFront();
+        }
         dbHelper.hasActiveCycle(device.getDeviceId())
                 .addOnCompleteListener(task -> {
+                    unclaimCheckInProgress = false;
+                    hideLayoutLoading();
                     if (!isAdded()) return;
                     boolean activeCycle = task.isSuccessful() && Boolean.TRUE.equals(task.getResult());
                     String message = activeCycle

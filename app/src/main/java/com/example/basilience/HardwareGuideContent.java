@@ -56,8 +56,8 @@ final class HardwareGuideContent {
         list.add(GuideSection.builder("EC Sensor")
                 .imagePlaceholder("EC probe positioned in the reservoir")
                 .steps(Arrays.asList(
-                        "Measures the electrical conductivity of the nutrient solution, shown in mS/cm — a proxy for how concentrated the dissolved nutrients are.",
-                        "Too low and plants may be under-fed; too high can stress the roots.",
+                        "Measures the electrical conductivity of the nutrient solution, shown in mS/cm. This is a stand-in for how concentrated the dissolved nutrients are.",
+                        "Too low and plants may be under-fed. Too high can stress the roots.",
                         "\"No Data\" usually means the probe isn't submerged, isn't connected, or its reading is currently out of range."))
                 .build());
 
@@ -91,8 +91,8 @@ final class HardwareGuideContent {
                 .steps(Arrays.asList(
                         "Used to raise humidity and, depending on conditions, help cool the growing area.",
                         "Runs automatically under the controller's logic by default.",
-                        "Starting root fogging by hand (Fogger switch, Manual Mode) also runs the Root Blower (shown on Monitoring as \"Reservoir Fan (Blower)\") together with it — the blower moves the fog through the root chamber, so it isn't a separate step.",
-                        "Airflow increases automatically when air temperature or humidity is high, to clear fog and heat faster; otherwise it runs at its normal airflow level.",
+                        "Starting root fogging by hand (Fogger switch, Manual Mode) also runs the Root Blower (shown on Monitoring as \"Reservoir Fan (Blower)\") together with it. The blower moves the fog through the root chamber, so it isn't a separate step.",
+                        "Airflow increases automatically when air temperature or humidity is high, to clear fog and heat faster. Otherwise it runs at its normal airflow level.",
                         "After manual fogging stops, the blower briefly keeps running at increased airflow (about 30 seconds) to clear the remaining fog, then turns off on its own.",
                         "Its recent activity and runtime are summarized in the Fogging Report."))
                 .build());
@@ -104,8 +104,8 @@ final class HardwareGuideContent {
                         "Nutrients (Grow and Bloom pumps) add nutrient solution, shown on Monitoring as \"Nutrients (EC).\"",
                         "pH Up and pH Down each dose a small amount of solution to move pH in one direction.",
                         "All four run automatically based on the pH/EC readings by default, and can be triggered by hand from Monitoring when Manual Mode is enabled.",
-                        "A manual pH Up, pH Down, or Nutrients request runs that pump for a single 5-second dose and stops it automatically — it is a one-time manual dose, not the system's full automatic correction, which keeps checking and adjusting the reading afterward.",
-                        "Check the Grow, Bloom, pH Up, and pH Down solution containers regularly and refill them before they run out — dosing can only work if there is solution for the pumps to draw from."))
+                        "A manual pH Up, pH Down, or Nutrients request runs that pump for a single 5-second dose and stops it automatically. It is a one-time manual dose, not the system's full automatic correction, which keeps checking and adjusting the reading afterward.",
+                        "Check the Grow, Bloom, pH Up, and pH Down solution containers regularly and refill them before they run out. Dosing can only work if there is solution for the pumps to draw from."))
                 .build());
 
         list.add(GuideSection.builder("Temperature Control")
@@ -129,7 +129,7 @@ final class HardwareGuideContent {
                 .steps(Arrays.asList(
                         "The Water Level sensor watches the reservoir's fill level.",
                         "Circulation Pump keeps the nutrient solution moving so readings stay representative and nutrients stay mixed.",
-                        "Water Pump (Valve) handles refilling; an Admin can also start a refill manually from Monitoring's \"Start Reservoir Refill\" action."))
+                        "Water Pump (Valve) handles refilling. An Admin can also start a refill manually from Monitoring's \"Start Reservoir Refill\" action."))
                 .build());
 
         list.add(GuideSection.builder("Automatic vs. Manual Control")
@@ -137,7 +137,7 @@ final class HardwareGuideContent {
                 .steps(Arrays.asList(
                         "By default, every pump, fan, and light is controlled automatically based on sensor readings.",
                         "Turning on Manual Mode (on the Monitoring screen, Admin accounts only) lets you operate individual actuators by hand without disabling the automatic system underneath.",
-                        "Built-in safety checks remain active in Manual Mode — a request can still be turned down if conditions aren't safe.",
+                        "Built-in safety checks remain active in Manual Mode. A request can still be turned down if conditions aren't safe.",
                         "Manual Mode automatically turns itself off after 15 minutes with no manual action, and normal automatic control resumes on its own.",
                         "Each actuator's status line shows whether its current state came from the automatic system (· Auto), a physical control (· Manual), or the app (· App)."))
                 .build());
@@ -146,7 +146,7 @@ final class HardwareGuideContent {
                 .description("A few simple, non-technical checks keep the system running smoothly between growth cycles.")
                 .imagePlaceholder("Farm worker performing routine checks on the reservoir and fogger enclosure")
                 .steps(Arrays.asList(
-                        "Wipe down accessible surfaces, the reservoir lid, and sensor probes periodically to prevent buildup that could affect readings — disconnect power first (see Safety).",
+                        "Wipe down accessible surfaces, the reservoir lid, and sensor probes periodically to prevent buildup that could affect readings. Disconnect power first (see Safety).",
                         "If a sensor reading looks consistently wrong even after cleaning, it may need calibration. This should be done following your system's maintenance procedure rather than adjusted from the app.",
                         "To power off safely: finish or pause whatever the system is doing, then disconnect power to the controller. There's no separate shutdown step in the app."))
                 .build());
@@ -167,7 +167,7 @@ final class HardwareGuideContent {
                 .steps(Arrays.asList(
                         "The Dashboard and Monitoring status will show RECONNECTING... and then DEVICE UNREACHABLE if the outage continues.",
                         "Sensor cards keep showing the last known readings rather than clearing to zero.",
-                        "Once the connection is restored, the controller resumes reporting and the app updates automatically — no action is needed from you beyond restoring power/Wi-Fi."))
+                        "Once the connection is restored, the controller resumes reporting and the app updates automatically. No action is needed from you beyond restoring power/Wi-Fi."))
                 .tip("If Wi-Fi was changed or moved, see the Wi-Fi Configuration section in the Mobile App Guide.")
                 .build());
 
@@ -176,7 +176,7 @@ final class HardwareGuideContent {
                         "Device shows Unreachable: check the controller has power and your facility Wi-Fi is up.",
                         "A sensor shows No Data: check that probe's physical connection and that it's submerged/positioned correctly.",
                         "Wi-Fi won't connect during setup: make sure your phone is connected to the \"Basilience-Setup\" network before entering your home network's name and password.",
-                        "An actuator's status looks unexpected: check whether Manual Mode is on — if it is, the actuator waits for a command from you instead of the automatic system.",
+                        "An actuator's status looks unexpected: check whether Manual Mode is on. If it is, the actuator waits for a command from you instead of the automatic system.",
                         "Water level reads low: check the reservoir and refill it, or use \"Start Reservoir Refill\" if your account is an Admin.",
                         "App can't load data even though the device looks fine: check your phone's own internet connection first."))
                 .build());
@@ -186,9 +186,9 @@ final class HardwareGuideContent {
                 .steps(Arrays.asList(
                         "Keep the controller and its wiring away from standing water and spills.",
                         "Disconnect power before doing any physical maintenance on the reservoir or connected equipment.",
-                        "Do not open the controller enclosure or attempt electrical repairs — contact whoever installed/maintains your system for hardware issues.",
+                        "Do not open the controller enclosure or attempt electrical repairs. Contact whoever installed/maintains your system for hardware issues.",
                         "If in doubt about a reading or an actuator behaving unexpectedly: an Admin can turn on Manual Mode and turn the affected equipment off from the app while investigating. If you're Personnel and not an Admin, contact your Admin instead rather than trying to intervene through the app.",
-                        "If the system stops an operation because it detected a safety problem, an Admin can use \"Reset Safety\" (Monitoring screen) once the underlying condition has been checked and corrected. Reset Safety only clears the lock — it does not turn any equipment on by itself, and it will not succeed if the unsafe condition is still present.",
+                        "If the system stops an operation because it detected a safety problem, an Admin can use \"Reset Safety\" (Monitoring screen) once the underlying condition has been checked and corrected. Reset Safety only clears the lock. It does not turn any equipment on by itself, and it will not succeed if the unsafe condition is still present.",
                         "If a sensor fault or safety lock keeps coming back after a reset, treat it as a sign the underlying physical issue (a disconnected probe, a genuinely unsafe reading, low reservoir water, etc.) hasn't actually been resolved yet, and check the equipment again before trying Reset Safety a second time."))
                 .build());
 
