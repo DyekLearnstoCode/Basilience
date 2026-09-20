@@ -8,8 +8,7 @@ import java.util.List;
 
 /**
  * Content for the Hardware/System Guide. See {@link MobileGuideContent} for
- * the shared rationale (content kept out of the Fragment, no image resources
- * exist yet).
+ * the shared rationale (content kept out of the Fragment).
  *
  * <p>Actuator and sensor names are taken directly from
  * Parameters_Monitoring_Fragment's actuator list and the six Monitoring
@@ -22,12 +21,13 @@ final class HardwareGuideContent {
 
     private HardwareGuideContent() {}
 
-    /** All 13 Hardware/System Guide sections, in display order. */
+    /** All Hardware/System Guide sections, in display order. */
     static List<GuideSection> sections() {
         List<GuideSection> list = new ArrayList<>();
 
         list.add(GuideSection.builder("Basilience System Overview")
                 .description("Basilience is a cultivation monitoring and automation system: it reads conditions in your growing environment and controls equipment to keep them in range.")
+                .image(com.example.basilience.R.drawable.hw_system_overview)
                 .imagePlaceholder("Full physical Basilience system installed at a grow site")
                 .steps(Arrays.asList(
                         "A controller reads sensors and operates the connected equipment.",
@@ -37,6 +37,7 @@ final class HardwareGuideContent {
                 .build());
 
         list.add(GuideSection.builder("Main Controller")
+                .image(com.example.basilience.R.drawable.hw_main_controller)
                 .imagePlaceholder("Basilience controller enclosure, closed")
                 .steps(Arrays.asList(
                         "The controller is the central unit every sensor and piece of equipment connects to.",
@@ -46,6 +47,7 @@ final class HardwareGuideContent {
                 .build());
 
         list.add(GuideSection.builder("pH Sensor")
+                .image(com.example.basilience.R.drawable.hw_ph_sensor)
                 .imagePlaceholder("pH probe positioned in the reservoir")
                 .steps(Arrays.asList(
                         "Measures the acidity/alkalinity of the nutrient solution.",
@@ -54,6 +56,7 @@ final class HardwareGuideContent {
                 .build());
 
         list.add(GuideSection.builder("EC Sensor")
+                .image(com.example.basilience.R.drawable.hw_ec_sensor)
                 .imagePlaceholder("EC probe positioned in the reservoir")
                 .steps(Arrays.asList(
                         "Measures the electrical conductivity of the nutrient solution, shown in mS/cm. This is a stand-in for how concentrated the dissolved nutrients are.",
@@ -62,6 +65,7 @@ final class HardwareGuideContent {
                 .build());
 
         list.add(GuideSection.builder("Water Temperature Sensor")
+                .image(com.example.basilience.R.drawable.hw_water_temp_sensor)
                 .imagePlaceholder("Water temperature probe in the reservoir")
                 .steps(Arrays.asList(
                         "Measures the temperature of the nutrient solution itself, separately from the surrounding air.",
@@ -70,6 +74,7 @@ final class HardwareGuideContent {
                 .build());
 
         list.add(GuideSection.builder("Air Temperature / Humidity Sensor")
+                .image(com.example.basilience.R.drawable.hw_air_temp_humidity_sensor)
                 .imagePlaceholder("Air temperature/humidity sensor mounted in the canopy area")
                 .steps(Arrays.asList(
                         "Measures the surrounding air's temperature and humidity around the plants.",
@@ -78,6 +83,7 @@ final class HardwareGuideContent {
                 .build());
 
         list.add(GuideSection.builder("Water Level Sensor")
+                .image(com.example.basilience.R.drawable.hw_water_level_sensor)
                 .imagePlaceholder("Water level sensor in the reservoir")
                 .steps(Arrays.asList(
                         "Measures how full the reservoir is, shown as a percentage.",
@@ -86,12 +92,22 @@ final class HardwareGuideContent {
                 .build());
 
         list.add(GuideSection.builder("Fogging System")
-                .description("The fogger produces a fine mist inside the root chamber, together with the Root Blower that distributes it.")
-                .imagePlaceholder("Ultrasonic fogger unit and root blower")
+                .description("The fogger produces a fine mist inside the root chamber.")
+                .image(com.example.basilience.R.drawable.hw_fogging_system)
+                .imagePlaceholder("Ultrasonic fogger unit")
                 .steps(Arrays.asList(
                         "Used to raise humidity and, depending on conditions, help cool the growing area.",
                         "Runs automatically under the controller's logic by default.",
-                        "Starting root fogging by hand (Fogger switch, Manual Mode) also runs the Root Blower (shown on Monitoring as \"Reservoir Fan (Blower)\") together with it. The blower moves the fog through the root chamber, so it isn't a separate step.",
+                        "Can also be started by hand from Monitoring (Fogger switch) when Manual Mode is enabled.",
+                        "Its recent activity and runtime are summarized in the Fogging Report."))
+                .build());
+
+        list.add(GuideSection.builder("Root Blower")
+                .description("The Root Blower moves the fogger's mist through the root chamber, shown on Monitoring as \"Reservoir Fan (Blower).\"")
+                .image(com.example.basilience.R.drawable.hw_root_blower)
+                .imagePlaceholder("Root blower fan mounted near the root chamber")
+                .steps(Arrays.asList(
+                        "Starting root fogging by hand (Fogger switch, Manual Mode) also runs the Root Blower together with it. The blower moves the fog through the root chamber, so it isn't a separate step.",
                         "Airflow increases automatically when air temperature or humidity is high, to clear fog and heat faster. Otherwise it runs at its normal airflow level.",
                         "After manual fogging stops, the blower briefly keeps running at increased airflow (about 30 seconds) to clear the remaining fog, then turns off on its own.",
                         "Its recent activity and runtime are summarized in the Fogging Report."))
@@ -99,6 +115,7 @@ final class HardwareGuideContent {
 
         list.add(GuideSection.builder("Nutrient & pH Control")
                 .description("Four dosing pumps keep the reservoir's nutrient strength and pH in range.")
+                .image(com.example.basilience.R.drawable.hw_nutrient_ph_control)
                 .imagePlaceholder("Nutrient and pH dosing pumps mounted near the reservoir")
                 .steps(Arrays.asList(
                         "Nutrients (Grow and Bloom pumps) add nutrient solution, shown on Monitoring as \"Nutrients (EC).\"",
@@ -109,6 +126,7 @@ final class HardwareGuideContent {
                 .build());
 
         list.add(GuideSection.builder("Temperature Control")
+                .image(com.example.basilience.R.drawable.hw_temperature_control)
                 .imagePlaceholder("Canopy fan, reservoir fan/blower, and Peltier cooling module")
                 .steps(Arrays.asList(
                         "Canopy Fan circulates air around the plants.",
@@ -118,6 +136,7 @@ final class HardwareGuideContent {
                 .build());
 
         list.add(GuideSection.builder("Grow Light")
+                .image(com.example.basilience.R.drawable.hw_grow_light)
                 .imagePlaceholder("Grow light fixture over the canopy")
                 .steps(Arrays.asList(
                         "Provides light for the plants on a schedule managed by the automatic system.",
@@ -125,6 +144,7 @@ final class HardwareGuideContent {
                 .build());
 
         list.add(GuideSection.builder("Water & Reservoir")
+                .image(com.example.basilience.R.drawable.hw_water_reservoir)
                 .imagePlaceholder("Reservoir with circulation pump and water pump/valve visible")
                 .steps(Arrays.asList(
                         "The Water Level sensor watches the reservoir's fill level.",
@@ -134,6 +154,7 @@ final class HardwareGuideContent {
 
         list.add(GuideSection.builder("Harvest Scale")
                 .description("A Basilience Harvest Scale is a separate, dedicated device that weighs harvested crop and can fill in a harvest entry automatically once paired to this device (Device Management > Pair Harvest Scale).")
+                .image(com.example.basilience.R.drawable.hw_harvest_scale)
                 .imagePlaceholder("Basilience Harvest Scale with a harvested item on its platform")
                 .steps(Arrays.asList(
                         "It runs on its own hardware and Wi-Fi connection, separate from the main controller - it stays usable even while the main controller is offline.",
@@ -144,6 +165,7 @@ final class HardwareGuideContent {
                 .build());
 
         list.add(GuideSection.builder("Automatic vs. Manual Control")
+                .image(com.example.basilience.R.drawable.guide_actuators)
                 .imagePlaceholder("Monitoring screen with the Manual Mode switch and an actuator row")
                 .steps(Arrays.asList(
                         "By default, every pump, fan, and light is controlled automatically based on sensor readings.",
@@ -155,7 +177,6 @@ final class HardwareGuideContent {
 
         list.add(GuideSection.builder("Routine Maintenance")
                 .description("A few simple, non-technical checks keep the system running smoothly between growth cycles.")
-                .imagePlaceholder("Farm worker performing routine checks on the reservoir and fogger enclosure")
                 .steps(Arrays.asList(
                         "Wipe down accessible surfaces, the reservoir lid, and sensor probes periodically to prevent buildup that could affect readings. Disconnect power first (see Safety).",
                         "If a sensor reading looks consistently wrong even after cleaning, it may need calibration. This should be done following your system's maintenance procedure rather than adjusted from the app.",
