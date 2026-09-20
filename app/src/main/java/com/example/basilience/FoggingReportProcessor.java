@@ -170,21 +170,8 @@ public class FoggingReportProcessor {
         for (FoggingSession session : summary.getCompletedSessions()) {
             if (session.isAnomalous()) continue;
 
-            long sessionStart = session.getStartEvent().timestamp;
-            long sessionEnd = session.getEndEvent().timestamp;
-
-            bucketStart = reportStartTimeMs;
-            while (bucketStart < reportEndTimeMs) {
-                long bucketEnd = bucketStart + bucketSizeMs;
-
-                // Calculate exact overlap
-                long overlap = Math.max(0, Math.min(sessionEnd, bucketEnd) - Math.max(sessionStart, bucketStart));
-                if (overlap > 0) {
-                    summary.addBucketDuration(bucketStart, overlap);
-                }
-
-                bucketStart += bucketSizeMs;
-            }
+            addOverlapToBuckets(summary, session.getStartEvent().timestamp, session.getEndEvent().timestamp,
+                    reportStartTimeMs, reportEndTimeMs, bucketSizeMs);
         }
 
         // Currently-running session also contributes to whichever buckets its
@@ -193,21 +180,43 @@ public class FoggingReportProcessor {
         FoggingSession runningSession = summary.getCurrentlyRunningSession();
         if (runningSession != null
                 && Math.max(0, nowMs - runningSession.getStartEvent().timestamp) <= MAX_PLAUSIBLE_SESSION_DURATION_MS) {
-            long sessionStart = runningSession.getStartEvent().timestamp;
-            long sessionEnd = Math.min(nowMs, reportEndTimeMs);
-
-            bucketStart = reportStartTimeMs;
-            while (bucketStart < reportEndTimeMs) {
-                long bucketEnd = bucketStart + bucketSizeMs;
-                long overlap = Math.max(0, Math.min(sessionEnd, bucketEnd) - Math.max(sessionStart, bucketStart));
-                if (overlap > 0) {
-                    summary.addBucketDuration(bucketStart, overlap);
-                }
-                bucketStart += bucketSizeMs;
-            }
+            addOverlapToBuckets(summary, runningSession.getStartEvent().timestamp, Math.min(nowMs, reportEndTimeMs),
+                    reportStartTimeMs, reportEndTimeMs, bucketSizeMs);
         }
 
         return summary;
+    }
+
+    /**
+     * Adds a session's overlap duration to every bucket it actually touches.
+     * A session is almost always far shorter than a bucket, so only the
+     * handful of buckets it can possibly overlap are visited directly (via
+     * the bucket-index math below) instead of scanning every bucket in the
+     * whole report window per session - the previous version was O(sessions
+     * x total buckets), which for "Entire Cycle" on a long-running,
+     * frequently-fogged cycle meant hundreds of thousands of iterations on
+     * the main thread (Firestore/RTDB listeners always deliver there).
+     */
+    private static void addOverlapToBuckets(FoggingReportSummary summary, long sessionStart, long sessionEnd,
+                                             long reportStartTimeMs, long reportEndTimeMs, long bucketSizeMs) {
+        long effectiveStart = Math.max(sessionStart, reportStartTimeMs);
+        long effectiveEnd = Math.min(sessionEnd, reportEndTimeMs);
+        if (effectiveEnd <= effectiveStart) return;
+
+        long firstBucketIndex = (effectiveStart - reportStartTimeMs) / bucketSizeMs;
+        long lastBucketIndex = (effectiveEnd - 1 - reportStartTimeMs) / bucketSizeMs;
+
+        for (long index = firstBucketIndex; index <= lastBucketIndex; index++) {
+            long bucketStart = reportStartTimeMs + index * bucketSizeMs;
+            if (bucketStart >= reportEndTimeMs) break;
+            long bucketEnd = bucketStart + bucketSizeMs;
+            // Same overlap formula as before, just no longer computed for
+            // every bucket in the window - only the ones this loop reaches.
+            long overlap = Math.max(0, Math.min(sessionEnd, bucketEnd) - Math.max(sessionStart, bucketStart));
+            if (overlap > 0) {
+                summary.addBucketDuration(bucketStart, overlap);
+            }
+        }
     }
 
     // Clips a completed session's duration to the report window so that only

@@ -182,3 +182,209 @@ test("ESP: cannot write into another device's subtree", async () => {
     const db = ctxFor("device-A").database();
     await assertFails(db.ref("devices/device-B/sensors/ph").set(6.5));
 });
+
+// ---------------------------------------------------------------------
+// Farmer manual-control session grant (manualControlGrants + the
+// restructured commands/$actuatorKey rule). See the plan doc: a Farmer
+// requests once, an Admin approves once, and the grant then covers every
+// actuator for as long as Manual Mode stays on for that same session -
+// scoped via commands/manualModeEnabledAt so a stale grant from an earlier
+// session can never silently become valid again.
+// ---------------------------------------------------------------------
+
+const {ServerValue} = require("firebase-admin/database");
+
+test("farmer: can create their own PENDING manual-control request", async () => {
+    const db = ctxFor("farmer-A").database();
+    await assertSucceeds(
+        db.ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "PENDING",
+            requestedAt: ServerValue.TIMESTAMP,
+        })
+    );
+});
+
+test("farmer: cannot create a manual-control request under another uid", async () => {
+    const db = ctxFor("farmer-A").database();
+    await assertFails(
+        db.ref("devices/device-A/manualControlGrants/developer-A").set({
+            status: "PENDING",
+            requestedAt: ServerValue.TIMESTAMP,
+        })
+    );
+});
+
+test("farmer: cannot self-approve or smuggle extra fields into their own PENDING request", async () => {
+    const db = ctxFor("farmer-A").database();
+    await assertFails(
+        db.ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "APPROVED",
+            requestedAt: ServerValue.TIMESTAMP,
+        })
+    );
+    await assertFails(
+        db.ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "PENDING",
+            requestedAt: ServerValue.TIMESTAMP,
+            resolvedByUid: "farmer-A",
+        })
+    );
+});
+
+test("farmer: cannot smuggle extra fields into a fresh PENDING via update() merge against a stale resolved record", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.database().ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "DENIED",
+            requestedAt: 1000,
+            resolvedByUid: "admin-A",
+            resolvedAt: 2000,
+        });
+    });
+    const db = ctxFor("farmer-A").database();
+    // A plain update() (not set()) merges against the stale resolvedByUid/
+    // resolvedAt siblings left over from the prior denial - the rule's
+    // explicit !hasChild('resolvedByUid')/!hasChild('resolvedAt') checks are
+    // what catch this (RTDB rules have no numChildren()/exact-shape check).
+    await assertFails(
+        db.ref("devices/device-A/manualControlGrants/farmer-A").update({
+            status: "PENDING",
+            requestedAt: ServerValue.TIMESTAMP,
+        })
+    );
+});
+
+test("farmer: can cancel their own still-PENDING request, but cannot alter requestedAt while doing so", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.database().ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "PENDING",
+            requestedAt: 5000,
+        });
+    });
+    const db = ctxFor("farmer-A").database();
+    await assertFails(
+        db.ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "CANCELLED",
+            requestedAt: 6000,
+        })
+    );
+    await assertSucceeds(
+        db.ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "CANCELLED",
+            requestedAt: 5000,
+        })
+    );
+});
+
+test("admin: can approve, deny, and revoke a farmer's manual-control request", async () => {
+    const admin = ctxFor("admin-A").database();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.database().ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "PENDING",
+            requestedAt: 1000,
+        });
+    });
+    await assertSucceeds(
+        admin.ref("devices/device-A/manualControlGrants/farmer-A").update({
+            status: "APPROVED",
+            resolvedByUid: "admin-A",
+            resolvedAt: ServerValue.TIMESTAMP,
+        })
+    );
+    await assertSucceeds(
+        admin.ref("devices/device-A/manualControlGrants/farmer-A").update({status: "REVOKED"})
+    );
+});
+
+test("farmer: cannot write commands/manualMode or manualModeEnabledAt directly, even with an APPROVED grant", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.database().ref("devices/device-A/commands/manualMode").set(true);
+        await ctx.database().ref("devices/device-A/commands/manualModeEnabledAt").set(1000);
+        await ctx.database().ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "APPROVED",
+            requestedAt: 900,
+            resolvedByUid: "admin-A",
+            resolvedAt: 1000,
+        });
+    });
+    const db = ctxFor("farmer-A").database();
+    await assertFails(db.ref("devices/device-A/commands/manualMode").set(false));
+    await assertFails(db.ref("devices/device-A/commands/manualModeEnabledAt").set(1));
+});
+
+test("farmer: cannot operate an actuator with no grant, or with a PENDING/DENIED/EXPIRED/REVOKED grant", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.database().ref("devices/device-A/commands/manualMode").set(true);
+        await ctx.database().ref("devices/device-A/commands/manualModeEnabledAt").set(1000);
+    });
+    const db = ctxFor("farmer-A").database();
+    await assertFails(db.ref("devices/device-A/commands/canopyFan").set({state: true}));
+
+    for (const status of ["PENDING", "DENIED", "EXPIRED", "REVOKED"]) {
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+            await ctx.database().ref("devices/device-A/manualControlGrants/farmer-A").set({
+                status,
+                requestedAt: 900,
+                resolvedByUid: "admin-A",
+                resolvedAt: 1500,
+            });
+        });
+        await assertFails(db.ref("devices/device-A/commands/canopyFan").set({state: true}));
+    }
+});
+
+test("farmer: cannot operate an actuator with an APPROVED grant while Manual Mode is off", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.database().ref("devices/device-A/commands/manualMode").set(false);
+        await ctx.database().ref("devices/device-A/commands/manualModeEnabledAt").set(1000);
+        await ctx.database().ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "APPROVED",
+            requestedAt: 900,
+            resolvedByUid: "admin-A",
+            resolvedAt: 1500,
+        });
+    });
+    const db = ctxFor("farmer-A").database();
+    await assertFails(db.ref("devices/device-A/commands/canopyFan").set({state: true}));
+});
+
+test("farmer: cannot operate an actuator with an APPROVED grant left over from an earlier Manual Mode session", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        // manualModeEnabledAt (2000) is AFTER this grant's resolvedAt (1500) -
+        // Manual Mode was turned off and back on again since this farmer was
+        // approved, so the old grant must not silently carry over.
+        await ctx.database().ref("devices/device-A/commands/manualMode").set(true);
+        await ctx.database().ref("devices/device-A/commands/manualModeEnabledAt").set(2000);
+        await ctx.database().ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "APPROVED",
+            requestedAt: 900,
+            resolvedByUid: "admin-A",
+            resolvedAt: 1500,
+        });
+    });
+    const db = ctxFor("farmer-A").database();
+    await assertFails(db.ref("devices/device-A/commands/canopyFan").set({state: true}));
+});
+
+test("farmer: can operate any actuator with a valid current-session APPROVED grant", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.database().ref("devices/device-A/commands/manualMode").set(true);
+        await ctx.database().ref("devices/device-A/commands/manualModeEnabledAt").set(1000);
+        await ctx.database().ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "APPROVED",
+            requestedAt: 900,
+            resolvedByUid: "admin-A",
+            resolvedAt: 1500, // >= manualModeEnabledAt
+        });
+    });
+    const db = ctxFor("farmer-A").database();
+    await assertSucceeds(db.ref("devices/device-A/commands/canopyFan").set({state: true}));
+    await assertSucceeds(db.ref("devices/device-A/commands/blower").set({state: false}));
+});
+
+test("developer tester: manual-control grant is irrelevant - already has unconditional actuator write access", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.database().ref("devices/device-A/commands/manualMode").set(false);
+    });
+    const db = ctxFor("developer-A").database();
+    await assertSucceeds(db.ref("devices/device-A/commands/canopyFan").set({state: true}));
+});

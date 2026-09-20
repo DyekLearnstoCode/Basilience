@@ -143,6 +143,14 @@
                     android:textSize="13sp" />
             </LinearLayout>
 
+            <!-- Wraps the sensor grid + details rows so the Monitoring
+                 coach mark tour can spotlight all of them as one region. -->
+            <LinearLayout
+                android:id="@+id/sensorReadingsSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
             <!-- ===== GRID ROW 1 ===== -->
             <LinearLayout
                 android:layout_width="match_parent"
@@ -209,6 +217,8 @@
                 android:id="@+id/cardWaterLevel"
                 layout="@layout/item_parameter" />
 
+            </LinearLayout>
+
             <!-- ===== ACTUATORS SECTION ===== -->
             <RelativeLayout
                 android:layout_width="match_parent"
@@ -273,6 +283,14 @@
                     android:text="Reset Safety" />
             </LinearLayout>
 
+            <!-- Wraps the actuator rows so the Monitoring coach mark tour
+                 can spotlight them as one region instead of one at a time. -->
+            <LinearLayout
+                android:id="@+id/actuatorListContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
             <include
                 android:id="@+id/actWaterPumpValve"
                 layout="@layout/item_actuator" />
@@ -312,6 +330,8 @@
             <include
                 android:id="@+id/actCirculationPump"
                 layout="@layout/item_actuator" />
+
+            </LinearLayout>
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

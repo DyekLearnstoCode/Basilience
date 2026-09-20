@@ -43,6 +43,7 @@ import com.google.firebase.firestore.QuerySnapshot;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.List;
@@ -61,6 +62,7 @@ public class HarvestLogFragment extends Fragment {
     private com.google.android.material.button.MaterialButton btnExportPdf;
     private com.google.android.material.floatingactionbutton.FloatingActionButton fabAddHarvest;
     private com.google.android.material.button.MaterialButton btnCompleteCycle;
+    private CoachMarkTour coachMarkTour;
     private RecyclerView recyclerHarvest;
     private LineChart harvestChart;
     
@@ -183,6 +185,28 @@ public class HarvestLogFragment extends Fragment {
         loadChartData();
         loadCycleSummary();
         loadPairedHarvestScale();
+
+        maybeShowCoachMarkTour();
+    }
+
+    /** Shows the guided Harvest walkthrough once, the first time this screen is ever shown. */
+    private void maybeShowCoachMarkTour() {
+        SharedPreferences prefs = requireContext()
+                .getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
+        if (prefs.getBoolean("has_seen_harvest_tour", false)) {
+            return;
+        }
+        prefs.edit().putBoolean("has_seen_harvest_tour", true).apply();
+
+        List<CoachMarkTour.Step> steps = Arrays.asList(
+                new CoachMarkTour.Step(fabAddHarvest, "Record a harvest",
+                        "Tap here to log a new harvest weight, or read it automatically from your Harvest Scale."),
+                new CoachMarkTour.Step(btnCompleteCycle, "When you're done",
+                        "Tap here once the cycle is finished to mark it complete."));
+
+        coachMarkTour = new CoachMarkTour(requireActivity(), getViewLifecycleOwner(),
+                requireActivity().getOnBackPressedDispatcher(), steps, null);
+        coachMarkTour.start();
     }
 
     // Resolves which Harvest Scale (if any) is paired with this fragment's
@@ -1255,6 +1279,10 @@ public class HarvestLogFragment extends Fragment {
         super.onDestroyView();
         if (harvestListener != null) harvestListener.remove();
         if (cycleListener != null) cycleListener.remove();
+        if (coachMarkTour != null) {
+            coachMarkTour.finish();
+            coachMarkTour = null;
+        }
     }
 
     private void dismissLoading() {

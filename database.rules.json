@@ -44,7 +44,22 @@
 
         "commands": {
           ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()",
-          ".write": "auth != null && (root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN' || root.child('deviceAccess').child($deviceId).child(auth.uid).child('developerTester').val() === true)"
+          ".write": "auth != null && (root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN' || root.child('deviceAccess').child($deviceId).child(auth.uid).child('developerTester').val() === true)",
+          "manualMode": {
+            ".write": "auth != null && (root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN' || root.child('deviceAccess').child($deviceId).child(auth.uid).child('developerTester').val() === true)"
+          },
+          "manualModeEnabledAt": {
+            ".write": "auth != null && (root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN' || root.child('deviceAccess').child($deviceId).child(auth.uid).child('developerTester').val() === true)"
+          },
+          "$actuatorKey": {
+            ".write": "auth != null && (root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN' || root.child('deviceAccess').child($deviceId).child(auth.uid).child('developerTester').val() === true || (root.child('devices').child($deviceId).child('commands').child('manualMode').val() === true && root.child('devices').child($deviceId).child('manualControlGrants').child(auth.uid).child('status').val() === 'APPROVED' && root.child('devices').child($deviceId).child('manualControlGrants').child(auth.uid).child('resolvedAt').val() >= root.child('devices').child($deviceId).child('commands').child('manualModeEnabledAt').val()))"
+          }
+        },
+        "manualControlGrants": {
+          ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()",
+          "$uid": {
+            ".write": "auth != null && ((root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN' || root.child('deviceAccess').child($deviceId).child(auth.uid).child('developerTester').val() === true) || (auth.uid === $uid && root.child('deviceAccess').child($deviceId).child(auth.uid).exists() && !newData.hasChild('resolvedByUid') && !newData.hasChild('resolvedAt') && ((newData.child('status').val() === 'PENDING' && newData.child('requestedAt').val() === now) || (data.exists() && data.child('status').val() === 'PENDING' && newData.child('requestedAt').val() === data.child('requestedAt').val() && newData.child('status').val() === 'CANCELLED'))))"
+          }
         },
         "settings": {
           ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()",

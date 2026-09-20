@@ -185,6 +185,7 @@
                     android:layout_marginBottom="@dimen/ds_space_xs" />
 
                 <LinearLayout
+                    android:id="@+id/periodSelectorRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"

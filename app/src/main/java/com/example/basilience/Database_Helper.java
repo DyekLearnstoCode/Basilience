@@ -590,11 +590,11 @@ public class Database_Helper {
                 + " override=" + overrideRequested + " speed=" + speedPercent
                 + " uid=" + getCurrentUid() + " cachedRole=" + cachedRole + " deviceId=" + deviceIdAtCallTime);
 
-        return checkAdminTask()
-                .addOnFailureListener(e -> Log.e(TAG, "[MANUAL-APP] Admin authorization failed actuator=" + actuatorName
+        return checkAdminOrGrantTask()
+                .addOnFailureListener(e -> Log.e(TAG, "[MANUAL-APP] Admin/grant authorization failed actuator=" + actuatorName
                         + " cachedRole=" + cachedRole, e))
                 .onSuccessTask(aVoid -> {
-                    Log.d(TAG, "[MANUAL-APP] Admin authorization passed actuator=" + actuatorName);
+                    Log.d(TAG, "[MANUAL-APP] Admin/grant authorization passed actuator=" + actuatorName);
                     return rtdb.getReference("devices").child(deviceIdAtCallTime).child("commands").child("manualMode").get();
                 })
                 .onSuccessTask(snapshot -> {
@@ -674,8 +674,122 @@ public class Database_Helper {
 
                 return deviceRef.updateChildren(updates);
             } else {
-                return deviceRef.child("commands").child("manualMode").setValue(true);
+                // manualModeEnabledAt marks the start of this Manual Mode
+                // "session" - the manualControlGrants security rule requires
+                // a Farmer's grant.resolvedAt to be >= this value, which is
+                // what invalidates a stale grant from an earlier session
+                // without needing any explicit cleanup when Manual Mode is
+                // turned off (see resolveManualControlGrant()'s own comment).
+                Map<String, Object> updates = new HashMap<>();
+                updates.put("commands/manualMode", true);
+                updates.put("commands/manualModeEnabledAt", ServerValue.TIMESTAMP);
+                return deviceRef.updateChildren(updates);
             }
+        });
+    }
+
+    /** Farmer requests manual-control access (any authenticated user with this device selected may call this - the RTDB rule is the real gate, not a client-side admin check). */
+    public Task<Void> requestManualControlAccess() {
+        if (selectedDeviceId == null || selectedDeviceId.isEmpty())
+            return Tasks.forException(new Exception("No device selected"));
+        String uid = getCurrentUid();
+        if (uid == null) return Tasks.forException(new Exception("Not logged in"));
+
+        Map<String, Object> request = new HashMap<>();
+        request.put("status", "PENDING");
+        request.put("requestedAt", ServerValue.TIMESTAMP);
+
+        return rtdb.getReference("devices").child(selectedDeviceId)
+                .child("manualControlGrants").child(uid).setValue(request);
+    }
+
+    /**
+     * Admin resolves a Farmer's manual-control request ("APPROVED", "DENIED",
+     * or "REVOKED" for ending an already-approved session early).
+     *
+     * <p>Approving while Manual Mode is currently off is what turns Manual
+     * Mode on for this session too - done as a single atomic multi-path
+     * update together with the grant fields and a fresh manualModeEnabledAt,
+     * so both ServerValue.TIMESTAMP writes resolve to the identical server
+     * value in one call (the security rule requires grant.resolvedAt &gt;=
+     * commands.manualModeEnabledAt; two separate sequential writes could
+     * land in the wrong order and permanently lock the farmer out). If
+     * Manual Mode is already on, manualModeEnabledAt is left untouched -
+     * the new grant's resolvedAt will still naturally satisfy the rule
+     * against the existing session start.
+     */
+    public Task<Void> resolveManualControlGrant(String farmerUid, String status) {
+        if (selectedDeviceId == null || selectedDeviceId.isEmpty())
+            return Tasks.forException(new Exception("No device selected"));
+
+        return checkAdminTask().onSuccessTask(aVoid -> {
+            String adminUid = getCurrentUid();
+            if (adminUid == null) return Tasks.forException(new Exception("Not logged in"));
+            DatabaseReference deviceRef = rtdb.getReference("devices").child(selectedDeviceId);
+
+            if (!"APPROVED".equals(status)) {
+                Map<String, Object> updates = new HashMap<>();
+                updates.put("status", status);
+                updates.put("resolvedByUid", adminUid);
+                updates.put("resolvedAt", ServerValue.TIMESTAMP);
+                return deviceRef.child("manualControlGrants").child(farmerUid).updateChildren(updates);
+            }
+
+            return deviceRef.child("commands").child("manualMode").get().onSuccessTask(snapshot -> {
+                boolean alreadyOn = Boolean.TRUE.equals(snapshot.getValue(Boolean.class));
+                Map<String, Object> updates = new HashMap<>();
+                updates.put("manualControlGrants/" + farmerUid + "/status", "APPROVED");
+                updates.put("manualControlGrants/" + farmerUid + "/resolvedByUid", adminUid);
+                updates.put("manualControlGrants/" + farmerUid + "/resolvedAt", ServerValue.TIMESTAMP);
+                if (!alreadyOn) {
+                    updates.put("commands/manualMode", true);
+                    updates.put("commands/manualModeEnabledAt", ServerValue.TIMESTAMP);
+                }
+                return deviceRef.updateChildren(updates);
+            });
+        });
+    }
+
+    /**
+     * Admin OR an active manual-control grant holder. Falls back to reading
+     * the caller's own manualControlGrants entry and comparing it against
+     * the current session start, purely for a fast client-side pre-check
+     * and a precise error message - the RTDB rule (commands/$actuatorKey)
+     * is the actual enforcement either way, so this cannot itself be a
+     * security hole even if this check were skipped entirely.
+     */
+    private Task<Void> checkAdminOrGrantTask() {
+        return checkAdminTask().continueWithTask(adminTask -> {
+            if (adminTask.isSuccessful()) return Tasks.forResult(null);
+
+            String uid = getCurrentUid();
+            if (uid == null || selectedDeviceId == null || selectedDeviceId.isEmpty()) {
+                return Tasks.forException(new Exception("Not logged in"));
+            }
+            DatabaseReference deviceRef = rtdb.getReference("devices").child(selectedDeviceId);
+
+            return deviceRef.child("manualControlGrants").child(uid).get().continueWithTask(grantTask -> {
+                if (!grantTask.isSuccessful() || grantTask.getResult() == null) {
+                    return Tasks.forException(new IllegalStateException(
+                            "You do not have manual control access. Request access first."));
+                }
+                DataSnapshot grant = grantTask.getResult();
+                String grantStatus = grant.child("status").getValue(String.class);
+                Long resolvedAt = grant.child("resolvedAt").getValue(Long.class);
+                if (!"APPROVED".equals(grantStatus) || resolvedAt == null) {
+                    return Tasks.forException(new IllegalStateException(
+                            "You do not have manual control access. Request access first."));
+                }
+                return deviceRef.child("commands").child("manualModeEnabledAt").get().continueWithTask(sessionTask -> {
+                    Long sessionStart = sessionTask.isSuccessful() && sessionTask.getResult() != null
+                            ? sessionTask.getResult().getValue(Long.class) : null;
+                    if (sessionStart == null || resolvedAt < sessionStart) {
+                        return Tasks.forException(new IllegalStateException(
+                                "Your manual control access has expired. Please request again."));
+                    }
+                    return Tasks.forResult(null);
+                });
+            });
         });
     }
 

@@ -20,9 +20,15 @@ import androidx.navigation.Navigation;
 import com.google.android.material.button.MaterialButton;
 import com.google.firebase.firestore.ListenerRegistration;
 
+import java.util.Arrays;
+import java.util.List;
+
 public class Dashboard_Fragment extends Fragment {
 
+    private static final String KEY_HAS_SEEN_DASHBOARD_TOUR = "has_seen_dashboard_tour";
+
     private ListenerRegistration cycleListener;
+    private CoachMarkTour coachMarkTour;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -109,6 +115,8 @@ public class Dashboard_Fragment extends Fragment {
         LinearLayout cardCycle = view.findViewById(R.id.cardCycle);
         cardCycle.setOnClickListener(v -> navController.navigate(R.id.action_home_to_cycleDetailsFragment));
 
+        maybeShowCoachMarkTour(tvDeviceStatus, cardParameters, cardUserGuide, cardCycle);
+
         // Verify with Firestore in background (optional/robustness)
         String uid = dbHelper.getCurrentUid();
         if (uid != null) {
@@ -164,11 +172,46 @@ public class Dashboard_Fragment extends Fragment {
                 });
     }
 
+    /**
+     * Shows the guided Dashboard walkthrough once, the first time this screen
+     * is ever shown. CoachMarkTour re-checks each target's own visibility, so
+     * a hidden device status line (no device selected yet) is simply skipped.
+     */
+    private void maybeShowCoachMarkTour(View deviceStatus, View cardParameters,
+                                         View cardUserGuide, View cardCycle) {
+        SharedPreferences prefs = requireContext()
+                .getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
+        if (prefs.getBoolean(KEY_HAS_SEEN_DASHBOARD_TOUR, false)) {
+            return;
+        }
+        // Set before starting, not on completion - a rotation mid-tour would
+        // otherwise recreate this fragment and restart the tour from step 1.
+        prefs.edit().putBoolean(KEY_HAS_SEEN_DASHBOARD_TOUR, true).apply();
+
+        List<CoachMarkTour.Step> steps = Arrays.asList(
+                new CoachMarkTour.Step(deviceStatus, "Device status",
+                        "Shows whether your Basilience device is online right now."),
+                new CoachMarkTour.Step(cardParameters, "Parameters Monitoring",
+                        "Check live sensor readings for your growth environment."),
+                new CoachMarkTour.Step(cardUserGuide, "User Guide",
+                        "Step-by-step help for setting up and using your device."),
+                new CoachMarkTour.Step(cardCycle, "Cycle Details",
+                        "Track and manage your current growth cycle here."));
+
+        coachMarkTour = new CoachMarkTour(requireActivity(), getViewLifecycleOwner(),
+                requireActivity().getOnBackPressedDispatcher(), steps, null);
+        coachMarkTour.start();
+    }
+
     @Override
     public void onDestroyView() {
         if (cycleListener != null) {
             cycleListener.remove();
             cycleListener = null;
+        }
+        if (coachMarkTour != null) {
+            coachMarkTour.finish();
+            coachMarkTour = null;
         }
         super.onDestroyView();
     }

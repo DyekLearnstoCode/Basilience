@@ -56,6 +56,7 @@ import com.google.firebase.firestore.Query;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.List;
@@ -127,6 +128,8 @@ public class FoggingReportsFragment extends Fragment {
     private View layoutLoading;
     private long layoutLoadingShownAt;
     private View reportContentContainer, noCyclesEmptyState;
+    private View periodSelectorRow;
+    private CoachMarkTour coachMarkTour;
     private TextView tvNoCyclesEmptyState;
     // The X-axis label strategy for the chart currently on screen - rebuilt
     // each time renderReport() loads new data, and mutated in place by the
@@ -277,6 +280,7 @@ public class FoggingReportsFragment extends Fragment {
         btnMonth = view.findViewById(R.id.btnMonth);
         btnCustom = view.findViewById(R.id.btnCustom);
         btnShare = view.findViewById(R.id.btnShare);
+        periodSelectorRow = view.findViewById(R.id.periodSelectorRow);
 
         if (btnShare != null) {
             btnShare.setOnClickListener(v -> exportPdf());
@@ -329,6 +333,10 @@ public class FoggingReportsFragment extends Fragment {
     public void onDestroyView() {
         super.onDestroyView();
         if (cyclesListener != null) cyclesListener.remove();
+        if (coachMarkTour != null) {
+            coachMarkTour.finish();
+            coachMarkTour = null;
+        }
     }
 
     private void setupChart() {
@@ -547,6 +555,37 @@ public class FoggingReportsFragment extends Fragment {
     private void showReportContent() {
         if (reportContentContainer != null) reportContentContainer.setVisibility(View.VISIBLE);
         if (noCyclesEmptyState != null) noCyclesEmptyState.setVisibility(View.GONE);
+    }
+
+    /**
+     * Shows the guided Fogging Reports walkthrough once, the first time this
+     * screen has actually finished loading a report. Fired from the end of
+     * renderReport() (after hideLayoutLoading()), not from showReportContent()
+     * - showReportContent() only means the spinner/period row exist, but
+     * loadData() immediately shows its own layoutLoading overlay for the
+     * initial report fetch right after, which raced with and covered the
+     * tour the same way Monitoring's sensorStabilizingOverlay did. Shared
+     * with SystemReportsFragment: same "has_seen_reports_detail_tour" flag,
+     * since the two report screens are similar enough that seeing this tour
+     * once on either is enough.
+     */
+    private void maybeShowCoachMarkTour() {
+        SharedPreferences prefs = requireContext()
+                .getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
+        if (prefs.getBoolean("has_seen_reports_detail_tour", false)) {
+            return;
+        }
+        prefs.edit().putBoolean("has_seen_reports_detail_tour", true).apply();
+
+        List<CoachMarkTour.Step> steps = Arrays.asList(
+                new CoachMarkTour.Step(spinnerCycle, "Choose a cycle",
+                        "Pick which growth cycle to look at."),
+                new CoachMarkTour.Step(periodSelectorRow, "Choose a time range",
+                        "Entire cycle, today, this week, this month, or a custom range."));
+
+        coachMarkTour = new CoachMarkTour(requireActivity(), getViewLifecycleOwner(),
+                requireActivity().getOnBackPressedDispatcher(), steps, null);
+        coachMarkTour.start();
     }
 
     // ------------------------------------------------------------------
@@ -1111,6 +1150,7 @@ public class FoggingReportsFragment extends Fragment {
         // Water Outlook is loaded independently (see loadWaterOutlook()) and
         // does not wait on or derive from this historical report render.
         hideLayoutLoading();
+        maybeShowCoachMarkTour();
     }
 
     /** Hides the report loading overlay, never sooner than the minimum visible duration. */
@@ -1760,77 +1800,95 @@ public class FoggingReportsFragment extends Fragment {
         // the restored viewport's own visible range, rather than caching a
         // separate saved value that could drift out of sync), without
         // requerying or altering any data.
-        barChart.highlightValue(null);
-        android.graphics.Matrix savedMatrix = new android.graphics.Matrix(barChart.getViewPortHandler().getMatrixTouch());
-        if (foggingXFormatter != null) {
-            float fullSpanMinutes = (filter.effectiveEndMs - filter.effectiveStartMs) / 60000f;
-            foggingXFormatter.updateVisibleRange(0f, fullSpanMinutes);
-            applyFoggingAdaptiveXAxis(barChart.getXAxis());
+        //
+        // All of the above, and the chart-capture work below, run
+        // synchronously on this thread - showing the overlay and immediately
+        // doing that work in the same call would never actually let it paint
+        // first, so the heavy work is posted one frame out. Mirrors
+        // SystemReportsFragment.exportToPdf()'s identical fix for the same
+        // chart-capture-then-generate shape.
+        View root = getView();
+        if (root == null) {
+            hideLayoutLoading();
+            return;
         }
-        barChart.fitScreen();
-        final Bitmap chartBitmap = barChart.getChartBitmap();
-        barChart.getViewPortHandler().refresh(savedMatrix, barChart, true);
-        if (foggingXFormatter != null) {
-            foggingXFormatter.updateVisibleRange(barChart.getLowestVisibleX(), barChart.getHighestVisibleX());
-            applyFoggingAdaptiveXAxis(barChart.getXAxis());
-        }
-        barChart.invalidate();
-        // Snapshot everything Fragment-bound on the UI thread before
-        // starting background work, so the worker thread never calls
-        // getContext()/requireContext() itself and can't be affected by the
-        // Fragment detaching mid-export.
-        final Context appContext = requireContext().getApplicationContext();
-        final String packageName = requireContext().getPackageName();
-        final String userName = requireContext()
-                .getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE)
-                .getString("user_name", "User");
-        final androidx.fragment.app.FragmentActivity hostActivity = requireActivity();
-
-        new Thread(() -> {
-            File pdfFile = null;
-            Exception failure = null;
-            try {
-                CycleReportGenerator generator = new CycleReportGenerator(appContext);
-                pdfFile = generator.generateFoggingReportPdf(filter, chartBitmap, sessions, status,
-                        totals, interpretation, userName);
-            } catch (IOException e) {
-                failure = e;
+        root.post(() -> {
+            if (!isAdded() || getContext() == null) {
+                hideLayoutLoading();
+                return;
             }
+            barChart.highlightValue(null);
+            android.graphics.Matrix savedMatrix = new android.graphics.Matrix(barChart.getViewPortHandler().getMatrixTouch());
+            if (foggingXFormatter != null) {
+                float fullSpanMinutes = (filter.effectiveEndMs - filter.effectiveStartMs) / 60000f;
+                foggingXFormatter.updateVisibleRange(0f, fullSpanMinutes);
+                applyFoggingAdaptiveXAxis(barChart.getXAxis());
+            }
+            barChart.fitScreen();
+            final Bitmap chartBitmap = barChart.getChartBitmap();
+            barChart.getViewPortHandler().refresh(savedMatrix, barChart, true);
+            if (foggingXFormatter != null) {
+                foggingXFormatter.updateVisibleRange(barChart.getLowestVisibleX(), barChart.getHighestVisibleX());
+                applyFoggingAdaptiveXAxis(barChart.getXAxis());
+            }
+            barChart.invalidate();
+            // Snapshot everything Fragment-bound on the UI thread before
+            // starting background work, so the worker thread never calls
+            // getContext()/requireContext() itself and can't be affected by the
+            // Fragment detaching mid-export.
+            final Context appContext = requireContext().getApplicationContext();
+            final String packageName = requireContext().getPackageName();
+            final String userName = requireContext()
+                    .getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE)
+                    .getString("user_name", "User");
+            final androidx.fragment.app.FragmentActivity hostActivity = requireActivity();
 
-            final File result = pdfFile;
-            final Exception error = failure;
-            hostActivity.runOnUiThread(() -> {
-                if (!isAdded()) {
-                    hideLayoutLoading();
-                    return;
-                }
-                if (error != null || result == null) {
-                    hideLayoutLoading();
-                    Log.e("FoggingReports", "Error generating PDF", error);
-                    NotificationHelper.showError(getContext(), "We couldn't generate the PDF report. Please try again.");
-                    return;
-                }
+            new Thread(() -> {
+                File pdfFile = null;
+                Exception failure = null;
                 try {
-                    Uri contentUri = FileProvider.getUriForFile(appContext, packageName + ".fileprovider", result);
-                    // ACTION_SEND, not ACTION_VIEW - a "share sheet" hands the
-                    // file to another app (Drive, email, Messenger, etc.), which
-                    // ACTION_VIEW + createChooser does not do, it only offers a
-                    // viewer. Matches SystemReportsFragment's PDF/CSV export.
-                    Intent intent = new Intent(Intent.ACTION_SEND);
-                    intent.setType("application/pdf");
-                    intent.putExtra(Intent.EXTRA_SUBJECT, "Basilience Fogging Report");
-                    intent.putExtra(Intent.EXTRA_TEXT, "Attached is the fogging report for " + filter.periodLabel + ".");
-                    intent.putExtra(Intent.EXTRA_STREAM, contentUri);
-                    intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    startActivity(Intent.createChooser(intent, "Export Report via:"));
-                } catch (Exception e) {
-                    Log.e("FoggingReports", "Error opening PDF", e);
-                    NotificationHelper.showError(getContext(), "We couldn't open the PDF report.");
-                } finally {
-                    hideLayoutLoading();
+                    CycleReportGenerator generator = new CycleReportGenerator(appContext);
+                    pdfFile = generator.generateFoggingReportPdf(filter, chartBitmap, sessions, status,
+                            totals, interpretation, userName);
+                } catch (IOException e) {
+                    failure = e;
                 }
-            });
-        }).start();
+
+                final File result = pdfFile;
+                final Exception error = failure;
+                hostActivity.runOnUiThread(() -> {
+                    if (!isAdded()) {
+                        hideLayoutLoading();
+                        return;
+                    }
+                    if (error != null || result == null) {
+                        hideLayoutLoading();
+                        Log.e("FoggingReports", "Error generating PDF", error);
+                        NotificationHelper.showError(getContext(), "We couldn't generate the PDF report. Please try again.");
+                        return;
+                    }
+                    try {
+                        Uri contentUri = FileProvider.getUriForFile(appContext, packageName + ".fileprovider", result);
+                        // ACTION_SEND, not ACTION_VIEW - a "share sheet" hands the
+                        // file to another app (Drive, email, Messenger, etc.), which
+                        // ACTION_VIEW + createChooser does not do, it only offers a
+                        // viewer. Matches SystemReportsFragment's PDF/CSV export.
+                        Intent intent = new Intent(Intent.ACTION_SEND);
+                        intent.setType("application/pdf");
+                        intent.putExtra(Intent.EXTRA_SUBJECT, "Basilience Fogging Report");
+                        intent.putExtra(Intent.EXTRA_TEXT, "Attached is the fogging report for " + filter.periodLabel + ".");
+                        intent.putExtra(Intent.EXTRA_STREAM, contentUri);
+                        intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        startActivity(Intent.createChooser(intent, "Export Report via:"));
+                    } catch (Exception e) {
+                        Log.e("FoggingReports", "Error opening PDF", e);
+                        NotificationHelper.showError(getContext(), "We couldn't open the PDF report.");
+                    } finally {
+                        hideLayoutLoading();
+                    }
+                });
+            }).start();
+        });
     }
 
     private void showInfoDialog() {

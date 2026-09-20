@@ -29,6 +29,7 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.Observer;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -178,8 +179,18 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 active = true;
                 if (!popupShown) {
                     popupShown = true;
-                    NotificationHelper.showAutomationAcknowledgement(
-                            requireContext(), popupTitle, popupMessage, this::show);
+                    // Never during the guided tour: NotificationHelper's dialog opens
+                    // in its own Window, which always draws above CoachMarkTour's
+                    // content-attached overlay, so it would interrupt/cover the tour
+                    // instead of being blocked by it. Go straight to the loader
+                    // instead - popupShown still latches true so this episode's
+                    // acknowledgement doesn't appear later either, once the tour ends.
+                    if (coachMarkTour != null && coachMarkTour.isActive()) {
+                        show();
+                    } else {
+                        NotificationHelper.showAutomationAcknowledgement(
+                                requireContext(), popupTitle, popupMessage, this::show);
+                    }
                 } else {
                     // Popup already shown earlier in this same episode (e.g.
                     // fragment view was recreated mid-episode) - go straight
@@ -295,6 +306,19 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private ValueEventListener manualModeListener;
     private DatabaseReference actuatorStatusRef;
     private ValueEventListener actuatorStatusListener;
+    private DatabaseReference manualControlGrantsRef;
+    private ValueEventListener manualControlGrantsListener;
+    private DatabaseReference manualModeEnabledAtRef;
+    private ValueEventListener manualModeEnabledAtListener;
+    // Admin side: which farmer uids already have an approval dialog showing/
+    // shown for their current PENDING request, so the same request doesn't
+    // re-prompt on every unrelated snapshot update to this node.
+    private final java.util.Set<String> grantDialogShownForUid = new java.util.HashSet<>();
+    // Farmer side: this device's own manual-control grant, kept live by
+    // manualControlGrantsListener - null/"" status means no active request.
+    private String myGrantStatus = "";
+    private long myGrantResolvedAt = 0L;
+    private long manualModeEnabledAt = 0L;
 
     private static final long SETUP_AP_RECHECK_INTERVAL_MS = 15_000L;
     private TextView tvConnectionStatus;
@@ -353,6 +377,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private final Actuator circulationPump = new Actuator("Circulation Pump", "circulationPump");
 
     private View actWaterPumpValve, actCanopyFan, actGrowLights, actPhUp, actPhDown, actNutrients, actFogger, actReservoirFan, actPeltier, actCirculationPump;
+
+    private CoachMarkTour coachMarkTour;
 
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
@@ -612,6 +638,43 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
 
         startRealTimeMonitoring();
+    }
+
+    /**
+     * Shows the guided Monitoring walkthrough once, the first time this
+     * screen is ever shown. Called from revealSensors() rather than
+     * onViewCreated() - firing it immediately raced with
+     * sensorStabilizingOverlay, which covers the whole screen for up to 3s
+     * (or until sensor data is ready) on every fresh entry to this screen,
+     * so the tour would start while its own spotlight target was still
+     * hidden behind that loading state.
+     */
+    private void maybeShowCoachMarkTour() {
+        View view = getView();
+        if (view == null) return;
+
+        SharedPreferences prefs = requireContext()
+                .getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
+        if (prefs.getBoolean("has_seen_monitoring_tour", false)) {
+            return;
+        }
+        prefs.edit().putBoolean("has_seen_monitoring_tour", true).apply();
+
+        View sensorReadingsSection = view.findViewById(R.id.sensorReadingsSection);
+        View actuatorListContainer = view.findViewById(R.id.actuatorListContainer);
+        View btnActuatorInfo = view.findViewById(R.id.btnActuatorInfo);
+
+        List<CoachMarkTour.Step> steps = Arrays.asList(
+                new CoachMarkTour.Step(sensorReadingsSection, "Sensor readings",
+                        "Live pH, EC, temperature, humidity, and more, updated automatically."),
+                new CoachMarkTour.Step(actuatorListContainer, "Pumps, fans, and lights",
+                        "See what's currently running. Your Admin can turn on Manual Mode to control these by hand."),
+                new CoachMarkTour.Step(btnActuatorInfo, "Need more detail?",
+                        "Tap this any time for a full explanation of actuator status."));
+
+        coachMarkTour = new CoachMarkTour(requireActivity(), getViewLifecycleOwner(),
+                requireActivity().getOnBackPressedDispatcher(), steps, null);
+        coachMarkTour.start();
     }
 
     private void setupParameterCards(View view) {
@@ -959,13 +1022,36 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                                 new android.widget.CompoundButton.OnCheckedChangeListener[1];
                         fullListenerRef[0] = (buttonView, checked) -> {
                             if (!isAdminUser()) {
-                                // Enabling Manual Mode is Admin-only, same as the
-                                // per-actuator switches - Database_Helper.updateManualMode()
-                                // and the RTDB commands rule both already enforce this.
+                                // Turning Manual Mode itself on or off is still
+                                // Admin-only - Database_Helper.updateManualMode()
+                                // and the RTDB commands/manualMode rule both
+                                // still enforce this unconditionally. A Farmer
+                                // never directly changes this switch's real
+                                // value; tapping it only requests (or reports
+                                // on) their own manual-control grant, which -
+                                // once approved - unlocks the actuator switches
+                                // below without needing this switch to change.
                                 modeSwitch.setOnCheckedChangeListener(null);
                                 modeSwitch.setChecked(isManualMode);
                                 modeSwitch.setOnCheckedChangeListener(fullListenerRef[0]);
-                                Toast.makeText(getContext(), "You do not have permission to control Manual Mode.", Toast.LENGTH_LONG).show();
+
+                                if (hasActiveGrant()) {
+                                    Toast.makeText(getContext(), "You already have manual control access.", Toast.LENGTH_SHORT).show();
+                                } else if ("PENDING".equals(myGrantStatus)) {
+                                    Toast.makeText(getContext(), "Your request is waiting for an Admin to approve it.", Toast.LENGTH_SHORT).show();
+                                } else {
+                                    NotificationHelper.showConfirmation(requireContext(), "Request Manual Control",
+                                            "Ask an Admin to let you control pumps, fans, and lights by hand?",
+                                            "Request", "Cancel", () -> {
+                                                dbHelper.requestManualControlAccess()
+                                                        .addOnFailureListener(e -> {
+                                                            if (!isAdded()) return;
+                                                            NotificationHelper.showError(requireContext(),
+                                                                    "Unable to send the request. Please try again.");
+                                                        });
+                                                Toast.makeText(getContext(), "Request sent. Waiting for an Admin to approve it.", Toast.LENGTH_LONG).show();
+                                            });
+                                }
                                 return;
                             }
                             if (checked) {
@@ -1006,6 +1092,80 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             }
         };
         manualModeRef.addValueEventListener(manualModeListener);
+
+        manualControlGrantsRef = deviceRef.child("manualControlGrants");
+        manualControlGrantsListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!isAdded()) return;
+
+                if (isAdminUser()) {
+                    // Show (once each) an approval prompt for every farmer's new
+                    // PENDING request - retainAll lets a LATER new request from
+                    // the same farmer prompt again once their current one resolves.
+                    java.util.Set<String> stillPending = new java.util.HashSet<>();
+                    for (DataSnapshot child : snapshot.getChildren()) {
+                        String uid = child.getKey();
+                        String status = child.child("status").getValue(String.class);
+                        if (uid == null || !"PENDING".equals(status)) continue;
+                        stillPending.add(uid);
+                        if (grantDialogShownForUid.add(uid)) {
+                            promptAdminForGrant(uid);
+                        }
+                    }
+                    grantDialogShownForUid.retainAll(stillPending);
+                } else {
+                    String myUid = dbHelper.getCurrentUid();
+                    DataSnapshot mine = myUid != null ? snapshot.child(myUid) : null;
+                    String previousStatus = myGrantStatus;
+                    String newStatus = mine != null ? mine.child("status").getValue(String.class) : null;
+                    myGrantStatus = newStatus != null ? newStatus : "";
+                    Long resolvedAt = mine != null ? mine.child("resolvedAt").getValue(Long.class) : null;
+                    myGrantResolvedAt = resolvedAt != null ? resolvedAt : 0L;
+
+                    if (!myGrantStatus.equals(previousStatus)) {
+                        if ("DENIED".equals(myGrantStatus)) {
+                            NotificationHelper.showError(requireContext(), "Request Denied",
+                                    "An Admin denied your manual control request.");
+                        } else if ("REVOKED".equals(myGrantStatus)) {
+                            NotificationHelper.showError(requireContext(), "Access Ended",
+                                    "An Admin ended your manual control access.");
+                        } else if (hasActiveGrant()) {
+                            Toast.makeText(getContext(), "Manual control access approved.", Toast.LENGTH_LONG).show();
+                        }
+                    }
+                    updateActuatorControls();
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                handleAccessRevoked("manualControlGrants", error);
+            }
+        };
+        manualControlGrantsRef.addValueEventListener(manualControlGrantsListener);
+
+        // Marks the start of the current Manual Mode "session" - a Farmer's
+        // grant only counts while its resolvedAt is >= this (see
+        // hasActiveGrant()), which is what makes a stale grant from an
+        // earlier session stop working the instant Manual Mode is turned
+        // off and back on, with no cleanup step needed on this side either.
+        manualModeEnabledAtRef = deviceRef.child("commands").child("manualModeEnabledAt");
+        manualModeEnabledAtListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!isAdded()) return;
+                Long value = snapshot.getValue(Long.class);
+                manualModeEnabledAt = value != null ? value : 0L;
+                updateActuatorControls();
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                handleAccessRevoked("commands/manualModeEnabledAt", error);
+            }
+        };
+        manualModeEnabledAtRef.addValueEventListener(manualModeEnabledAtListener);
 
         // actuatorStatus is the sole authoritative runtime actuator state path.
         // The legacy 'actuators' node is never written by current firmware
@@ -1147,6 +1307,57 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         return "ADMIN".equalsIgnoreCase(localPrefs.getString("user_role", "FARMER"));
     }
 
+    /**
+     * True only while this Farmer's own manual-control grant is APPROVED AND
+     * still belongs to the CURRENT Manual Mode session - mirrors the RTDB
+     * rule's own resolvedAt &gt;= manualModeEnabledAt check (Database_Helper's
+     * checkAdminOrGrantTask() re-verifies server-side on every command
+     * anyway; this is purely for deciding what the UI shows/enables).
+     */
+    private boolean hasActiveGrant() {
+        return "APPROVED".equals(myGrantStatus) && myGrantResolvedAt > 0 && myGrantResolvedAt >= manualModeEnabledAt;
+    }
+
+    /** Resolves the requesting farmer's display name (never trust a client-supplied one) before prompting the Admin. */
+    private void promptAdminForGrant(String farmerUid) {
+        dbHelper.getUserProfile(farmerUid)
+                .addOnSuccessListener(doc -> {
+                    if (!isAdded()) return;
+                    String name = (doc != null && doc.exists() && doc.getString("fullName") != null)
+                            ? doc.getString("fullName") : "A farmer";
+                    showGrantApprovalDialog(farmerUid, name);
+                })
+                .addOnFailureListener(e -> {
+                    if (!isAdded()) return;
+                    showGrantApprovalDialog(farmerUid, "A farmer");
+                });
+    }
+
+    private void showGrantApprovalDialog(String farmerUid, String requesterName) {
+        NotificationHelper.showTripleActionDialog(requireContext(), "Manual Control Request",
+                requesterName + " requests manual control access - to operate pumps, fans, and lights by hand. Approve?",
+                "Approve", "Deny", "Later",
+                new NotificationHelper.TripleActionCallback() {
+                    @Override
+                    public void onAction1() {
+                        dbHelper.resolveManualControlGrant(farmerUid, "APPROVED")
+                                .addOnFailureListener(e -> {
+                                    if (!isAdded()) return;
+                                    Toast.makeText(getContext(), "Unable to approve - it may have already been resolved.", Toast.LENGTH_SHORT).show();
+                                });
+                    }
+
+                    @Override
+                    public void onAction2() {
+                        dbHelper.resolveManualControlGrant(farmerUid, "DENIED")
+                                .addOnFailureListener(e -> {
+                                    if (!isAdded()) return;
+                                    Toast.makeText(getContext(), "Unable to deny - it may have already been resolved.", Toast.LENGTH_SHORT).show();
+                                });
+                    }
+                });
+    }
+
     // =========================================================
     // ACTUATOR UI SETUP — tap shows loading popup, not inline
     // =========================================================
@@ -1162,22 +1373,25 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         SwitchMaterial toggle = card.findViewById(R.id.switchActuator);
         if (toggle == null) return;
 
-        // Manual actuator control is Admin-only - Database_Helper.updateActuatorState()
-        // gates every write behind checkAdminTask(), and the RTDB commands node's
-        // .write rule requires role === 'ADMIN'. Without this check the switch was
-        // enabled for any signed-in Personnel/Farmer whenever Manual Mode was on,
-        // even though every command they sent was guaranteed to fail server-side.
-        boolean isAdmin = isAdminUser();
+        // Manual actuator control is Admin, or a Farmer with an active
+        // manual-control grant (see hasActiveGrant()) - Database_Helper.
+        // updateActuatorState() gates every write behind checkAdminOrGrantTask(),
+        // and the RTDB commands/$actuatorKey rule requires the same (Admin/
+        // developerTester, or a live APPROVED grant for the current Manual
+        // Mode session). Without this check the switch was enabled for any
+        // signed-in Personnel/Farmer whenever Manual Mode was on, even
+        // though every command they sent was guaranteed to fail server-side.
+        boolean canControl = isAdminUser() || hasActiveGrant();
 
         // Clear any previous listener first
         toggle.setOnCheckedChangeListener(null);
         // Confirmed firmware state is authoritative for both AUTO and MANUAL.
         toggle.setChecked(actuator.physicalRunning);
-        toggle.setEnabled(isAdmin && isManualMode && isCurrentlyOnline && !isSafetyLock && !isActuatorBusy);
-        toggle.setAlpha(isAdmin ? 1.0f : 0.6f);
+        toggle.setEnabled(canControl && isManualMode && isCurrentlyOnline && !isSafetyLock && !isActuatorBusy);
+        toggle.setAlpha(canControl ? 1.0f : 0.6f);
 
         toggle.setOnCheckedChangeListener((buttonView, checked) -> {
-            if (!isAdmin) {
+            if (!canControl) {
                 // Defense in depth: the switch is disabled above, but this
                 // mirrors the !isManualMode guard immediately below in case the
                 // listener still fires (e.g. accessibility tooling).
@@ -1825,17 +2039,18 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     }
 
     private void updateActuatorControls() {
-        // Same Admin-only gate as setupActuatorUI() - without it, this method
-        // (called from onModeSwitchChanged() and after every command
-        // completes) would re-enable the switches for a non-Admin right
-        // after setupActuatorUI() correctly disabled them.
+        // Same Admin-or-granted-Farmer gate as setupActuatorUI() - without
+        // it, this method (called from onModeSwitchChanged() and after
+        // every command completes) would re-enable the switches for
+        // someone who shouldn't have them right after setupActuatorUI()
+        // correctly disabled them.
         // !isActuatorBusy is required too - this is the same call sendActuatorCommand()/
         // btnTriggerRefill/btnResetSafety use right after setting isActuatorBusy = true
         // to lock the panel. Without it here, every switch was being re-enabled the
         // instant a command started, so a second tap mid-command (while the "Sending
         // command..."/"Validating..." popup was showing) went through, hijacked the
         // shared actuatorCommandGeneration tracking, and orphaned the first command's polling.
-        boolean enabled = isAdminUser() && isManualMode && isCurrentlyOnline && !isSafetyLock && !isActuatorBusy;
+        boolean enabled = (isAdminUser() || hasActiveGrant()) && isManualMode && isCurrentlyOnline && !isSafetyLock && !isActuatorBusy;
         setActuatorEnabled(actWaterPumpValve, enabled);
         setActuatorEnabled(actCanopyFan, enabled);
         setActuatorEnabled(actGrowLights, enabled);
@@ -2009,6 +2224,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
         Log.d(SENSOR_UI_TAG, "[SENSOR-UI] " + diagnostic);
         updateSensorUI();
+        maybeShowCoachMarkTour();
     }
 
     private boolean isAlertActive(DataSnapshot alerts, String key) {
@@ -2278,6 +2494,12 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (manualModeRef != null && manualModeListener != null) {
             manualModeRef.removeEventListener(manualModeListener);
         }
+        if (manualControlGrantsRef != null && manualControlGrantsListener != null) {
+            manualControlGrantsRef.removeEventListener(manualControlGrantsListener);
+        }
+        if (manualModeEnabledAtRef != null && manualModeEnabledAtListener != null) {
+            manualModeEnabledAtRef.removeEventListener(manualModeEnabledAtListener);
+        }
         if (actuatorStatusRef != null && actuatorStatusListener != null) {
             actuatorStatusRef.removeEventListener(actuatorStatusListener);
         }
@@ -2290,6 +2512,10 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (cycleListener != null) {
             cycleListener.remove();
             cycleListener = null;
+        }
+        if (coachMarkTour != null) {
+            coachMarkTour.finish();
+            coachMarkTour = null;
         }
         super.onDestroyView();
     }

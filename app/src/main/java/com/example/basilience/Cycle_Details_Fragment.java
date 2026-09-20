@@ -19,6 +19,7 @@ import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.ListenerRegistration;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class Cycle_Details_Fragment extends Fragment {
@@ -29,6 +30,8 @@ public class Cycle_Details_Fragment extends Fragment {
     private Database_Helper dbHelper;
     private ListenerRegistration cycleListener;
     private TextView tvCyclesState;
+    private CoachMarkTour coachMarkTour;
+    private NotificationHelper.LoadingHandle loadingHandle;
 
     public Cycle_Details_Fragment() {
         super(R.layout.cycle_main);
@@ -78,8 +81,22 @@ public class Cycle_Details_Fragment extends Fragment {
                         return;
                     }
                     btnAddCycle.setEnabled(false);
+                    // Disabling the button alone is an easy-to-miss signal (it just
+                    // dims slightly) for what can be a real Firestore round-trip -
+                    // this is the one visible "nothing happens for a moment" gap
+                    // found in an app-wide tap-responsiveness audit.
+                    loadingHandle = NotificationHelper.showLoading(requireContext(), "Checking current cycle...", () -> {
+                        if (!isAdded()) return;
+                        btnAddCycle.setEnabled(true);
+                        loadingHandle = null;
+                        NotificationHelper.showError(requireContext(), "Request timed out. Please try again.");
+                    });
                     dbHelper.getCycles(deviceId).addOnCompleteListener(task -> {
                         btnAddCycle.setEnabled(true);
+                        if (loadingHandle != null) {
+                            loadingHandle.dismiss();
+                            loadingHandle = null;
+                        }
                         if (!isAdded()) return;
                         if (!task.isSuccessful()) {
                             // ERROR: the cycles could not be read at all.
@@ -102,8 +119,30 @@ public class Cycle_Details_Fragment extends Fragment {
             }
         }
 
+        maybeShowCoachMarkTour(rv, btnAddCycle);
+
         // Fetch Cycles in Real-time
         startListeningToCycles();
+    }
+
+    /** Shows the guided Cycle Details walkthrough once, the first time this screen is ever shown. */
+    private void maybeShowCoachMarkTour(View recyclerCycles, View addCycleButton) {
+        SharedPreferences prefs = requireContext()
+                .getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
+        if (prefs.getBoolean("has_seen_cycle_details_tour", false)) {
+            return;
+        }
+        prefs.edit().putBoolean("has_seen_cycle_details_tour", true).apply();
+
+        List<CoachMarkTour.Step> steps = Arrays.asList(
+                new CoachMarkTour.Step(recyclerCycles, "Your growth cycles",
+                        "Tap a cycle to see its harvest history and record new harvests."),
+                new CoachMarkTour.Step(addCycleButton, "Start a new cycle",
+                        "Tap here when you're ready to begin the next growth cycle."));
+
+        coachMarkTour = new CoachMarkTour(requireActivity(), getViewLifecycleOwner(),
+                requireActivity().getOnBackPressedDispatcher(), steps, null);
+        coachMarkTour.start();
     }
 
 
@@ -217,6 +256,14 @@ public class Cycle_Details_Fragment extends Fragment {
         super.onDestroyView();
         if (cycleListener != null) {
             cycleListener.remove();
+        }
+        if (coachMarkTour != null) {
+            coachMarkTour.finish();
+            coachMarkTour = null;
+        }
+        if (loadingHandle != null) {
+            loadingHandle.dismiss();
+            loadingHandle = null;
         }
     }
 }

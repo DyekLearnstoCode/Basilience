@@ -112,6 +112,43 @@ public final class ChartRangeSegmenter {
         return segments;
     }
 
+    /**
+     * Averages consecutive entries down to roughly {@code maxPoints} points
+     * when the raw series is larger than that, so MPAndroidChart stays fast
+     * to render and pan/zoom/tap on a long, frequently-logged report -
+     * returned unchanged otherwise. For the plotted line only: callers must
+     * keep computing stats (average/high/low) and exports from the original,
+     * non-downsampled readings, never from this result.
+     *
+     * @param entries   series in x order
+     * @param maxPoints series at or below this size passes through untouched
+     */
+    @NonNull
+    public static List<Entry> downsample(@NonNull List<Entry> entries, int maxPoints) {
+        int size = entries.size();
+        if (maxPoints <= 0 || size <= maxPoints) {
+            return entries;
+        }
+
+        int stride = (int) Math.ceil(size / (double) maxPoints);
+        List<Entry> result = new ArrayList<>((size + stride - 1) / stride);
+
+        for (int start = 0; start < size; start += stride) {
+            int end = Math.min(start + stride, size);
+            float sumX = 0f;
+            float sumY = 0f;
+            for (int i = start; i < end; i++) {
+                Entry e = entries.get(i);
+                sumX += e.getX();
+                sumY += e.getY();
+            }
+            int count = end - start;
+            result.add(new Entry(sumX / count, sumY / count));
+        }
+
+        return result;
+    }
+
     /** Inclusive at both bounds - see the class note. */
     public static boolean isOutOfRange(float value, @Nullable Float min, @Nullable Float max) {
         if (min != null && value < min) return true;

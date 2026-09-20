@@ -2,6 +2,7 @@ package com.example.basilience;
 
 import android.app.DatePickerDialog;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
@@ -58,6 +59,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -72,6 +74,13 @@ public class SystemReportsFragment extends Fragment {
     // considered STABLE when at least this share of readings fell inside the
     // configured target range/threshold for the selected period.
     private static final double STABLE_WITHIN_TARGET_RATIO = 0.80;
+    // Above this many raw readings, the plotted line is downsampled (see
+    // ChartRangeSegmenter.downsample()) so MPAndroidChart stays fast to pan/
+    // zoom/tap on a long, frequently-logged report. Stats below (average/
+    // high/low/insight) and currentReadings (used by CSV/PDF export) always
+    // keep using every raw reading, never this thinned copy.
+    private static final int CHART_DOWNSAMPLE_THRESHOLD = 1500;
+    private static final int CHART_DOWNSAMPLE_TARGET_POINTS = 750;
 
     private Spinner spinnerCycle;
     private Spinner spinnerParameter;
@@ -91,6 +100,8 @@ public class SystemReportsFragment extends Fragment {
     private View dotInsightStatus, heroAccentEdge, cardInsightHero;
     private View reportContentContainer, noCyclesEmptyState;
     private TextView tvNoCyclesEmptyState;
+    private View periodSelectorRow;
+    private CoachMarkTour coachMarkTour;
     private String selectedDeviceId;
     private String userRole = RoleConstants.ROLE_FARMER;
     private long reportRequestGeneration = 0L;
@@ -218,6 +229,7 @@ public class SystemReportsFragment extends Fragment {
         btnMonth = view.findViewById(R.id.btnMonth);
         btnCustom = view.findViewById(R.id.btnCustom);
         btnShare = view.findViewById(R.id.btnShare);
+        periodSelectorRow = view.findViewById(R.id.periodSelectorRow);
         ImageButton btnInfo = view.findViewById(R.id.btnInfo);
         if (btnInfo != null) {
             btnInfo.setOnClickListener(v -> showInfoDialog());
@@ -283,6 +295,10 @@ public class SystemReportsFragment extends Fragment {
     public void onDestroyView() {
         super.onDestroyView();
         if (cyclesListener != null) cyclesListener.remove();
+        if (coachMarkTour != null) {
+            coachMarkTour.finish();
+            coachMarkTour = null;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -423,6 +439,39 @@ public class SystemReportsFragment extends Fragment {
     private void showReportContent() {
         if (reportContentContainer != null) reportContentContainer.setVisibility(View.VISIBLE);
         if (noCyclesEmptyState != null) noCyclesEmptyState.setVisibility(View.GONE);
+    }
+
+    /**
+     * Shows the guided Parameter Reports walkthrough once, the first time
+     * this screen has actually finished loading a report. Fired from
+     * loadReportData()'s success path (after renderReport()), not from
+     * showReportContent() - showReportContent() only means the spinners/
+     * period row exist, but loadReportData() immediately shows its own
+     * layoutLoading overlay for the initial report fetch right after, which
+     * raced with and covered the tour the same way Monitoring's
+     * sensorStabilizingOverlay did. Shared with FoggingReportsFragment: same
+     * "has_seen_reports_detail_tour" flag, since the two report screens are
+     * similar enough that seeing this tour once on either is enough.
+     */
+    private void maybeShowCoachMarkTour() {
+        SharedPreferences prefs = requireContext()
+                .getSharedPreferences("basilience_prefs", android.content.Context.MODE_PRIVATE);
+        if (prefs.getBoolean("has_seen_reports_detail_tour", false)) {
+            return;
+        }
+        prefs.edit().putBoolean("has_seen_reports_detail_tour", true).apply();
+
+        List<CoachMarkTour.Step> steps = Arrays.asList(
+                new CoachMarkTour.Step(spinnerCycle, "Choose a cycle",
+                        "Pick which growth cycle to look at."),
+                new CoachMarkTour.Step(spinnerParameter, "Choose a parameter",
+                        "pH, EC, temperature, and more."),
+                new CoachMarkTour.Step(periodSelectorRow, "Choose a time range",
+                        "Entire cycle, today, this week, this month, or a custom range."));
+
+        coachMarkTour = new CoachMarkTour(requireActivity(), getViewLifecycleOwner(),
+                requireActivity().getOnBackPressedDispatcher(), steps, null);
+        coachMarkTour.start();
     }
 
     // ------------------------------------------------------------------
@@ -734,6 +783,7 @@ public class SystemReportsFragment extends Fragment {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
                     hideLayoutLoading();
                     renderReport(filter, queryDocumentSnapshots);
+                    maybeShowCoachMarkTour();
                 })
                 .addOnFailureListener(e -> {
                     if (requestGeneration != reportRequestGeneration) return;
@@ -838,8 +888,15 @@ public class SystemReportsFragment extends Fragment {
         // dataset - see ChartRangeSegmenter for the crossing interpolation.
         Float rangeMin = configuredRangeMin(canonicalParameter);
         Float rangeMax = configuredRangeMax(canonicalParameter);
+        // entries.size() can be checked here, not after: it's still the raw,
+        // full-resolution count at this point, before this is applied. The
+        // earlier sum/high/low/values/readings above are unaffected - built
+        // from the raw loop before this line.
+        List<Entry> plottedEntries = entries.size() > CHART_DOWNSAMPLE_THRESHOLD
+                ? ChartRangeSegmenter.downsample(entries, CHART_DOWNSAMPLE_TARGET_POINTS)
+                : entries;
         List<ChartRangeSegmenter.Segment> segments =
-                ChartRangeSegmenter.segment(entries, rangeMin, rangeMax);
+                ChartRangeSegmenter.segment(plottedEntries, rangeMin, rangeMax);
 
         List<ILineDataSet> dataSets = new ArrayList<>(segments.size());
         boolean anyOutOfRange = false;
