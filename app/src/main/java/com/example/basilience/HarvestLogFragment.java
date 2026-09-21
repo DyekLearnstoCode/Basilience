@@ -30,6 +30,7 @@ import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.components.XAxis;
 import com.github.mikephil.charting.data.LineDataSet;
 import com.github.mikephil.charting.formatter.ValueFormatter;
+import com.google.android.gms.tasks.Task;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.firebase.Timestamp;
 import com.google.firebase.auth.FirebaseAuth;
@@ -81,6 +82,17 @@ public class HarvestLogFragment extends Fragment {
     private String currentHarvestSource = "MANUAL";
     private Harvest editingHarvest = null;
     private Cycle currentCycle = null;
+    // The exact physical measurement backing the CURRENT new-harvest attempt
+    // when currentHarvestSource == "SCALE" - null for MANUAL entries, and
+    // always null while editing an existing Harvest (see showHarvestDialog(),
+    // which hides "Read from Harvest Scale" entirely once harvest != null:
+    // editing history must never consume a brand-new physical measurement).
+    // Retained across the "Read from Harvest Scale" tap and the eventual
+    // Save tap so the measurement's identity (not just its weight) reaches
+    // addHarvestTransaction(cycleId, harvest, HarvestScaleReading) for
+    // atomic, idempotent consumption. Reset to null on every fresh manual
+    // entry and immediately after a successful save.
+    private HarvestScaleReading currentScaleReading = null;
     // deviceId of the Basilience Harvest Scale paired with this fragment's
     // device (Database_Helper.setHarvestScaleId()/getHarvestScaleId()) - a
     // separate physical unit per device, not a single shared scale. Null
@@ -332,13 +344,15 @@ public class HarvestLogFragment extends Fragment {
     }
 
     // "Read from Scale" path from the chooser above: fetches the harvest
-    // scale's latest stability-CONFIRMED reading (see
-    // Database_Helper.readLatestHarvestScaleReading()) and saves it
-    // directly as a new harvest entry, with a loading state while
-    // fetching and a success confirmation once saved - no intermediate
-    // form to review or edit first. (showHarvestDialog()'s own "Read from
-    // Harvest Scale" button is the alternative path for anyone who wants
-    // to review/adjust the value or add notes before saving.)
+    // scale's latest stability-CONFIRMED, UNCONSUMED reading (see
+    // Database_Helper.findUnconsumedHarvestScaleReading()) and saves it
+    // directly as a new harvest entry - atomically consuming that exact
+    // measurement in the same transaction (see addHarvestTransaction(String,
+    // Harvest, HarvestScaleReading)) - with a loading state while fetching
+    // and a success confirmation once saved, no intermediate form to review
+    // or edit first. (showHarvestDialog()'s own "Read from Harvest Scale"
+    // button is the alternative path for anyone who wants to review/adjust
+    // the value or add notes before saving.)
     private void addHarvestFromScale() {
         if (isHarvestSubmitting) return;
         if (currentCycle == null) {
@@ -353,23 +367,25 @@ public class HarvestLogFragment extends Fragment {
             NotificationHelper.showError(requireContext(), "Request timed out. Please refresh before trying again.");
         });
 
-        dbHelper.readLatestHarvestScaleReading(pairedHarvestScaleId)
-                .addOnSuccessListener(weightGrams -> {
+        dbHelper.findUnconsumedHarvestScaleReading(pairedHarvestScaleId)
+                .addOnSuccessListener(reading -> {
                     if (!isAdded()) { isHarvestSubmitting = false; return; }
 
                     currentHarvestSource = "SCALE";
+                    currentScaleReading  = reading;
                     Harvest newHarvest = new Harvest(
                             Timestamp.now(),
-                            weightGrams,
+                            reading.getGrams(),
                             FirebaseAuth.getInstance().getUid(),
                             userName,
                             currentHarvestSource,
                             ""
                     );
 
-                    dbHelper.addHarvestTransaction(cycleId, newHarvest)
+                    dbHelper.addHarvestTransaction(cycleId, newHarvest, reading)
                             .addOnSuccessListener(aVoid -> {
                                 isHarvestSubmitting = false;
+                                currentScaleReading = null;
                                 if (!isAdded()) return;
                                 dismissLoading(() -> {
                                     if (!isAdded()) return;
@@ -379,12 +395,13 @@ public class HarvestLogFragment extends Fragment {
                             })
                             .addOnFailureListener(e -> {
                                 isHarvestSubmitting = false;
+                                currentScaleReading = null;
                                 if (!isAdded()) return;
                                 dismissLoading();
                                 Log.e(TAG, "Failed to save scale-read harvest for cycleId=" + cycleId, e);
                                 NotificationHelper.showError(requireContext(), specificOrGenericMessage(e,
                                         "Unable to save this harvest entry. Please try again.",
-                                        FirebaseFirestoreException.Code.ABORTED));
+                                        FirebaseFirestoreException.Code.ABORTED, FirebaseFirestoreException.Code.ALREADY_EXISTS));
                             });
                 })
                 .addOnFailureListener(e -> {
@@ -392,8 +409,9 @@ public class HarvestLogFragment extends Fragment {
                     if (!isAdded()) return;
                     dismissLoading();
                     Log.e(TAG, "Failed to read harvest scale reading", e);
-                    NotificationHelper.showError(getContext(),
-                            "Unable to read the harvest scale. Check that it's powered on, connected to Wi-Fi, and has a stable weighing on the platform.");
+                    NotificationHelper.showError(getContext(), specificOrGenericMessage(e,
+                            "Unable to read the harvest scale. Check that it's powered on, connected to Wi-Fi, and has a stable weighing on the platform.",
+                            FirebaseFirestoreException.Code.ABORTED));
                 });
     }
 
@@ -418,17 +436,22 @@ public class HarvestLogFragment extends Fragment {
         // and Database_Helper.setHarvestScaleId()/getHarvestScaleId(). No
         // pairing means nothing to read from, so the control stays hidden
         // rather than offering a button that can only ever fail.
-        if (pairedHarvestScaleId == null || pairedHarvestScaleId.isEmpty()) {
+        //
+        // Also hidden outright while EDITING (harvest != null): scale
+        // capture is only for creating a NEW Harvest. Editing history must
+        // never consume a brand-new physical measurement - see Part W.
+        if (harvest != null || pairedHarvestScaleId == null || pairedHarvestScaleId.isEmpty()) {
             btnReadSensor.setVisibility(View.GONE);
         } else {
         btnReadSensor.setVisibility(View.VISIBLE);
         btnReadSensor.setOnClickListener(v -> {
             btnReadSensor.setEnabled(false);
-            // This reads the scale's most recent STABILITY-CONFIRMED entry,
-            // not the raw live field it overwrites every 5 seconds
-            // regardless of settling.
-            dbHelper.readLatestHarvestScaleReading(pairedHarvestScaleId)
-                    .addOnSuccessListener(weightGrams -> {
+            // This reads the scale's most recent STABILITY-CONFIRMED,
+            // UNCONSUMED entry - not the raw live field it overwrites every
+            // 5 seconds regardless of settling, and not one already turned
+            // into an earlier Harvest Log (see findUnconsumedHarvestScaleReading()).
+            dbHelper.findUnconsumedHarvestScaleReading(pairedHarvestScaleId)
+                    .addOnSuccessListener(reading -> {
                         if (!isAdded()) return;
                         btnReadSensor.setEnabled(true);
                         if (layoutWeight != null) layoutWeight.setError(null);
@@ -438,21 +461,47 @@ public class HarvestLogFragment extends Fragment {
                         // number. Locale.US pins the decimal separator to '.'
                         // regardless of device locale, matching what parseDouble
                         // always expects.
-                        etWeight.setText(String.format(Locale.US, "%.1f", weightGrams));
+                        etWeight.setText(String.format(Locale.US, "%.1f", reading.getGrams()));
                         currentHarvestSource = "SCALE";
+                        // Retained until Save (or the dialog is reopened
+                        // fresh) so the measurement's IDENTITY - not just its
+                        // weight - reaches addHarvestTransaction() for atomic,
+                        // idempotent consumption.
+                        currentScaleReading = reading;
+                        // Locked immediately after populating - a SCALE-
+                        // sourced Harvest's weight must always equal the
+                        // physical measurement it's consuming. Previously
+                        // this field stayed freely editable after a sensor
+                        // read, so a user could type over the real value
+                        // while Save still attached currentScaleReading's
+                        // identity, silently logging a number the scale
+                        // never actually produced. Someone who wants a
+                        // different number now has to cancel and use Manual
+                        // Entry instead, which never attaches a scale
+                        // reading. Notes remain freely editable.
+                        etWeight.setEnabled(false);
+                        if (layoutWeight != null) {
+                            layoutWeight.setHelperText("Locked to the scale reading. Use Manual Entry for a different weight.");
+                        }
                     })
                     .addOnFailureListener(e -> {
                         if (!isAdded()) return;
                         btnReadSensor.setEnabled(true);
                         Log.e(TAG, "Failed to read harvest scale reading", e);
-                        NotificationHelper.showError(getContext(),
-                                "Unable to read the harvest scale. Check that it's powered on, connected to Wi-Fi, and has a stable weighing on the platform.");
+                        NotificationHelper.showError(getContext(), specificOrGenericMessage(e,
+                                "Unable to read the harvest scale. Check that it's powered on, connected to Wi-Fi, and has a stable weighing on the platform.",
+                                FirebaseFirestoreException.Code.ABORTED));
                     });
         });
         }
 
         editingHarvest = harvest;
         currentHarvestSource = "MANUAL";
+        // Fresh dialog open (new entry or edit) always starts with no scale
+        // measurement attached - only the button handler above sets one, and
+        // only ever for a new (non-editing) entry, since the button doesn't
+        // exist while editing.
+        currentScaleReading = null;
         String dialogTitle = "Log New Harvest";
 
         if (harvest != null) {
@@ -901,9 +950,23 @@ public class HarvestLogFragment extends Fragment {
             saveButton.setEnabled(true);
             NotificationHelper.showError(requireContext(), "Request timed out. Please refresh before trying again.");
         });
-        dbHelper.addHarvestTransaction(cycleId, newHarvest)
-                .addOnSuccessListener(aVoid -> {
+
+        // SCALE only when both the source AND a retained measurement agree -
+        // currentScaleReading is reset to null on every fresh dialog open
+        // and after every save, so a stale object from a previous entry can
+        // never leak into this one. If source says SCALE but the reading is
+        // somehow missing, fall back to the plain manual path rather than
+        // calling the scale overload with a null reading (which rejects
+        // outright) - correctness over a confusing dead-end error for what
+        // is, from the user's perspective, just a harvest they're trying to
+        // save.
+        Task<Void> saveTask = "SCALE".equals(currentHarvestSource) && currentScaleReading != null
+                ? dbHelper.addHarvestTransaction(cycleId, newHarvest, currentScaleReading)
+                : dbHelper.addHarvestTransaction(cycleId, newHarvest);
+
+        saveTask.addOnSuccessListener(aVoid -> {
                     isHarvestSubmitting = false;
+                    currentScaleReading = null;
                     if (!isAdded()) return;
                     dismissLoading(() -> {
                         if (!isAdded()) return;
@@ -914,13 +977,14 @@ public class HarvestLogFragment extends Fragment {
                 })
                 .addOnFailureListener(e -> {
                     isHarvestSubmitting = false;
+                    currentScaleReading = null;
                     if (!isAdded()) return;
                     dismissLoading();
                     saveButton.setEnabled(true);
                     Log.e(TAG, "Failed to save harvest for cycleId=" + cycleId, e);
                     NotificationHelper.showError(requireContext(), specificOrGenericMessage(e,
                             "Unable to save this harvest entry. Please try again.",
-                            FirebaseFirestoreException.Code.ABORTED));
+                            FirebaseFirestoreException.Code.ABORTED, FirebaseFirestoreException.Code.ALREADY_EXISTS));
                 });
     }
 
@@ -969,6 +1033,16 @@ public class HarvestLogFragment extends Fragment {
     private static String specificOrGenericMessage(Exception e, String genericMessage,
                                                      FirebaseFirestoreException.Code... surfaceCodes) {
         if (e instanceof IllegalArgumentException && e.getMessage() != null) {
+            return e.getMessage();
+        }
+        // Database_Helper.findUnconsumedHarvestScaleReading() throws exactly
+        // this for its three distinct, deliberately user-safe outcomes: no
+        // new reading, every recent reading already consumed, or (via
+        // HarvestScaleReading's own staleness filtering) nothing recent
+        // enough to trust - see Part P/X. Surfacing it here instead of a
+        // generic connectivity message is what makes those three read as
+        // different situations rather than one "check WiFi" catch-all.
+        if (e instanceof IllegalStateException && e.getMessage() != null) {
             return e.getMessage();
         }
         if (e instanceof FirebaseFirestoreException) {

@@ -319,6 +319,14 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private String myGrantStatus = "";
     private long myGrantResolvedAt = 0L;
     private long manualModeEnabledAt = 0L;
+    // True once manualControlGrantsListener has delivered its first snapshot
+    // for this Fragment instance - the very first callback is just catching
+    // up on whatever the grant already was before this screen opened, not a
+    // live change, so it must not trigger the DENIED/REVOKED/APPROVED
+    // toasts below (myGrantStatus otherwise always starts at "" for a fresh
+    // instance, making an already-APPROVED grant look like a brand new
+    // transition every single time this screen is reopened).
+    private boolean manualControlGrantsFirstLoadDone = false;
 
     private static final long SETUP_AP_RECHECK_INTERVAL_MS = 15_000L;
     private TextView tvConnectionStatus;
@@ -819,7 +827,16 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (v != null) {
             SwitchMaterial modeSwitch = v.findViewById(R.id.switchMode);
             if (modeSwitch != null) {
-                boolean modeSwitchEnabled = isAdminUser() && isCurrentlyOnline;
+                // Admin's tap actually flips manualMode, which only makes sense
+                // while the device is online. A Farmer's tap never changes
+                // manualMode itself (the listener always snaps it back) - it only
+                // requests/reports on their own grant, which is pure RTDB
+                // bookkeeping independent of the device's current connectivity,
+                // so their tap must always reach the listener regardless of
+                // isCurrentlyOnline. Leaving this Android-disabled for a Farmer
+                // (as it was before) would silently swallow their tap before it
+                // ever reaches that listener.
+                boolean modeSwitchEnabled = isAdminUser() ? isCurrentlyOnline : true;
                 modeSwitch.setEnabled(modeSwitchEnabled);
                 modeSwitch.setAlpha(modeSwitchEnabled ? 1.0f : 0.6f);
             }
@@ -1022,23 +1039,61 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                                 new android.widget.CompoundButton.OnCheckedChangeListener[1];
                         fullListenerRef[0] = (buttonView, checked) -> {
                             if (!isAdminUser()) {
-                                // Turning Manual Mode itself on or off is still
-                                // Admin-only - Database_Helper.updateManualMode()
+                                // Turning Manual Mode ON is still Admin-only,
+                                // always - Database_Helper.updateManualMode()
                                 // and the RTDB commands/manualMode rule both
-                                // still enforce this unconditionally. A Farmer
-                                // never directly changes this switch's real
-                                // value; tapping it only requests (or reports
-                                // on) their own manual-control grant, which -
-                                // once approved - unlocks the actuator switches
-                                // below without needing this switch to change.
+                                // still enforce that unconditionally. A Farmer
+                                // with an active grant CAN turn it back OFF
+                                // though, ending their own session without
+                                // waiting on an Admin (see endManualModeSession()
+                                // and the matching commands/manualMode rule
+                                // clause: newData.val() === false only). Snap
+                                // the switch back first either way - the real
+                                // value only ever changes once the write this
+                                // branch triggers actually lands and
+                                // manualModeListener picks it up.
+                                boolean attemptingTurnOff = isManualMode && !checked;
                                 modeSwitch.setOnCheckedChangeListener(null);
                                 modeSwitch.setChecked(isManualMode);
                                 modeSwitch.setOnCheckedChangeListener(fullListenerRef[0]);
 
-                                if (hasActiveGrant()) {
+                                if (attemptingTurnOff && hasActiveGrant()) {
+                                    NotificationHelper.showConfirmation(requireContext(), "Turn Off Manual Mode",
+                                            "End your manual control session? Pumps, fans, and lights will return to automatic control.",
+                                            "Turn Off", "Cancel", () -> {
+                                                dbHelper.endManualModeSession()
+                                                        .addOnFailureListener(e -> {
+                                                            if (!isAdded()) return;
+                                                            NotificationHelper.showError(requireContext(),
+                                                                    "Unable to turn off Manual Mode. Please try again.");
+                                                        });
+                                            });
+                                } else if (isManualMode && hasActiveGrant()) {
+                                    // hasActiveGrant() alone only means "my APPROVED
+                                    // record is still valid for whatever session
+                                    // manualModeEnabledAt currently points at" - it
+                                    // says nothing about whether Manual Mode is
+                                    // actually on right now. A grant can outlive a
+                                    // session that already ended (e.g. this Farmer
+                                    // just used endManualModeSession() above, or an
+                                    // Admin turned it off) without being cleared,
+                                    // since nothing resets manualControlGrants when
+                                    // manualMode flips off. Gating on isManualMode
+                                    // too is what stops that stale-but-technically-
+                                    // valid record from telling the Farmer they
+                                    // already have access when nothing is actually
+                                    // on - the next real updateManualMode(true) always
+                                    // stamps a fresh manualModeEnabledAt anyway, so
+                                    // this old grant will need re-approval regardless.
                                     Toast.makeText(getContext(), "You already have manual control access.", Toast.LENGTH_SHORT).show();
                                 } else if ("PENDING".equals(myGrantStatus)) {
                                     Toast.makeText(getContext(), "Your request is waiting for an Admin to approve it.", Toast.LENGTH_SHORT).show();
+                                } else if (!isCurrentlyOnline) {
+                                    // Matches Admin's own switch, which is
+                                    // Android-disabled outright while offline -
+                                    // no point asking for control of a device
+                                    // that isn't there right now.
+                                    Toast.makeText(getContext(), "Device is offline. Manual control isn't available right now.", Toast.LENGTH_LONG).show();
                                 } else {
                                     NotificationHelper.showConfirmation(requireContext(), "Request Manual Control",
                                             "Ask an Admin to let you control pumps, fans, and lights by hand?",
@@ -1123,7 +1178,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                     Long resolvedAt = mine != null ? mine.child("resolvedAt").getValue(Long.class) : null;
                     myGrantResolvedAt = resolvedAt != null ? resolvedAt : 0L;
 
-                    if (!myGrantStatus.equals(previousStatus)) {
+                    if (manualControlGrantsFirstLoadDone && !myGrantStatus.equals(previousStatus)) {
                         if ("DENIED".equals(myGrantStatus)) {
                             NotificationHelper.showError(requireContext(), "Request Denied",
                                     "An Admin denied your manual control request.");
@@ -1134,6 +1189,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                             Toast.makeText(getContext(), "Manual control access approved.", Toast.LENGTH_LONG).show();
                         }
                     }
+                    manualControlGrantsFirstLoadDone = true;
                     updateActuatorControls();
                 }
             }
@@ -2411,7 +2467,16 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (v != null) {
             SwitchMaterial modeSwitch = v.findViewById(R.id.switchMode);
             if (modeSwitch != null) {
-                boolean modeSwitchEnabled = isAdminUser() && isCurrentlyOnline;
+                // Admin's tap actually flips manualMode, which only makes sense
+                // while the device is online. A Farmer's tap never changes
+                // manualMode itself (the listener always snaps it back) - it only
+                // requests/reports on their own grant, which is pure RTDB
+                // bookkeeping independent of the device's current connectivity,
+                // so their tap must always reach the listener regardless of
+                // isCurrentlyOnline. Leaving this Android-disabled for a Farmer
+                // (as it was before) would silently swallow their tap before it
+                // ever reaches that listener.
+                boolean modeSwitchEnabled = isAdminUser() ? isCurrentlyOnline : true;
                 modeSwitch.setEnabled(modeSwitchEnabled);
                 modeSwitch.setAlpha(modeSwitchEnabled ? 1.0f : 0.6f);
             }

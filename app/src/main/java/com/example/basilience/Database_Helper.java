@@ -8,6 +8,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 import com.google.android.gms.tasks.TaskCompletionSource;
@@ -38,8 +39,10 @@ import com.google.firebase.database.ServerValue;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Database_Helper {
@@ -53,6 +56,17 @@ public class Database_Helper {
     // Must match firestore.rules' isNotDuplicateHarvest() guard window exactly -
     // see addHarvestTransaction()'s duplicate-submission check.
     private static final long HARVEST_DUPLICATE_GUARD_MS = 60_000L;
+
+    // A scale reading must not remain reusable indefinitely - see
+    // findUnconsumedHarvestScaleReading(). 30 minutes.
+    private static final long HARVEST_SCALE_MAX_READING_AGE_MS = 30 * 60 * 1000L;
+
+    // How many of the most recent RTDB harvests/ entries to consider as
+    // candidates - bounded on purpose (never an unbounded/full-history
+    // read), and chosen to exactly match Firestore's own whereIn() cap of
+    // 10 values, so the consumption check below is a single query rather
+    // than one read per candidate.
+    private static final int HARVEST_SCALE_CANDIDATE_WINDOW = 10;
 
     private String selectedDeviceId;
     private String cachedRole;
@@ -490,24 +504,59 @@ public class Database_Helper {
                 });
     }
 
+    // Firestore document IDs cannot contain '/'. scaleDeviceId and RTDB push
+    // keys are both expected to already be safe (device IDs are
+    // alphanumeric+hyphen; push keys use only [0-9A-Za-z_-]), but this is a
+    // defensive normalization against a malformed/legacy value ever
+    // producing an invalid Firestore document ID.
+    private static String harvestScaleConsumptionDocId(String scaleDeviceId, String measurementId) {
+        return (scaleDeviceId + "_" + measurementId).replace("/", "_");
+    }
+
     /**
-     * One-shot read of the MOST RECENT entry under
+     * Finds the newest UNCONSUMED, non-stale, valid reading under
      * devices/{scaleDeviceId}/harvestScale/harvests - the standalone
-     * BasilienceHarvestScale firmware's stability-CONFIRMED reading (see
-     * FirebaseManager::uploadWeight() in that firmware: it only pushes an
-     * entry once weight has held stable for STABLE_HOLD_MS across
-     * STABLE_READINGS consecutive samples). Deliberately NOT
-     * harvestScale/liveWeight, which the scale overwrites every 5 seconds
-     * unconditionally - a raw in-flux reading, not a trustworthy one to
-     * log a harvest with.
+     * BasilienceHarvestScale firmware's stability-CONFIRMED measurements
+     * (see stagePendingWeight()/syncPendingWeight() in that firmware).
+     * Deliberately NOT harvestScale/liveWeight, which the scale overwrites
+     * every 5 seconds unconditionally - a raw in-flux reading, not a
+     * trustworthy one to log a harvest with.
+     *
+     * Replaces the old readLatestHarvestScaleReading(), which returned a
+     * bare Double: that discarded the measurement's identity (the RTDB push
+     * key) and timestamps entirely, so the app could not tell a genuinely
+     * new reading apart from one already used for an earlier Harvest, or
+     * from a stale reading from hours/days ago. This method:
+     *   1. Reads a BOUNDED window of the most recent entries (never the
+     *      full history) - HARVEST_SCALE_CANDIDATE_WINDOW.
+     *   2. Discards any entry with no verifiable capturedAt (legacy, or the
+     *      scale could not establish/reconstruct when it was captured - see
+     *      HarvestScaleReading.effectiveTimestampEpochSec(), which never
+     *      falls back to syncedAt for this) or older than
+     *      HARVEST_SCALE_MAX_READING_AGE_MS. If the single newest entry in
+     *      the window is exactly this unverifiable case, that's surfaced as
+     *      its own specific error rather than the generic "no reading"
+     *      message - see newestEntryUnverifiedCaptureTime below.
+     *   3. Checks harvestScaleConsumptions/{scaleDeviceId_measurementId} for
+     *      every surviving candidate in ONE bounded Firestore whereIn()
+     *      query (capped at 10, which is exactly this method's own
+     *      candidate window - never N sequential per-candidate reads).
+     *   4. Returns the newest candidate with no consumption record. Never
+     *      falls back to an already-consumed measurement.
+     *
+     * RTDB is the source of truth for the measurement itself; Firestore
+     * (harvestScaleConsumptions) is the source of truth for whether it's
+     * already been turned into a Harvest Log - the two systems can't share
+     * one atomic transaction, so idempotency lives entirely in Firestore
+     * (see addHarvestTransaction(String, Harvest, HarvestScaleReading)).
      *
      * A separate deviceId parameter (not this class's own
-     * selectedDeviceId-scoped grow-chamber references above) because the
-     * scale is its own device, not one of the grow-chamber devices this
+     * selectedDeviceId-scoped grow-chamber references elsewhere) because
+     * the scale is its own device, not one of the grow-chamber devices this
      * class is normally scoped to.
      */
-    public Task<Double> readLatestHarvestScaleReading(String scaleDeviceId) {
-        TaskCompletionSource<Double> completion = new TaskCompletionSource<>();
+    public Task<HarvestScaleReading> findUnconsumedHarvestScaleReading(String scaleDeviceId) {
+        TaskCompletionSource<HarvestScaleReading> completion = new TaskCompletionSource<>();
 
         // addListenerForSingleValueEvent has no built-in timeout: if this
         // phone has no path to Firebase at all (airplane mode, no data
@@ -520,14 +569,15 @@ public class Database_Helper {
                 new java.util.concurrent.TimeoutException("Timed out waiting for harvest scale reading"));
         timeoutHandler.postDelayed(timeoutRunnable, 10000);
 
+        final String noNewReadingMessage =
+                "No new Harvest Scale measurement is available. Place basil on the scale and wait until the reading is saved.";
+
         rtdb.getReference("devices")
                 .child(scaleDeviceId)
                 .child("harvestScale")
                 .child("harvests")
-                // Firebase push IDs sort chronologically, so limitToLast(1)
-                // is the most recently confirmed stable weighing.
                 .orderByKey()
-                .limitToLast(1)
+                .limitToLast(HARVEST_SCALE_CANDIDATE_WINDOW)
                 .addListenerForSingleValueEvent(new com.google.firebase.database.ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
@@ -535,17 +585,127 @@ public class Database_Helper {
                         if (completion.getTask().isComplete()) return; // already timed out
 
                         if (!snapshot.exists() || !snapshot.hasChildren()) {
-                            completion.setException(new IllegalStateException("Harvest scale has no confirmed reading yet"));
+                            completion.setException(new IllegalStateException(noNewReadingMessage));
                             return;
                         }
 
-                        DataSnapshot latest = snapshot.getChildren().iterator().next();
-                        Double grams = latest.child("grams").getValue(Double.class);
-                        if (grams == null) {
-                            completion.setException(new IllegalStateException("Harvest scale reading is missing a weight value"));
-                        } else {
-                            completion.setResult(grams);
+                        // RTDB returns children in ascending key order;
+                        // newest-first matches the "return the NEWEST
+                        // unconsumed measurement" requirement.
+                        List<DataSnapshot> children = new ArrayList<>();
+                        for (DataSnapshot child : snapshot.getChildren()) children.add(child);
+                        Collections.reverse(children);
+
+                        long nowMs = System.currentTimeMillis();
+                        List<HarvestScaleReading> candidates = new ArrayList<>();
+                        List<String> candidateDocIds = new ArrayList<>();
+                        // The newest entry in the window that actually has a
+                        // grams value, checked once, regardless of whether it
+                        // ends up a usable candidate - used below only if no
+                        // usable candidate is found, to tell "nothing new was
+                        // weighed" apart from "the most recent weighing
+                        // synced, but its capture time is unverifiable" (see
+                        // HarvestScaleReading.effectiveTimestampEpochSec()).
+                        boolean checkedNewestEntry = false;
+                        boolean newestEntryUnverifiedCaptureTime = false;
+
+                        for (DataSnapshot child : children) {
+                            Double grams = child.child("grams").getValue(Double.class);
+                            if (grams == null || child.getKey() == null) continue;
+
+                            // Read as Double, not Long: the firmware writes
+                            // these via FirebaseJson as doubles (to sidestep
+                            // an unverified integer-overload set on that
+                            // library), so RTDB may hand them back in a
+                            // float-shaped representation that a direct
+                            // getValue(Long.class) coercion isn't guaranteed
+                            // to accept. Double.class accepts any JSON
+                            // number regardless of shape.
+                            Double capturedAtRaw = child.child("capturedAt").getValue(Double.class);
+                            Double syncedAtRaw = child.child("syncedAt").getValue(Double.class);
+                            long capturedAtSec = capturedAtRaw != null ? Math.round(capturedAtRaw) : 0L;
+                            long syncedAtSec = syncedAtRaw != null ? Math.round(syncedAtRaw) : 0L;
+
+                            HarvestScaleReading reading = new HarvestScaleReading(
+                                    child.getKey(), scaleDeviceId, grams, capturedAtSec, syncedAtSec);
+
+                            if (!checkedNewestEntry) {
+                                checkedNewestEntry = true;
+                                newestEntryUnverifiedCaptureTime = capturedAtSec <= 0;
+                            }
+
+                            long effectiveSec = reading.effectiveTimestampEpochSec();
+                            if (effectiveSec <= 0) {
+                                // Legacy entry (pre-dates capturedAt/syncedAt),
+                                // or the scale genuinely could not establish
+                                // (or reconstruct) when this was captured -
+                                // unverifiable age, must not masquerade as a
+                                // fresh reading by falling back to syncedAt.
+                                continue;
+                            }
+                            long ageMs = nowMs - effectiveSec * 1000L;
+                            if (ageMs < 0 || ageMs > HARVEST_SCALE_MAX_READING_AGE_MS) {
+                                // Too old, or a clock-skew value that looks
+                                // like it's from the future - equally
+                                // untrustworthy either way.
+                                continue;
+                            }
+
+                            candidates.add(reading);
+                            candidateDocIds.add(harvestScaleConsumptionDocId(scaleDeviceId, reading.getMeasurementId()));
                         }
+
+                        if (candidates.isEmpty()) {
+                            // Distinguish "nothing new was weighed at all"
+                            // from "the most recent weighing synced, but the
+                            // scale could not verify when it was actually
+                            // captured" (e.g. it rebooted between capture and
+                            // sync - see BasilienceHarvestScale.ino) - the
+                            // latter must not be silently treated the same as
+                            // no reading, since a real synced measurement DID
+                            // arrive and the farmer needs to know why it
+                            // can't be used automatically.
+                            if (newestEntryUnverifiedCaptureTime) {
+                                completion.setException(new IllegalStateException(
+                                        "This scale measurement synced successfully, but its capture time could not be verified. Please weigh the harvest again."));
+                            } else {
+                                completion.setException(new IllegalStateException(noNewReadingMessage));
+                            }
+                            return;
+                        }
+
+                        // ONE bounded query - whereIn() caps at 10 values,
+                        // which is exactly HARVEST_SCALE_CANDIDATE_WINDOW -
+                        // instead of a sequential read per candidate.
+                        db.collection("harvestScaleConsumptions")
+                                .whereIn(FieldPath.documentId(), candidateDocIds)
+                                .get()
+                                .addOnSuccessListener(consumedSnap -> {
+                                    if (completion.getTask().isComplete()) return;
+
+                                    Set<String> consumedDocIds = new HashSet<>();
+                                    for (DocumentSnapshot doc : consumedSnap.getDocuments()) {
+                                        consumedDocIds.add(doc.getId());
+                                    }
+
+                                    for (HarvestScaleReading candidate : candidates) {
+                                        String docId = harvestScaleConsumptionDocId(scaleDeviceId, candidate.getMeasurementId());
+                                        if (!consumedDocIds.contains(docId)) {
+                                            completion.setResult(candidate);
+                                            return;
+                                        }
+                                    }
+
+                                    // Every candidate in the window is
+                                    // already consumed - distinct from "no
+                                    // candidates at all" so the UI can tell
+                                    // the user what actually happened.
+                                    completion.setException(new IllegalStateException(
+                                            "This Harvest Scale measurement has already been recorded. Please weigh the new harvest before trying again."));
+                                })
+                                .addOnFailureListener(e -> {
+                                    if (!completion.getTask().isComplete()) completion.setException(e);
+                                });
                     }
 
                     @Override
@@ -764,33 +924,76 @@ public class Database_Helper {
 
             String uid = getCurrentUid();
             if (uid == null || selectedDeviceId == null || selectedDeviceId.isEmpty()) {
+                Log.e(TAG, "[GRANT-CHECK] not logged in / no device selected");
                 return Tasks.forException(new Exception("Not logged in"));
             }
             DatabaseReference deviceRef = rtdb.getReference("devices").child(selectedDeviceId);
 
             return deviceRef.child("manualControlGrants").child(uid).get().continueWithTask(grantTask -> {
                 if (!grantTask.isSuccessful() || grantTask.getResult() == null) {
+                    Log.e(TAG, "[GRANT-CHECK] grant read failed uid=" + uid, grantTask.getException());
                     return Tasks.forException(new IllegalStateException(
                             "You do not have manual control access. Request access first."));
                 }
                 DataSnapshot grant = grantTask.getResult();
                 String grantStatus = grant.child("status").getValue(String.class);
                 Long resolvedAt = grant.child("resolvedAt").getValue(Long.class);
+                Log.d(TAG, "[GRANT-CHECK] uid=" + uid + " grantStatus=" + grantStatus + " resolvedAt=" + resolvedAt);
                 if (!"APPROVED".equals(grantStatus) || resolvedAt == null) {
+                    Log.e(TAG, "[GRANT-CHECK] rejected: not APPROVED or no resolvedAt");
                     return Tasks.forException(new IllegalStateException(
                             "You do not have manual control access. Request access first."));
                 }
                 return deviceRef.child("commands").child("manualModeEnabledAt").get().continueWithTask(sessionTask -> {
-                    Long sessionStart = sessionTask.isSuccessful() && sessionTask.getResult() != null
-                            ? sessionTask.getResult().getValue(Long.class) : null;
-                    if (sessionStart == null || resolvedAt < sessionStart) {
+                    if (!sessionTask.isSuccessful()) {
+                        Log.e(TAG, "[GRANT-CHECK] manualModeEnabledAt read failed", sessionTask.getException());
                         return Tasks.forException(new IllegalStateException(
                                 "Your manual control access has expired. Please request again."));
                     }
+                    DataSnapshot sessionSnapshot = sessionTask.getResult();
+                    Long sessionStart = sessionSnapshot != null ? sessionSnapshot.getValue(Long.class) : null;
+                    Log.d(TAG, "[GRANT-CHECK] manualModeEnabledAt=" + sessionStart + " (exists="
+                            + (sessionSnapshot != null && sessionSnapshot.exists()) + ") resolvedAt=" + resolvedAt);
+                    // A missing manualModeEnabledAt means Manual Mode has
+                    // been on since before this field was ever stamped (e.g.
+                    // a session that predates this feature) - treat that as
+                    // no known session start, so any APPROVED grant counts,
+                    // matching the RTDB rule's own !exists() OR clause.
+                    if (sessionStart != null && resolvedAt < sessionStart) {
+                        Log.e(TAG, "[GRANT-CHECK] rejected: resolvedAt < manualModeEnabledAt (stale session)");
+                        return Tasks.forException(new IllegalStateException(
+                                "Your manual control access has expired. Please request again."));
+                    }
+                    Log.d(TAG, "[GRANT-CHECK] passed");
                     return Tasks.forResult(null);
                 });
             });
         });
+    }
+
+    /**
+     * Ends the current Manual Mode session by writing commands/manualMode =
+     * false only - unlike updateManualMode(false) (Admin's own switch),
+     * this does not also reset every individual actuator command, since the
+     * RTDB rule only ever lets a Farmer write manualMode to false (never
+     * true) and only as a single-path write. Firmware ignores the commands
+     * node entirely once manualMode is false and resumes its own automatic
+     * control loop, so nothing is left "stuck on" by skipping that reset
+     * here. Gated by checkAdminOrGrantTask() - callable by Admin too, but
+     * Admin's own switch already covers that case; this exists for a
+     * Farmer with an active grant to end their own session without waiting
+     * on an Admin.
+     */
+    public Task<Void> endManualModeSession() {
+        if (selectedDeviceId == null || selectedDeviceId.isEmpty())
+            return Tasks.forException(new Exception("No device selected"));
+
+        return checkAdminOrGrantTask()
+                .addOnFailureListener(e -> Log.e(TAG, "[GRANT-CHECK] endManualModeSession blocked client-side", e))
+                .onSuccessTask(aVoid ->
+                        rtdb.getReference("devices").child(selectedDeviceId)
+                                .child("commands").child("manualMode").setValue(false)
+                                .addOnFailureListener(e -> Log.e(TAG, "[GRANT-CHECK] manualMode=false write rejected by RTDB rule", e)));
     }
 
     public DatabaseReference getOperationsCurrentReference() {
@@ -1124,7 +1327,34 @@ public class Database_Helper {
         });
     }
 
+    /** Manual-entry path - unchanged behavior, no scale measurement involved. */
     public Task<Void> addHarvestTransaction(String cycleId, Harvest harvest) {
+        return addHarvestTransactionInternal(cycleId, harvest, null);
+    }
+
+    /**
+     * SCALE-sourced path: atomically consumes the given HarvestScaleReading
+     * in the SAME Firestore transaction that creates the Harvest, via a
+     * deterministic harvestScaleConsumptions/{scaleDeviceId_measurementId}
+     * document (see harvestScaleConsumptionDocId()). RTDB and Firestore
+     * cannot share one atomic transaction, so this is where measurement-
+     * level idempotency actually lives - reading that consumption document
+     * INSIDE the transaction (before any writes) means Firestore's own
+     * conflict detection guarantees exactly one concurrent attempt to
+     * consume the SAME physical measurement can ever win, regardless of
+     * whether the collision is a double tap, a retry after an uncertain
+     * network response, a second phone, a second app session, or even a
+     * different day.
+     */
+    public Task<Void> addHarvestTransaction(String cycleId, Harvest harvest, HarvestScaleReading scaleReading) {
+        if (scaleReading == null) {
+            return Tasks.forException(new IllegalArgumentException(
+                    "A scale measurement is required for a SCALE-sourced harvest."));
+        }
+        return addHarvestTransactionInternal(cycleId, harvest, scaleReading);
+    }
+
+    private Task<Void> addHarvestTransactionInternal(String cycleId, Harvest harvest, @Nullable HarvestScaleReading scaleReading) {
         if (selectedDeviceId == null) return Tasks.forException(new Exception("No device selected"));
         if (harvest == null || !Double.isFinite(harvest.getWeight()) || harvest.getWeight() <= 0.0
                 || harvest.getHarvestDate() == null) {
@@ -1137,9 +1367,24 @@ public class Database_Helper {
         DocumentReference harvestRef = cycleRef.collection("harvestLogs").document();
 
         harvest.setId(harvestRef.getId());
+        if (scaleReading != null) {
+            harvest.setScaleDeviceId(scaleReading.getScaleDeviceId());
+            harvest.setScaleMeasurementId(scaleReading.getMeasurementId());
+            harvest.setScaleCapturedAt(scaleReading.getCapturedAt());
+        }
+
+        String adminUid = getCurrentUid();
+        DocumentReference consumptionRef = scaleReading != null
+                ? db.collection("harvestScaleConsumptions").document(
+                        harvestScaleConsumptionDocId(scaleReading.getScaleDeviceId(), scaleReading.getMeasurementId()))
+                : null;
 
         return db.runTransaction(transaction -> {
             DocumentSnapshot cycleSnap = transaction.get(cycleRef);
+            // Read BEFORE any write in this transaction - see the method
+            // javadoc above for why this specific ordering is what makes
+            // the idempotency guarantee real, not just a hopeful check.
+            DocumentSnapshot consumptionSnap = consumptionRef != null ? transaction.get(consumptionRef) : null;
 
             // Validation: Freeze check
             String status = cycleSnap.getString("status");
@@ -1147,6 +1392,12 @@ public class Database_Helper {
             if (!"ACTIVE".equalsIgnoreCase(status)) {
                 throw new FirebaseFirestoreException("Cycle is completed and can no longer be modified.",
                         FirebaseFirestoreException.Code.ABORTED);
+            }
+
+            if (consumptionSnap != null && consumptionSnap.exists()) {
+                throw new FirebaseFirestoreException(
+                        "This Harvest Scale measurement has already been recorded. Please weigh the new harvest before trying again.",
+                        FirebaseFirestoreException.Code.ALREADY_EXISTS);
             }
 
             // Duplicate-submission guard: nothing else here (or in
@@ -1199,6 +1450,19 @@ public class Database_Helper {
                     "lastHarvestDate", harvest.getHarvestDate(),
                     "nextHarvestDate", nextHarvest
             );
+
+            if (consumptionRef != null) {
+                Map<String, Object> consumption = new HashMap<>();
+                consumption.put("scaleDeviceId", scaleReading.getScaleDeviceId());
+                consumption.put("measurementId", scaleReading.getMeasurementId());
+                consumption.put("deviceId", selectedDeviceId);
+                consumption.put("cycleId", cycleId);
+                consumption.put("harvestId", harvestRef.getId());
+                consumption.put("consumedByUid", adminUid);
+                consumption.put("consumedAt", FieldValue.serverTimestamp());
+                transaction.set(consumptionRef, consumption);
+            }
+
             return null;
         });
     }

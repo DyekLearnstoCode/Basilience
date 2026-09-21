@@ -229,6 +229,40 @@ service cloud.firestore {
       }
     }
 
+    // HARVEST SCALE CONSUMPTIONS — permanent, immutable proof that a given
+    // physical Harvest Scale measurement has already been turned into a
+    // Harvest Log. RTDB scale entries are deliberately left immutable/
+    // un-flaggable there (see BasilienceHarvestScale.ino and
+    // database.rules.json's locked-down deviceAccess) - RTDB and Firestore
+    // cannot share one atomic transaction, so idempotency lives here
+    // instead, keyed by the measurement itself rather than by which
+    // Harvest ended up referencing it. Deleting/editing a Harvest Log later
+    // must not make the underlying physical measurement reusable, which is
+    // exactly why this collection is create-only. The document ID IS the
+    // idempotency key (scaleDeviceId_measurementId - see
+    // Database_Helper.harvestScaleConsumptionDocId()); tying the id to the
+    // document's own content below stops a client from picking a
+    // different id to dodge the "already consumed" check
+    // addHarvestTransaction() relies on.
+    match /harvestScaleConsumptions/{consumptionId} {
+      allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(resource.data.deviceId));
+
+      allow create: if isSignedIn() &&
+        isAssignedToDevice(request.resource.data.deviceId) &&
+        request.resource.data.consumedByUid == request.auth.uid &&
+        request.resource.data.scaleDeviceId is string && request.resource.data.scaleDeviceId.size() > 0 &&
+        request.resource.data.measurementId is string && request.resource.data.measurementId.size() > 0 &&
+        consumptionId == (request.resource.data.scaleDeviceId + '_' + request.resource.data.measurementId) &&
+        // The referenced device must actually be paired to the scale this
+        // measurement claims to be from - stops a user assigned to one
+        // device from consuming a measurement only a DIFFERENT device
+        // (the one actually paired to that scale) is entitled to use.
+        get(/databases/$(database)/documents/devices/$(request.resource.data.deviceId)).data.harvestScaleId == request.resource.data.scaleDeviceId;
+
+      // Immutable once created - see the comment above the match block.
+      allow update, delete: if false;
+    }
+
     // DEVICE ASSIGNMENTS collection
     match /deviceAssignments/{assignmentId} {
       // Allow user to see their own assignments

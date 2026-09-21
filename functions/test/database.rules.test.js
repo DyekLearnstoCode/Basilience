@@ -295,7 +295,7 @@ test("admin: can approve, deny, and revoke a farmer's manual-control request", a
     );
 });
 
-test("farmer: cannot write commands/manualMode or manualModeEnabledAt directly, even with an APPROVED grant", async () => {
+test("farmer: cannot write commands/manualModeEnabledAt directly, even with an APPROVED grant", async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
         await ctx.database().ref("devices/device-A/commands/manualMode").set(true);
         await ctx.database().ref("devices/device-A/commands/manualModeEnabledAt").set(1000);
@@ -307,8 +307,69 @@ test("farmer: cannot write commands/manualMode or manualModeEnabledAt directly, 
         });
     });
     const db = ctxFor("farmer-A").database();
-    await assertFails(db.ref("devices/device-A/commands/manualMode").set(false));
     await assertFails(db.ref("devices/device-A/commands/manualModeEnabledAt").set(1));
+});
+
+test("farmer: cannot turn commands/manualMode ON, even with an APPROVED grant - only OFF is ever allowed", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.database().ref("devices/device-A/commands/manualMode").set(false);
+        await ctx.database().ref("devices/device-A/commands/manualModeEnabledAt").set(1000);
+        await ctx.database().ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "APPROVED",
+            requestedAt: 900,
+            resolvedByUid: "admin-A",
+            resolvedAt: 1500,
+        });
+    });
+    const db = ctxFor("farmer-A").database();
+    await assertFails(db.ref("devices/device-A/commands/manualMode").set(true));
+});
+
+test("farmer: can turn commands/manualMode OFF with a valid current-session APPROVED grant - ends their own session", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.database().ref("devices/device-A/commands/manualMode").set(true);
+        await ctx.database().ref("devices/device-A/commands/manualModeEnabledAt").set(1000);
+        await ctx.database().ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "APPROVED",
+            requestedAt: 900,
+            resolvedByUid: "admin-A",
+            resolvedAt: 1500,
+        });
+    });
+    const db = ctxFor("farmer-A").database();
+    await assertSucceeds(db.ref("devices/device-A/commands/manualMode").set(false));
+});
+
+test("farmer: cannot turn commands/manualMode OFF without a grant, or with a PENDING/DENIED/EXPIRED/REVOKED/stale-session grant", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.database().ref("devices/device-A/commands/manualMode").set(true);
+        await ctx.database().ref("devices/device-A/commands/manualModeEnabledAt").set(1000);
+    });
+    const db = ctxFor("farmer-A").database();
+    await assertFails(db.ref("devices/device-A/commands/manualMode").set(false));
+
+    for (const status of ["PENDING", "DENIED", "EXPIRED", "REVOKED"]) {
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+            await ctx.database().ref("devices/device-A/manualControlGrants/farmer-A").set({
+                status,
+                requestedAt: 900,
+                resolvedByUid: "admin-A",
+                resolvedAt: 1500,
+            });
+        });
+        await assertFails(db.ref("devices/device-A/commands/manualMode").set(false));
+    }
+
+    // Approved, but from an earlier Manual Mode session (resolvedAt < manualModeEnabledAt).
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.database().ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "APPROVED",
+            requestedAt: 500,
+            resolvedByUid: "admin-A",
+            resolvedAt: 800,
+        });
+    });
+    await assertFails(db.ref("devices/device-A/commands/manualMode").set(false));
 });
 
 test("farmer: cannot operate an actuator with no grant, or with a PENDING/DENIED/EXPIRED/REVOKED grant", async () => {
@@ -379,6 +440,24 @@ test("farmer: can operate any actuator with a valid current-session APPROVED gra
     const db = ctxFor("farmer-A").database();
     await assertSucceeds(db.ref("devices/device-A/commands/canopyFan").set({state: true}));
     await assertSucceeds(db.ref("devices/device-A/commands/blower").set({state: false}));
+});
+
+test("farmer: can operate an actuator and turn manualMode OFF with an APPROVED grant even when manualModeEnabledAt was never set (a session predating this feature)", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        // manualMode is true but manualModeEnabledAt is deliberately never
+        // written - simulates Manual Mode having been left on since before
+        // this field (and this whole grant feature) ever existed.
+        await ctx.database().ref("devices/device-A/commands/manualMode").set(true);
+        await ctx.database().ref("devices/device-A/manualControlGrants/farmer-A").set({
+            status: "APPROVED",
+            requestedAt: 900,
+            resolvedByUid: "admin-A",
+            resolvedAt: 1500,
+        });
+    });
+    const db = ctxFor("farmer-A").database();
+    await assertSucceeds(db.ref("devices/device-A/commands/canopyFan").set({state: true}));
+    await assertSucceeds(db.ref("devices/device-A/commands/manualMode").set(false));
 });
 
 test("developer tester: manual-control grant is irrelevant - already has unconditional actuator write access", async () => {

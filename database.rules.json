@@ -46,13 +46,13 @@
           ".read": "auth != null && root.child('deviceAccess').child($deviceId).child(auth.uid).exists()",
           ".write": "auth != null && (root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN' || root.child('deviceAccess').child($deviceId).child(auth.uid).child('developerTester').val() === true)",
           "manualMode": {
-            ".write": "auth != null && (root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN' || root.child('deviceAccess').child($deviceId).child(auth.uid).child('developerTester').val() === true)"
+            ".write": "auth != null && (root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN' || root.child('deviceAccess').child($deviceId).child(auth.uid).child('developerTester').val() === true || (newData.val() === false && root.child('devices').child($deviceId).child('manualControlGrants').child(auth.uid).child('status').val() === 'APPROVED' && (!root.child('devices').child($deviceId).child('commands').child('manualModeEnabledAt').exists() || root.child('devices').child($deviceId).child('manualControlGrants').child(auth.uid).child('resolvedAt').val() >= root.child('devices').child($deviceId).child('commands').child('manualModeEnabledAt').val())))"
           },
           "manualModeEnabledAt": {
             ".write": "auth != null && (root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN' || root.child('deviceAccess').child($deviceId).child(auth.uid).child('developerTester').val() === true)"
           },
           "$actuatorKey": {
-            ".write": "auth != null && (root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN' || root.child('deviceAccess').child($deviceId).child(auth.uid).child('developerTester').val() === true || (root.child('devices').child($deviceId).child('commands').child('manualMode').val() === true && root.child('devices').child($deviceId).child('manualControlGrants').child(auth.uid).child('status').val() === 'APPROVED' && root.child('devices').child($deviceId).child('manualControlGrants').child(auth.uid).child('resolvedAt').val() >= root.child('devices').child($deviceId).child('commands').child('manualModeEnabledAt').val()))"
+            ".write": "auth != null && (root.child('deviceAccess').child($deviceId).child(auth.uid).child('role').val() === 'ADMIN' || root.child('deviceAccess').child($deviceId).child(auth.uid).child('developerTester').val() === true || (root.child('devices').child($deviceId).child('commands').child('manualMode').val() === true && root.child('devices').child($deviceId).child('manualControlGrants').child(auth.uid).child('status').val() === 'APPROVED' && (!root.child('devices').child($deviceId).child('commands').child('manualModeEnabledAt').exists() || root.child('devices').child($deviceId).child('manualControlGrants').child(auth.uid).child('resolvedAt').val() >= root.child('devices').child($deviceId).child('commands').child('manualModeEnabledAt').val())))"
           }
         },
         "manualControlGrants": {
