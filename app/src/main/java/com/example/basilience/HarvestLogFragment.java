@@ -46,7 +46,6 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 
@@ -455,13 +454,16 @@ public class HarvestLogFragment extends Fragment {
                         if (!isAdded()) return;
                         btnReadSensor.setEnabled(true);
                         if (layoutWeight != null) layoutWeight.setError(null);
-                        // Plain numeric grams, not HarvestFormatter.formatWeight()'s
-                        // "1.5 kg"/"850 g" display string - this field is re-parsed
-                        // with Double.parseDouble() on save, which needs a bare
-                        // number. Locale.US pins the decimal separator to '.'
-                        // regardless of device locale, matching what parseDouble
-                        // always expects.
-                        etWeight.setText(String.format(Locale.US, "%.1f", reading.getGrams()));
+                        // Whole-gram preview, matching the physical scale's own LCD
+                        // (which only ever shows whole grams) - not
+                        // HarvestFormatter.formatWeight()'s "1.5 kg"/"850 g" display
+                        // string, since this field is still a bare parseable number
+                        // (Save re-parses it purely to validate it's non-empty/
+                        // numeric/positive - see the Save handler below). The value
+                        // actually SAVED is NOT this rounded text: it comes from
+                        // currentScaleReading.getGrams() directly, so the stored
+                        // decimal precision is never lost to this rounded preview.
+                        etWeight.setText(String.valueOf(Math.round(reading.getGrams())));
                         currentHarvestSource = "SCALE";
                         // Retained until Save (or the dialog is reopened
                         // fresh) so the measurement's IDENTITY - not just its
@@ -535,17 +537,30 @@ public class HarvestLogFragment extends Fragment {
                 return;
             }
 
-            final double weight;
+            final double parsedWeight;
             try {
-                weight = Double.parseDouble(weightStr);
+                parsedWeight = Double.parseDouble(weightStr);
             } catch (NumberFormatException error) {
                 if (layoutWeight != null) layoutWeight.setError("Enter a valid numeric weight");
                 return;
             }
-            if (!Double.isFinite(weight) || weight <= 0.0) {
+            if (!Double.isFinite(parsedWeight) || parsedWeight <= 0.0) {
                 if (layoutWeight != null) layoutWeight.setError("Weight must be greater than zero");
                 return;
             }
+
+            // etWeight shows a whole-gram-ROUNDED preview once "Read from
+            // Harvest Scale" is used (see above), so parsedWeight itself
+            // would just be that rounded integer, not the real measurement.
+            // The value actually saved for a scale-sourced entry must stay
+            // the exact reading the scale produced - taken from
+            // currentScaleReading directly whenever one is attached. Manual
+            // entries (currentScaleReading == null) save exactly what the
+            // user typed, unchanged.
+            final double weight = ("SCALE".equals(currentHarvestSource) && currentScaleReading != null)
+                    ? currentScaleReading.getGrams()
+                    : parsedWeight;
+
             String notes = etNotes.getText().toString().trim();
             isHarvestSubmitting = true;
             btnSave.setEnabled(false);

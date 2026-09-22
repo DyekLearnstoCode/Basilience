@@ -86,7 +86,7 @@ public class CycleAdapter extends RecyclerView.Adapter<CycleAdapter.VH> {
 
         h.tvFrequency.setText(context.getString(R.string.days_suffix, c.getHarvestFrequencyDays()));
         h.tvHarvestCount.setText(String.valueOf(c.getTotalHarvestCount()));
-        h.tvTotalWeight.setText(String.format(java.util.Locale.US, "%.1fg", c.getTotalHarvestWeight()));
+        h.tvTotalWeight.setText(HarvestFormatter.formatWeight(c.getTotalHarvestWeight()));
 
         h.itemView.setOnClickListener(v -> onCycleClick.onClick(c, position));
     }

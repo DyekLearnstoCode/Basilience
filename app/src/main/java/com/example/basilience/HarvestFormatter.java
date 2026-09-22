@@ -18,9 +18,15 @@ public final class HarvestFormatter {
     private HarvestFormatter() { }
 
     /**
-     * Farmer-facing weight: grams below a kilogram ("850 g"), kilograms at or
-     * above one ("4.85 kg"). Trailing zeros are trimmed so the value reads
-     * naturally rather than as "850.0 g" or "4.00 kg".
+     * Farmer-facing weight: whole grams below a kilogram ("223 g", normal
+     * mathematical rounding - half rounds up, never truncated), kilograms at
+     * or above one ("4.85 kg", trailing zeros trimmed so it reads naturally
+     * rather than "4.00 kg"). The grams case matches the physical harvest
+     * scale's own LCD, which only ever displays whole grams.
+     *
+     * <p>Display only - {@code grams} itself, and whatever the caller stores,
+     * keeps its full original decimal precision. Only the text this method
+     * returns is rounded.
      */
     public static String formatWeight(double grams) {
         double safeGrams = Math.max(0, grams);
@@ -28,7 +34,7 @@ public final class HarvestFormatter {
             return trimTrailingZeros(String.format(Locale.getDefault(), "%.2f",
                     safeGrams / GRAMS_PER_KILOGRAM)) + " kg";
         }
-        return trimTrailingZeros(String.format(Locale.getDefault(), "%.1f", safeGrams)) + " g";
+        return Math.round(safeGrams) + " g";
     }
 
     private static String trimTrailingZeros(String formatted) {
