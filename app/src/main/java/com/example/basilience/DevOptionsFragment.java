@@ -1188,13 +1188,14 @@ public class DevOptionsFragment extends Fragment {
         if (field.getText() == null) return null;
         String text = field.getText().toString().trim();
         if (text.isEmpty()) return null;
-        try {
-            float value = Float.parseFloat(text);
-            if (Float.isNaN(value) || Float.isInfinite(value)) return null;
-            return value;
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return DecimalInput.parseFloat(text);
+    }
+
+    /** A non-empty field as a number; throws NumberFormatException when it is not one unambiguous number. */
+    private static double decimalOrThrow(CharSequence text) {
+        Double value = DecimalInput.parse(text);
+        if (value == null) throw new NumberFormatException("Not a valid number: " + text);
+        return value;
     }
 
     private long loadingShownAt;
@@ -1234,12 +1235,12 @@ public class DevOptionsFragment extends Fragment {
         updates.put("dynamic", switchDynamicMock.isChecked());
         
         try {
-            if (!etPh.getText().toString().isEmpty()) updates.put("ph", Double.parseDouble(etPh.getText().toString()));
-            if (!etEc.getText().toString().isEmpty()) updates.put("ec", Double.parseDouble(etEc.getText().toString()));
-            if (!etTemp.getText().toString().isEmpty()) updates.put("airTemperature", Double.parseDouble(etTemp.getText().toString()));
-            if (!etHumidity.getText().toString().isEmpty()) updates.put("humidity", Double.parseDouble(etHumidity.getText().toString()));
-            if (!etWaterTemperature.getText().toString().isEmpty()) updates.put("waterTemperature", Double.parseDouble(etWaterTemperature.getText().toString()));
-            if (!etWaterLevel.getText().toString().isEmpty()) updates.put("waterLevel", Double.parseDouble(etWaterLevel.getText().toString()));
+            if (!etPh.getText().toString().isEmpty()) updates.put("ph", decimalOrThrow(etPh.getText()));
+            if (!etEc.getText().toString().isEmpty()) updates.put("ec", decimalOrThrow(etEc.getText()));
+            if (!etTemp.getText().toString().isEmpty()) updates.put("airTemperature", decimalOrThrow(etTemp.getText()));
+            if (!etHumidity.getText().toString().isEmpty()) updates.put("humidity", decimalOrThrow(etHumidity.getText()));
+            if (!etWaterTemperature.getText().toString().isEmpty()) updates.put("waterTemperature", decimalOrThrow(etWaterTemperature.getText()));
+            if (!etWaterLevel.getText().toString().isEmpty()) updates.put("waterLevel", decimalOrThrow(etWaterLevel.getText()));
             // Optional explicit override - firmware's readMockSensors() prefers this
             // over deriving depth from the percentage above when both are present.
             // updateChildren() merges rather than replaces, so an empty field must
@@ -1247,7 +1248,7 @@ public class DevOptionsFragment extends Fragment {
             // otherwise a stale cm value would keep silently overriding the percent
             // field with no way to tell from this screen that it was still active.
             updates.put("waterLevelCm", etWaterLevelCm.getText().toString().isEmpty()
-                    ? null : Double.parseDouble(etWaterLevelCm.getText().toString()));
+                    ? null : decimalOrThrow(etWaterLevelCm.getText()));
 
             showLoading("Pushing Mock Data...", "Writing values to ESP32...");
 

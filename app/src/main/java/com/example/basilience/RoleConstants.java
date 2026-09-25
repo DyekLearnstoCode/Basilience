@@ -34,6 +34,6 @@ public class RoleConstants {
     public static String displayName(String role) {
         if (role == null || role.trim().isEmpty()) return "--";
         String trimmed = role.trim();
-        return trimmed.substring(0, 1).toUpperCase() + trimmed.substring(1).toLowerCase();
+        return trimmed.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + trimmed.substring(1).toLowerCase(java.util.Locale.ROOT);
     }
 }

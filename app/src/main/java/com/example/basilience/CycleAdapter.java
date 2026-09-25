@@ -44,7 +44,7 @@ public class CycleAdapter extends RecyclerView.Adapter<CycleAdapter.VH> {
         h.tvCycleNo.setText(String.valueOf(c.getCycleNumber()));
         
         String rawStatus = c.getStatus();
-        String status = (rawStatus == null || rawStatus.isEmpty()) ? "ACTIVE" : rawStatus.toUpperCase();
+        String status = (rawStatus == null || rawStatus.isEmpty()) ? "ACTIVE" : rawStatus.toUpperCase(java.util.Locale.ROOT);
         h.tvStatus.setText(status);
 
         boolean isCompleted = "COMPLETED".equals(status);

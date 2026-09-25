@@ -262,13 +262,9 @@ public class ParameterTargetRangesFragment extends Fragment {
         if (field == null || field.getText() == null) return null;
         String text = field.getText().toString().trim();
         if (text.isEmpty()) return null;
-        try {
-            float value = Float.parseFloat(text);
-            if (Float.isNaN(value) || Float.isInfinite(value)) return null;
-            return value;
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        // Reads back what format() displayed (the phone's own separator/digits);
+        // ambiguous text is null, never another number.
+        return DecimalInput.parseFloat(text);
     }
 
     // ------------------------------------------------------------------

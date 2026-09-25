@@ -21,7 +21,6 @@ import com.google.firebase.Timestamp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.FirebaseFirestoreException;
 
-import java.util.Calendar;
 
 public class Cycle_Add_Fragment extends Fragment {
 
@@ -103,20 +102,21 @@ public class Cycle_Add_Fragment extends Fragment {
     }
 
     private void showDatePicker() {
-        Calendar cal = Calendar.getInstance();
+        // The picked day means that day in Manila (the zone every report and
+        // cycle boundary uses), as midnight Manila time, not midnight in
+        // whatever timezone the phone happens to be set to.
+        int[] today = ManilaTime.today(System.currentTimeMillis());
         DatePickerDialog dlg = new DatePickerDialog(
                 requireContext(),
                 (picker, year, month, day) -> {
-                    Calendar selectedCal = Calendar.getInstance();
-                    selectedCal.set(year, month, day, 0, 0, 0);
-                    startDateTimestamp = new Timestamp(selectedCal.getTime());
+                    startDateTimestamp = new Timestamp(new java.util.Date(ManilaTime.startOfDay(year, month, day)));
                     // Same "MMM dd, yyyy" convention the cycle list/harvest screens use,
                     // so a date never reads differently depending on where it's shown.
                     etStartDate.setText(DateUtils.formatDate(startDateTimestamp));
                 },
-                cal.get(Calendar.YEAR),
-                cal.get(Calendar.MONTH),
-                cal.get(Calendar.DAY_OF_MONTH)
+                today[0],
+                today[1],
+                today[2]
         );
         dlg.show();
     }
@@ -187,10 +187,8 @@ public class Cycle_Add_Fragment extends Fragment {
         newCycle.setHarvestFrequencyDays(frequency);
         
         // Calculate initial nextHarvestDate: startDate + frequency
-        Calendar cal = Calendar.getInstance();
-        cal.setTime(startDateTimestamp.toDate());
-        cal.add(Calendar.DAY_OF_YEAR, frequency);
-        newCycle.setNextHarvestDate(new Timestamp(cal.getTime()));
+        newCycle.setNextHarvestDate(new Timestamp(new java.util.Date(
+                ManilaTime.addDays(startDateTimestamp.toDate().getTime(), frequency))));
 
         dbHelper.setSelectedDeviceId(deviceId);
         dbHelper.addCycle(newCycle).addOnCompleteListener(task -> {

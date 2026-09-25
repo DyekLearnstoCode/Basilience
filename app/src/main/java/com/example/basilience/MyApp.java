@@ -11,6 +11,8 @@ public class MyApp extends Application {
     public void onCreate() {
         super.onCreate();
 
+        NotificationChannels.ensureCreated(this);
+
         // Force Light Mode permanently
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
 

@@ -94,7 +94,7 @@ public class FoggingSession {
             return null;
         }
 
-        String strategy = startEvent.strategy.trim().toLowerCase();
+        String strategy = startEvent.strategy.trim().toLowerCase(java.util.Locale.ROOT);
         switch (strategy) {
             case "startup":
             case "normal":
@@ -116,6 +116,6 @@ public class FoggingSession {
             return "Automatic";
         }
 
-        return "Automatic \u00b7 " + strategy.substring(0, 1).toUpperCase() + strategy.substring(1);
+        return "Automatic \u00b7 " + strategy.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + strategy.substring(1);
     }
 }

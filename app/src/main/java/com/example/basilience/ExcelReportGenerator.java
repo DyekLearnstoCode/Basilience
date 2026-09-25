@@ -87,7 +87,7 @@ public class ExcelReportGenerator {
             File dir = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
             if (dir != null && !dir.exists()) dir.mkdirs();
 
-            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+            String timeStamp = DateUtils.fileTimestamp();
             String fileName = "Basilience_ParamReport_" + CycleReportGenerator.sanitizeForFilename(filter.deviceId) + "_"
                     + CycleReportGenerator.sanitizeForFilename(filter.cycleLabel) + "_" + timeStamp + ".xlsx";
             File file = new File(dir, fileName);

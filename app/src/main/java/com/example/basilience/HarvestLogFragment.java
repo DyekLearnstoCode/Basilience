@@ -544,13 +544,12 @@ public class HarvestLogFragment extends Fragment {
                 return;
             }
 
-            final double parsedWeight;
-            try {
-                parsedWeight = Double.parseDouble(weightStr);
-            } catch (NumberFormatException error) {
+            final Double parsedWeightValue = DecimalInput.parse(weightStr);
+            if (parsedWeightValue == null) {
                 if (layoutWeight != null) layoutWeight.setError("Enter a valid numeric weight");
                 return;
             }
+            final double parsedWeight = parsedWeightValue;
             if (!Double.isFinite(parsedWeight) || parsedWeight <= 0.0) {
                 if (layoutWeight != null) layoutWeight.setError("Weight must be greater than zero");
                 return;
@@ -640,7 +639,7 @@ public class HarvestLogFragment extends Fragment {
         this.currentCycle = cycle;
         if (tvStatus == null) return; // view destroyed
         String rawStatus = cycle.getStatus();
-        String status = (rawStatus == null || rawStatus.isEmpty()) ? "ACTIVE" : rawStatus.toUpperCase();
+        String status = (rawStatus == null || rawStatus.isEmpty()) ? "ACTIVE" : rawStatus.toUpperCase(java.util.Locale.ROOT);
         tvStatus.setText(status);
         // Display formatting only - the stored grams and the transactional
         // totals behind them are untouched.

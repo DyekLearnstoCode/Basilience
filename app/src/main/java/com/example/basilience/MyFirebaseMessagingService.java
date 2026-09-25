@@ -1,10 +1,13 @@
 package com.example.basilience;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -13,6 +16,7 @@ import com.google.firebase.messaging.RemoteMessage;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MyFirebaseMessagingService extends FirebaseMessagingService {
 
@@ -58,16 +62,32 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
     @Override
     public void onMessageReceived(@NonNull RemoteMessage remoteMessage) {
         super.onMessageReceived(remoteMessage);
-        
+
         Log.d(TAG, "FCM_RECEIVED from=" + remoteMessage.getFrom());
 
-        String title = "Device Alert";
-        String body = "System alert received";
-        String eventId = remoteMessage.getData().get("notificationId");
-        String notificationType = remoteMessage.getData().get("type");
-        String deviceId = remoteMessage.getData().get("deviceId");
+        Map<String, String> data = remoteMessage.getData();
+        String eventId = data.get("notificationId");
+        String notificationType = data.get("type");
+        String deviceId = data.get("deviceId");
         Log.d(TAG, "FCM_TYPE type=" + notificationType + " deviceId=" + deviceId
                 + " eventId=" + eventId);
+
+        // Title/body come from the notification payload, then the data map,
+        // then wording derived from the type; a missing field no longer
+        // drops the message. Only a message with nothing to show or route
+        // on is dropped, and it is dropped before its id is claimed below so
+        // a later, complete delivery of the same event is not suppressed.
+        RemoteMessage.Notification payload = remoteMessage.getNotification();
+        NotificationContent content = NotificationContent.resolve(
+                payload != null ? payload.getTitle() : null,
+                payload != null ? payload.getBody() : null,
+                data);
+        if (content == null) {
+            Log.w(TAG, "DROP_REASON empty_payload from=" + remoteMessage.getFrom());
+            return;
+        }
+        final String title = content.title;
+        final String body = content.body;
 
         if (eventId != null && !eventId.isEmpty()
                 && processedNotificationIds.putIfAbsent(eventId, Boolean.TRUE) != null) {
@@ -75,61 +95,47 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
             return;
         }
 
-        if (remoteMessage.getNotification() != null) {
-            title = remoteMessage.getNotification().getTitle();
-            body = remoteMessage.getNotification().getBody();
-        } else if (remoteMessage.getData().size() > 0) {
-            if (remoteMessage.getData().containsKey("title")) {
-                title = remoteMessage.getData().get("title");
-            }
-            if (remoteMessage.getData().containsKey("body")) {
-                body = remoteMessage.getData().get("body");
-            }
+        if (isConnectivityType(notificationType)) {
+            validateAndShowConnectivity(
+                    title,
+                    body,
+                    eventId,
+                    notificationType,
+                    deviceId,
+                    data);
+            return;
         }
 
-        if (title != null && body != null) {
-            if (isConnectivityType(notificationType)) {
-                validateAndShowConnectivity(
-                        title,
-                        body,
-                        eventId,
-                        notificationType,
-                        deviceId,
-                        remoteMessage.getData());
-                return;
-            }
+        if (isParameterAlert(notificationType)) {
+            validateAndShowParameterAlert(
+                    title,
+                    body,
+                    eventId,
+                    notificationType,
+                    deviceId);
+            return;
+        }
 
-            if (isParameterAlert(notificationType)) {
-                validateAndShowParameterAlert(
-                        title,
-                        body,
-                        eventId,
-                        notificationType,
-                        deviceId);
-                return;
-            }
-
-            if (isAutomationLifecycleEvent(notificationType)) {
-                showNotification(title, body, eventId, null, deviceId, false);
-                Log.d(TAG, "POPUP_ATTEMPT type=" + notificationType);
-                boolean shown = MainActivity.showForegroundAutomationLifecycle(
-                        title,
-                        body,
-                        eventId,
-                        automationLifecycleKind(notificationType));
-                Log.d(TAG, "POPUP_RESULT type=" + notificationType + " accepted=" + shown);
-                return;
-            }
-
-            // Notification payloads are automatically posted by FCM only while the
-            // app is backgrounded. Foreground delivery always posts exactly one tray
-            // card here; only explicitly critical types also receive one popup.
+        if (isAutomationLifecycleEvent(notificationType)) {
             showNotification(title, body, eventId, null, deviceId, false);
-            if (isCriticalAlert(notificationType)) {
-                Log.d(TAG, "POPUP_ATTEMPT type=" + notificationType);
-                boolean shown = MainActivity.showForegroundAlert(title, body, eventId);
-                Log.d(TAG, "POPUP_RESULT type=" + notificationType + " accepted=" + shown);
-            }
+            Log.d(TAG, "POPUP_ATTEMPT type=" + notificationType);
+            boolean shown = MainActivity.showForegroundAutomationLifecycle(
+                    title,
+                    body,
+                    eventId,
+                    automationLifecycleKind(notificationType));
+            Log.d(TAG, "POPUP_RESULT type=" + notificationType + " accepted=" + shown);
+            return;
+        }
+
+        // Notification payloads are automatically posted by FCM only while the
+        // app is backgrounded. Foreground delivery always posts exactly one tray
+        // card here; only explicitly critical types also receive one popup.
+        showNotification(title, body, eventId, null, deviceId, false);
+        if (isCriticalAlert(notificationType)) {
+            Log.d(TAG, "POPUP_ATTEMPT type=" + notificationType);
+            boolean shown = MainActivity.showForegroundAlert(title, body, eventId);
+            Log.d(TAG, "POPUP_RESULT type=" + notificationType + " accepted=" + shown);
         }
     }
 
@@ -173,13 +179,14 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
         if (previousEvent == null || generatedAt > previousEvent) {
             latestConnectivityEventByDevice.put(deviceId, generatedAt);
         }
-        FirebaseDatabase.getInstance(RTDB_URL)
-                .getReference("devices")
-                .child(deviceId)
-                .child("status")
-                .addListenerForSingleValueEvent(new ValueEventListener() {
+        readOnceWithTimeout(
+                FirebaseDatabase.getInstance(RTDB_URL)
+                        .getReference("devices")
+                        .child(deviceId)
+                        .child("status"),
+                new BoundedRead() {
                     @Override
-                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                    public void onValue(@NonNull DataSnapshot snapshot) {
                         Long newestEvent = latestConnectivityEventByDevice.get(deviceId);
                         // A newer delivery can invalidate an offline callback that
                         // was already waiting on RTDB. Recovery is never rejected
@@ -190,7 +197,8 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                             return;
                         }
 
-                        Boolean online = snapshot.child("online").getValue(Boolean.class);
+                        // A wrong-typed field reads as null (never throws inside this callback).
+                        Boolean online = FirebaseSafeRead.bool(snapshot.child("online"));
                         long currentLastServerSeen = numericValue(snapshot.child("lastServerSeen").getValue());
                         boolean valid = isOffline
                                 ? Boolean.FALSE.equals(online)
@@ -208,30 +216,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                             return;
                         }
                         Log.d(TAG, "VALIDATION_PASS type=" + type + " deviceId=" + deviceId);
-
-                        if (!isOffline) {
-                            NotificationHelper.clearWifiConfigurationRequiredNotification(
-                                    MyFirebaseMessagingService.this, deviceId);
-                        }
-
-                        NotificationHelper.recordCloudConnectivityPresentation(
-                                MyFirebaseMessagingService.this, deviceId, isOffline);
-
-                        // isOffline only, not recovery - tapping "device came back
-                        // online" has nothing to reconfigure. deviceId here is
-                        // guaranteed to already be the selected device: the
-                        // mismatch check above (line ~164) already discarded this
-                        // message otherwise, so there's no risk of routing to the
-                        // wrong device's Wi-Fi Configuration screen.
-                        showNotification(title, body, eventId, deviceId, deviceId, isOffline);
-                        Log.d(TAG, "POPUP_ATTEMPT type=" + type);
-                        boolean shown;
-                        if (isOffline) {
-                            shown = MainActivity.showForegroundAlert(title, body, eventId);
-                        } else {
-                            shown = MainActivity.showForegroundRecovery(title, body, eventId);
-                        }
-                        Log.d(TAG, "POPUP_RESULT type=" + type + " accepted=" + shown);
+                        presentConnectivity(title, body, eventId, type, deviceId, isOffline);
                     }
 
                     @Override
@@ -239,7 +224,51 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                         // A failed presence read is not evidence that the device is offline.
                         Log.w(TAG, "Connectivity validation cancelled; notification discarded", error.toException());
                     }
+
+                    @Override
+                    public void onTimeout() {
+                        // The read never answered (typically the phone's RTDB link is
+                        // down while FCM still works). The event already passed the
+                        // metadata, selected-device and dedupe checks above, so show
+                        // it rather than delay or lose it; only a newer event that
+                        // this process already knows about can still supersede it.
+                        Long newestEvent = latestConnectivityEventByDevice.get(deviceId);
+                        if (isOffline && newestEvent != null && newestEvent > generatedAt) {
+                            Log.i(TAG, "DROP_REASON newer_connectivity_event deviceId=" + deviceId);
+                            return;
+                        }
+                        Log.w(TAG, "VALIDATION_TIMEOUT type=" + type + " deviceId=" + deviceId
+                                + "; showing unverified");
+                        presentConnectivity(title, body, eventId, type, deviceId, isOffline);
+                    }
                 });
+    }
+
+    private void presentConnectivity(String title, String body, String eventId, String type,
+                                     String deviceId, boolean isOffline) {
+        if (!isOffline) {
+            NotificationHelper.clearWifiConfigurationRequiredNotification(
+                    MyFirebaseMessagingService.this, deviceId);
+        }
+
+        NotificationHelper.recordCloudConnectivityPresentation(
+                MyFirebaseMessagingService.this, deviceId, isOffline);
+
+        // isOffline only, not recovery - tapping "device came back
+        // online" has nothing to reconfigure. deviceId here is
+        // guaranteed to already be the selected device: the
+        // mismatch check above already discarded this
+        // message otherwise, so there is no risk of routing to the
+        // wrong device's Wi-Fi Configuration screen.
+        showNotification(title, body, eventId, deviceId, deviceId, isOffline);
+        Log.d(TAG, "POPUP_ATTEMPT type=" + type);
+        boolean shown;
+        if (isOffline) {
+            shown = MainActivity.showForegroundAlert(title, body, eventId);
+        } else {
+            shown = MainActivity.showForegroundRecovery(title, body, eventId);
+        }
+        Log.d(TAG, "POPUP_RESULT type=" + type + " accepted=" + shown);
     }
 
     private void validateAndShowParameterAlert(
@@ -275,15 +304,17 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
             return;
         }
 
-        FirebaseDatabase.getInstance(RTDB_URL)
-                .getReference("devices")
-                .child(deviceId)
-                .child("alerts")
-                .child(alertKey)
-                .addListenerForSingleValueEvent(new ValueEventListener() {
+        readOnceWithTimeout(
+                FirebaseDatabase.getInstance(RTDB_URL)
+                        .getReference("devices")
+                        .child(deviceId)
+                        .child("alerts")
+                        .child(alertKey),
+                new BoundedRead() {
                     @Override
-                    public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        Boolean active = snapshot.getValue(Boolean.class);
+                    public void onValue(@NonNull DataSnapshot snapshot) {
+                        // A wrong-typed flag reads as null (never throws inside this callback).
+                        Boolean active = FirebaseSafeRead.bool(snapshot);
                         if (!Boolean.TRUE.equals(active)) {
                             Log.i(TAG, "Discarded stale parameter alert " + alertKey
                                     + " for " + deviceId + "; active=" + active);
@@ -292,11 +323,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                         }
 
                         Log.d(TAG, "VALIDATION_PASS type=" + alertKey + " deviceId=" + deviceId);
-                        showNotification(title, body, eventId, null, deviceId, false);
-                        Log.d(TAG, "POPUP_ATTEMPT type=" + alertKey);
-                        boolean shown = MainActivity.showForegroundParameterAlert(
-                                alertKey, eventId, deviceId);
-                        Log.d(TAG, "POPUP_RESULT type=" + alertKey + " accepted=" + shown);
+                        presentParameterAlert(title, body, eventId, alertKey, deviceId);
                     }
 
                     @Override
@@ -305,7 +332,70 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                         Log.w(TAG, "Parameter alert validation cancelled; notification discarded",
                                 error.toException());
                     }
+
+                    @Override
+                    public void onTimeout() {
+                        // Unanswered read: a parameter out of range is exactly the
+                        // kind of alert that must not be held back or lost.
+                        Log.w(TAG, "VALIDATION_TIMEOUT type=" + alertKey + " deviceId=" + deviceId
+                                + "; showing unverified");
+                        presentParameterAlert(title, body, eventId, alertKey, deviceId);
+                    }
                 });
+    }
+
+    private void presentParameterAlert(String title, String body, String eventId,
+                                       String alertKey, String deviceId) {
+        showNotification(title, body, eventId, null, deviceId, false);
+        Log.d(TAG, "POPUP_ATTEMPT type=" + alertKey);
+        boolean shown = MainActivity.showForegroundParameterAlert(
+                alertKey, eventId, deviceId);
+        Log.d(TAG, "POPUP_RESULT type=" + alertKey + " accepted=" + shown);
+    }
+
+    /** How long a validation read may take before the notification is shown unverified. */
+    private static final long VALIDATION_READ_TIMEOUT_MS = 8000L;
+
+    /** Callbacks of readOnceWithTimeout(); exactly one of the three is invoked, on the main thread. */
+    private interface BoundedRead {
+        void onValue(@NonNull DataSnapshot snapshot);
+        void onCancelled(@NonNull DatabaseError error);
+        void onTimeout();
+    }
+
+    /**
+     * A single-value read that cannot wait forever. addListenerForSingleValueEvent
+     * on its own never calls back while the database connection is down, which
+     * left the alert it was validating waiting indefinitely.
+     */
+    private void readOnceWithTimeout(DatabaseReference reference, BoundedRead callback) {
+        // One shared one-shot guard: whichever of value / cancelled / timeout
+        // claims it first is the only one that ever runs the callback.
+        final AtomicBoolean finished = new AtomicBoolean(false);
+        final Handler handler = new Handler(Looper.getMainLooper());
+        final Runnable[] timeout = new Runnable[1];
+        final ValueEventListener listener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!finished.compareAndSet(false, true)) return;
+                handler.removeCallbacks(timeout[0]);
+                callback.onValue(snapshot);
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                if (!finished.compareAndSet(false, true)) return;
+                handler.removeCallbacks(timeout[0]);
+                callback.onCancelled(error);
+            }
+        };
+        timeout[0] = () -> {
+            if (!finished.compareAndSet(false, true)) return;
+            reference.removeEventListener(listener);
+            callback.onTimeout();
+        };
+        handler.postDelayed(timeout[0], VALIDATION_READ_TIMEOUT_MS);
+        reference.addListenerForSingleValueEvent(listener);
     }
 
     private long parseLong(String value) {
@@ -420,7 +510,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                 this, notificationId, intent,
                 android.app.PendingIntent.FLAG_IMMUTABLE | android.app.PendingIntent.FLAG_UPDATE_CURRENT);
 
-        String channelId = "alerts";
+        String channelId = NotificationChannels.ALERTS;
         android.net.Uri defaultSoundUri = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION);
         androidx.core.app.NotificationCompat.Builder notificationBuilder =
                 new androidx.core.app.NotificationCompat.Builder(this, channelId)
@@ -435,14 +525,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
         android.app.NotificationManager notificationManager =
                 (android.app.NotificationManager) getSystemService(android.content.Context.NOTIFICATION_SERVICE);
 
-        // Since android Oreo notification channel is needed.
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            android.app.NotificationChannel channel = new android.app.NotificationChannel(channelId,
-                    "System Alerts",
-                    android.app.NotificationManager.IMPORTANCE_HIGH);
-            notificationManager.createNotificationChannel(channel);
-        }
-
+        // The channel already exists: MyApp creates it at startup (NotificationChannels).
         notificationManager.notify(notificationId, notificationBuilder.build());
         Log.d(TAG, "TRAY_POSTED notificationId=" + notificationId);
     }

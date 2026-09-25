@@ -95,7 +95,7 @@ public class CycleReportGenerator {
 
         int x = MARGIN;
         int contentWidth = PAGE_WIDTH - (2 * MARGIN);
-        String cycleStatus = cycle.getStatus() != null ? cycle.getStatus().toUpperCase() : "ACTIVE";
+        String cycleStatus = cycle.getStatus() != null ? cycle.getStatus().toUpperCase(java.util.Locale.ROOT) : "ACTIVE";
         boolean cycleCompleted = "COMPLETED".equalsIgnoreCase(cycleStatus);
 
         // y is the TOP of the next block throughout; every helper returns the
@@ -253,7 +253,7 @@ public class CycleReportGenerator {
         // that exporting the same day-numbered cycle for two different
         // devices (or exporting the same cycle twice in one day) can never
         // silently overwrite a previous report.
-        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+        String timeStamp = DateUtils.fileTimestamp();
         String fileName = "Basilience_Report_" + sanitizeForFilename(deviceId) + "_Cycle" + cycle.getCycleNumber() + "_" + timeStamp + ".pdf";
         File file = new File(dir, fileName);
 
@@ -345,7 +345,7 @@ public class CycleReportGenerator {
         File dir = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
         if (dir != null && !dir.exists()) dir.mkdirs();
 
-        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+        String timeStamp = DateUtils.fileTimestamp();
         String fileName = "Basilience_ParamReport_" + sanitizeForFilename(filter.deviceId) + "_"
                 + sanitizeForFilename(filter.cycleLabel) + "_" + timeStamp + ".pdf";
         File file = new File(dir, fileName);
@@ -625,7 +625,7 @@ public class CycleReportGenerator {
         File dir = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
         if (dir != null && !dir.exists()) dir.mkdirs();
 
-        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+        String timeStamp = DateUtils.fileTimestamp();
         String fileName = "Basilience_FoggingReport_" + sanitizeForFilename(filter.deviceId) + "_"
                 + sanitizeForFilename(filter.cycleLabel) + "_" + timeStamp + ".pdf";
         File file = new File(dir, fileName);

@@ -2,7 +2,6 @@ package com.example.basilience;
 
 import android.app.Activity;
 import android.app.Dialog;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
@@ -44,7 +43,7 @@ import java.util.WeakHashMap;
 public class NotificationHelper {
 
     private static final String CONNECTIVITY_PREFS = "connectivity_notifications";
-    private static final String WIFI_NOTIFICATION_CHANNEL = "wifi_configuration";
+    private static final String WIFI_NOTIFICATION_CHANNEL = NotificationChannels.WIFI_CONFIGURATION;
     private static final String LOCAL_AP_DEVICE_KEY = "local_setup_ap_device";
     private static final String LOCAL_AP_CONFIRMED_AT_KEY = "local_setup_ap_confirmed_at";
     private static final String CLOUD_PRESENTATION_PREFIX = "cloud_connectivity_presentation_";
@@ -309,12 +308,7 @@ public class NotificationHelper {
         if (prefs.getBoolean(key, false)) return;
 
         if (manager == null) return;
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(new NotificationChannel(
-                    WIFI_NOTIFICATION_CHANNEL,
-                    "Wi-Fi Configuration",
-                    NotificationManager.IMPORTANCE_DEFAULT));
-        }
+        // The channel is created at startup by MyApp (NotificationChannels).
 
         Intent intent = new Intent(appContext, MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);

@@ -342,7 +342,7 @@ public class Database_Helper {
 
         return db.collection("users")
                 .whereEqualTo("ownerAdminUid", adminUid)
-                .whereEqualTo("role", role.toUpperCase())
+                .whereEqualTo("role", role.toUpperCase(java.util.Locale.ROOT))
                 .get();
     }
 
@@ -1370,10 +1370,8 @@ public class Database_Helper {
 
                 if (baseDate == null) baseDate = Timestamp.now();
 
-                java.util.Calendar cal = java.util.Calendar.getInstance();
-                cal.setTime(baseDate.toDate());
-                cal.add(java.util.Calendar.DAY_OF_YEAR, newFrequency);
-                Timestamp newNextHarvest = new Timestamp(cal.getTime());
+                Timestamp newNextHarvest = new Timestamp(new java.util.Date(
+                        ManilaTime.addDays(baseDate.toDate().getTime(), newFrequency)));
 
                 transaction.update(cycleRef, "harvestFrequencyDays", newFrequency);
                 transaction.update(cycleRef, "nextHarvestDate", newNextHarvest);
@@ -1494,10 +1492,8 @@ public class Database_Helper {
             }
 
             // Calculate nextHarvestDate based on this harvest's date + frequency
-            java.util.Calendar cal = java.util.Calendar.getInstance();
-            cal.setTime(harvest.getHarvestDate().toDate());
-            cal.add(java.util.Calendar.DAY_OF_YEAR, frequency);
-            Timestamp nextHarvest = new Timestamp(cal.getTime());
+            Timestamp nextHarvest = new Timestamp(new java.util.Date(
+                    ManilaTime.addDays(harvest.getHarvestDate().toDate().getTime(), frequency)));
 
             transaction.set(harvestRef, harvest);
             transaction.update(cycleRef,
@@ -1655,10 +1651,8 @@ public class Database_Helper {
                         if (!qSnap.isEmpty()) {
                             latestDate = qSnap.getDocuments().get(0).getTimestamp("harvestDate");
                             if (latestDate != null) {
-                                java.util.Calendar cal = java.util.Calendar.getInstance();
-                                cal.setTime(latestDate.toDate());
-                                cal.add(java.util.Calendar.DAY_OF_YEAR, finalFrequency);
-                                nextHarvestDate = new Timestamp(cal.getTime());
+                                nextHarvestDate = new Timestamp(new java.util.Date(
+                                        ManilaTime.addDays(latestDate.toDate().getTime(), finalFrequency)));
                             }
                         }
 
@@ -1703,10 +1697,8 @@ public class Database_Helper {
                         if (!qSnap.isEmpty()) {
                             latestDate = qSnap.getDocuments().get(0).getTimestamp("harvestDate");
                             if (latestDate != null) {
-                                java.util.Calendar cal = java.util.Calendar.getInstance();
-                                cal.setTime(latestDate.toDate());
-                                cal.add(java.util.Calendar.DAY_OF_YEAR, finalFrequency);
-                                nextHarvestDate = new Timestamp(cal.getTime());
+                                nextHarvestDate = new Timestamp(new java.util.Date(
+                                        ManilaTime.addDays(latestDate.toDate().getTime(), finalFrequency)));
                             }
                         }
 
@@ -1923,7 +1915,7 @@ public class Database_Helper {
             Map<String, Object> assignment = new HashMap<>();
             assignment.put("deviceId", deviceId);
             assignment.put("userUid", userUid);
-            assignment.put("role", role.toUpperCase());
+            assignment.put("role", role.toUpperCase(java.util.Locale.ROOT));
             assignment.put("assignedBy", adminUid);
             assignment.put("assignedAt", System.currentTimeMillis());
 

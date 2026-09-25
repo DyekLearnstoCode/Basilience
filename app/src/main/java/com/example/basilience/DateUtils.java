@@ -8,6 +8,27 @@ public class DateUtils {
 
     private static final String DEFAULT_NULL = "---";
 
+    // Every date shown in the app is a Manila date, the same zone the report
+    // and cycle day boundaries use, so a label can never name a different day
+    // than the range it describes when the phone is set to another timezone.
+    // Timestamps themselves are absolute and untouched; this only formats them.
+    private static SimpleDateFormat manilaFormat(String pattern) {
+        SimpleDateFormat format = new SimpleDateFormat(pattern, Locale.getDefault());
+        format.setTimeZone(ManilaTime.ZONE);
+        return format;
+    }
+
+    /**
+     * "yyyyMMdd_HHmmss" for export file names: ASCII digits whatever the phone's
+     * language (a name is an identifier, not display text), in Manila time to
+     * match the "Generated on" line inside the report.
+     */
+    static String fileTimestamp() {
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US);
+        format.setTimeZone(ManilaTime.ZONE);
+        return format.format(new java.util.Date());
+    }
+
     // SimpleDateFormat isn't thread-safe, so each pattern gets its own
     // ThreadLocal instance instead of a bare static one - reused across
     // calls on the same thread (mainly UI-thread RecyclerView binds, where
@@ -15,15 +36,15 @@ public class DateUtils {
     // freshly-rendered/re-filtered list) without risking cross-thread
     // corruption if a background callback ever formats a date too.
     private static final ThreadLocal<SimpleDateFormat> DATE_TIME_FORMAT =
-            ThreadLocal.withInitial(() -> new SimpleDateFormat("MMM dd, yyyy • h:mm a", Locale.getDefault()));
+            ThreadLocal.withInitial(() -> manilaFormat("MMM dd, yyyy • h:mm a"));
     private static final ThreadLocal<SimpleDateFormat> DATE_FORMAT =
-            ThreadLocal.withInitial(() -> new SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()));
+            ThreadLocal.withInitial(() -> manilaFormat("MMM dd, yyyy"));
     private static final ThreadLocal<SimpleDateFormat> DATE_SLASH_FORMAT =
-            ThreadLocal.withInitial(() -> new SimpleDateFormat("MM/dd/yy", Locale.getDefault()));
+            ThreadLocal.withInitial(() -> manilaFormat("MM/dd/yy"));
     private static final ThreadLocal<SimpleDateFormat> SHORT_DATE_FORMAT =
-            ThreadLocal.withInitial(() -> new SimpleDateFormat("MMM dd", Locale.getDefault()));
+            ThreadLocal.withInitial(() -> manilaFormat("MMM dd"));
     private static final ThreadLocal<SimpleDateFormat> TIME_FORMAT =
-            ThreadLocal.withInitial(() -> new SimpleDateFormat("h:mm a", Locale.getDefault()));
+            ThreadLocal.withInitial(() -> manilaFormat("h:mm a"));
 
     /**
      * Formats a Timestamp to: MMM dd, yyyy • h:mm a
