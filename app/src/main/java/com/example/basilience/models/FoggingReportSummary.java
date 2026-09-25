@@ -20,26 +20,22 @@ public class FoggingReportSummary {
     private int observedDays = 1;
 
     /**
-     * @param effectiveDurationMs the duration to credit toward aggregates
-     *                            (totals/buckets), separate from the
-     *                            session's own raw start/end timestamps so
-     *                            callers can clip to the report window or
-     *                            zero out an anomalous session without
-     *                            altering the underlying event data.
+     * Credits the session's counted (window-clipped) duration toward the
+     * aggregates. The caller must have set the session's counted interval
+     * first, so totals use the same clipped value the table and PDF show.
      */
-    public void addCompletedSession(FoggingSession session, long effectiveDurationMs) {
+    public void addCompletedSession(FoggingSession session) {
         completedSessions.add(session);
-        addDurationToTotals(session, effectiveDurationMs);
+        addDurationToTotals(session, session.getCountedDurationMs());
     }
 
     /**
      * Credits the in-progress portion of a currently-running session to the
      * aggregates without adding it to completedSessions, since it has no end
-     * event yet. See FoggingReportProcessor for how effectiveDurationMs is
-     * clipped to the report window and the current time.
+     * event yet. Uses the session's counted interval, like completed ones.
      */
-    public void addRunningSessionDuration(FoggingSession session, long effectiveDurationMs) {
-        addDurationToTotals(session, effectiveDurationMs);
+    public void addRunningSessionDuration(FoggingSession session) {
+        addDurationToTotals(session, session.getCountedDurationMs());
     }
 
     private void addDurationToTotals(FoggingSession session, long effectiveDurationMs) {

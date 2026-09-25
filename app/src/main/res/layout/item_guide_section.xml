@@ -33,6 +33,15 @@
             android:textSize="11sp"
             android:text="Admin Only"
             android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEditGuide"
+            style="@style/Basilience.RestoreDefaultButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:text="Edit Guide"
+            android:visibility="gone" />
     </LinearLayout>
 
     <!-- OPTIONAL SHORT DESCRIPTION -->
@@ -102,6 +111,38 @@
         </LinearLayout>
     </FrameLayout>
 
+    <!-- PURPOSE: structured-section counterpart to the plain description above -->
+    <TextView
+        android:id="@+id/tvPurposeLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/ds_space_md"
+        style="@style/Basilience.SectionLabel"
+        android:text="PURPOSE"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/tvPurpose"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        style="@style/Basilience.BodyMuted"
+        android:textColor="@color/text_dark"
+        android:text="Purpose text"
+        android:visibility="gone" />
+
+    <!-- NORMAL OPERATION eyebrow - only shown above stepsContainer for a
+         restructured component section, so a plain (non-restructured)
+         section's numbered steps keep rendering exactly as before. -->
+    <TextView
+        android:id="@+id/tvNormalOperationLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/ds_space_md"
+        style="@style/Basilience.SectionLabel"
+        android:text="NORMAL OPERATION"
+        android:visibility="gone" />
+
     <!-- NUMBERED STEPS (populated at bind time) -->
     <LinearLayout
         android:id="@+id/stepsContainer"
@@ -109,6 +150,57 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:layout_marginTop="@dimen/ds_space_md" />
+
+    <!-- INDICATORS: what the user should observe to tell this component's state -->
+    <TextView
+        android:id="@+id/tvIndicatorsLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/ds_space_md"
+        style="@style/Basilience.SectionLabel"
+        android:text="INDICATORS"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/indicatorsContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="4dp" />
+
+    <!-- COMMON PROBLEMS: known failure modes for this component -->
+    <TextView
+        android:id="@+id/tvCommonProblemsLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/ds_space_md"
+        style="@style/Basilience.SectionLabel"
+        android:text="COMMON PROBLEMS"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/commonProblemsContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="4dp" />
+
+    <!-- TROUBLESHOOTING: actionable steps to try -->
+    <TextView
+        android:id="@+id/tvTroubleshootingLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/ds_space_md"
+        style="@style/Basilience.SectionLabel"
+        android:text="TROUBLESHOOTING"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/troubleshootingContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="4dp" />
 
     <!-- TIP: informational only, never used for warnings -->
     <LinearLayout

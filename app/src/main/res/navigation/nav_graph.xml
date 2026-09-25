@@ -145,7 +145,31 @@
         android:id="@+id/hardwareGuideFragment"
         android:name="com.example.basilience.HardwareGuideFragment"
         android:label="Hardware Guide"
-        tools:layout="@layout/guide_hardware" />
+        tools:layout="@layout/guide_hardware">
+        <argument
+            android:name="targetComponentKey"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+        <argument
+            android:name="deviceId"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/hardwareGuideEditorFragment"
+        android:name="com.example.basilience.HardwareGuideEditorFragment"
+        android:label="Edit Guide"
+        tools:layout="@layout/fragment_hardware_guide_editor">
+        <argument
+            android:name="deviceId"
+            app:argType="string" />
+        <argument
+            android:name="componentKey"
+            app:argType="string" />
+    </fragment>
 
     <fragment
         android:id="@+id/mobileGuideFragment"

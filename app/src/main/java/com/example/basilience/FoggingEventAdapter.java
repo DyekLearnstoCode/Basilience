@@ -52,12 +52,24 @@ public class FoggingEventAdapter extends RecyclerView.Adapter<FoggingEventAdapte
         } else if (!session.isCompleted()) {
             // Display only: the elapsed calculation is unchanged, just
             // formatted readably ("25h 48m" rather than "1548m elapsed").
-            long elapsedMs = Math.max(0, System.currentTimeMillis() - startTimestamp);
-            holder.tvDuration.setText("Running now · " + DurationFormatter.formatRuntime(elapsedMs));
+            // If the report window ended before now, only the in-range part
+            // is shown so it matches the totals.
+            String runningText;
+            if (session.isClippedToReport()) {
+                runningText = "Running now · " + DurationFormatter.formatRuntime(session.getCountedDurationMs()) + " in range";
+            } else {
+                long elapsedMs = Math.max(0, System.currentTimeMillis() - startTimestamp);
+                runningText = "Running now · " + DurationFormatter.formatRuntime(elapsedMs);
+            }
+            holder.tvDuration.setText(runningText);
             holder.tvDuration.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.primary));
             dotColor = R.color.primary;
         } else {
-            holder.tvDuration.setText(DurationFormatter.formatSession(session.getDurationMs()));
+            // The duration counted inside the report range (same value the
+            // totals and chart use); the start time above stays the real one.
+            String durationText = DurationFormatter.formatSession(session.getCountedDurationMs());
+            if (session.isClippedToReport()) durationText += " in range";
+            holder.tvDuration.setText(durationText);
             holder.tvDuration.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.text_dark));
             dotColor = R.color.state_success;
         }

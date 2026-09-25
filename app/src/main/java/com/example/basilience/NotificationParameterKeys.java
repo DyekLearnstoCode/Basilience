@@ -69,7 +69,7 @@ public final class NotificationParameterKeys {
         if (storedParameterKey != null && ALERT_KEY_TO_PARAMETER_KEY.containsValue(storedParameterKey)) {
             return storedParameterKey;
         }
-        if (!NotificationAdapter.NotificationItem.TYPE_PARAMETER.equals(type) || notificationId == null) {
+        if (!NotificationEntity.TYPE_PARAMETER.equals(type) || notificationId == null) {
             return null;
         }
         int lastUnderscore = notificationId.lastIndexOf('_');

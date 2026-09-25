@@ -47,6 +47,8 @@ public class ParameterTargetRangesFragment extends Fragment {
     private static final class RangeInputs {
         TextInputLayout minLayout, maxLayout;
         TextInputEditText minField, maxField;
+        View tvDefault;
+        MaterialButton btnRestore;
         float loadedMin, loadedMax;
     }
 
@@ -55,6 +57,7 @@ public class ParameterTargetRangesFragment extends Fragment {
 
     private Database_Helper dbHelper;
     private MaterialButton btnSave;
+    private MaterialButton btnRestoreAllDefaults;
     private String deviceId;
     private boolean canEdit;
     private boolean loaded;
@@ -79,6 +82,7 @@ public class ParameterTargetRangesFragment extends Fragment {
         }
 
         btnSave = view.findViewById(R.id.btnSaveTargetRanges);
+        btnRestoreAllDefaults = view.findViewById(R.id.btnRestoreAllDefaults);
 
         SharedPreferences prefs = requireContext()
                 .getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
@@ -106,6 +110,10 @@ public class ParameterTargetRangesFragment extends Fragment {
             NotificationHelper.hideKeyboard(v);
             save();
         });
+        if (btnRestoreAllDefaults != null) btnRestoreAllDefaults.setOnClickListener(v -> {
+            NotificationHelper.hideKeyboard(v);
+            confirmRestoreAllDefaults();
+        });
 
         if (deviceId == null || deviceId.isEmpty()) {
             NotificationHelper.showError(requireContext(), "No device selected");
@@ -119,26 +127,29 @@ public class ParameterTargetRangesFragment extends Fragment {
 
     private void bindInputs(View view) {
         register(view, ParameterTargetRanges.PH, R.id.layoutMinPh, R.id.etMinPh,
-                R.id.layoutMaxPh, R.id.etMaxPh);
+                R.id.layoutMaxPh, R.id.etMaxPh, R.id.tvDefaultPh, R.id.btnRestorePh);
         register(view, ParameterTargetRanges.EC, R.id.layoutMinEc, R.id.etMinEc,
-                R.id.layoutMaxEc, R.id.etMaxEc);
+                R.id.layoutMaxEc, R.id.etMaxEc, R.id.tvDefaultEc, R.id.btnRestoreEc);
         register(view, ParameterTargetRanges.AIR_TEMPERATURE, R.id.layoutMinAirTemp, R.id.etMinAirTemp,
-                R.id.layoutMaxAirTemp, R.id.etMaxAirTemp);
+                R.id.layoutMaxAirTemp, R.id.etMaxAirTemp, R.id.tvDefaultAirTemp, R.id.btnRestoreAirTemp);
         register(view, ParameterTargetRanges.HUMIDITY, R.id.layoutMinHumidity, R.id.etMinHumidity,
-                R.id.layoutMaxHumidity, R.id.etMaxHumidity);
+                R.id.layoutMaxHumidity, R.id.etMaxHumidity, R.id.tvDefaultHumidity, R.id.btnRestoreHumidity);
         register(view, ParameterTargetRanges.WATER_TEMPERATURE, R.id.layoutMinWaterTemp, R.id.etMinWaterTemp,
-                R.id.layoutMaxWaterTemp, R.id.etMaxWaterTemp);
+                R.id.layoutMaxWaterTemp, R.id.etMaxWaterTemp, R.id.tvDefaultWaterTemp, R.id.btnRestoreWaterTemp);
         register(view, ParameterTargetRanges.WATER_LEVEL, R.id.layoutMinWaterLevel, R.id.etMinWaterLevel,
-                R.id.layoutMaxWaterLevel, R.id.etMaxWaterLevel);
+                R.id.layoutMaxWaterLevel, R.id.etMaxWaterLevel, R.id.tvDefaultWaterLevel, R.id.btnRestoreWaterLevel);
     }
 
     private void register(View view, ParameterTargetRanges parameter,
-                          int minLayoutId, int minFieldId, int maxLayoutId, int maxFieldId) {
+                          int minLayoutId, int minFieldId, int maxLayoutId, int maxFieldId,
+                          int defaultBadgeId, int restoreButtonId) {
         RangeInputs r = new RangeInputs();
         r.minLayout = view.findViewById(minLayoutId);
         r.maxLayout = view.findViewById(maxLayoutId);
         r.minField = view.findViewById(minFieldId);
         r.maxField = view.findViewById(maxFieldId);
+        r.tvDefault = view.findViewById(defaultBadgeId);
+        r.btnRestore = view.findViewById(restoreButtonId);
         inputs.put(parameter, r);
 
         TextWatcher watcher = new TextWatcher() {
@@ -148,10 +159,15 @@ public class ParameterTargetRangesFragment extends Fragment {
                 r.minLayout.setError(null);
                 r.maxLayout.setError(null);
                 updateDirtyState();
+                updateDefaultBadge(parameter, r);
             }
         };
         if (r.minField != null) r.minField.addTextChangedListener(watcher);
         if (r.maxField != null) r.maxField.addTextChangedListener(watcher);
+
+        if (r.btnRestore != null) {
+            r.btnRestore.setOnClickListener(v -> restoreDefault(parameter, r));
+        }
     }
 
     // ------------------------------------------------------------------
@@ -253,6 +269,41 @@ public class ParameterTargetRangesFragment extends Fragment {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Restore defaults
+    //
+    // Restoring only rewrites the staged EditText values, the same as if
+    // the Admin had typed the default numbers themselves - it goes through
+    // the normal TextWatcher, so dirty-state and the "Default" badge stay
+    // correct for free, and nothing reaches RTDB until Save is pressed.
+    // ------------------------------------------------------------------
+
+    private void restoreDefault(ParameterTargetRanges parameter, RangeInputs r) {
+        r.minField.setText(format(parameter.defaultMin, parameter.decimals));
+        r.maxField.setText(format(parameter.defaultMax, parameter.decimals));
+    }
+
+    private void confirmRestoreAllDefaults() {
+        NotificationHelper.showConfirmation(requireContext(),
+                "Restore All Defaults?",
+                "This resets every parameter below to its default range. Nothing is saved until you press Save Changes.",
+                "Restore All", "Cancel", () -> {
+                    for (Map.Entry<ParameterTargetRanges, RangeInputs> entry : inputs.entrySet()) {
+                        restoreDefault(entry.getKey(), entry.getValue());
+                    }
+                });
+    }
+
+    /** Shows the "Default" badge only while both staged fields match the compiled default. */
+    private void updateDefaultBadge(ParameterTargetRanges parameter, RangeInputs r) {
+        if (r.tvDefault == null) return;
+        Float min = parse(r.minField);
+        Float max = parse(r.maxField);
+        boolean isDefault = min != null && max != null
+                && !differs(min, parameter.defaultMin) && !differs(max, parameter.defaultMax);
+        r.tvDefault.setVisibility(isDefault ? View.VISIBLE : View.GONE);
     }
 
     // ------------------------------------------------------------------

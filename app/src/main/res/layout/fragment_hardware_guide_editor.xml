@@ -1,0 +1,236 @@
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
+        app:elevation="0dp">
+
+        <com.google.android.material.appbar.CollapsingToolbarLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:layout_scrollFlags="scroll|exitUntilCollapsed">
+
+            <include layout="@layout/layout_header" />
+
+        </com.google.android.material.appbar.CollapsingToolbarLayout>
+
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="@dimen/container_overlap_margin"
+        android:background="@drawable/top_rounded_white"
+        android:elevation="5dp"
+        android:fillViewport="true"
+        android:overScrollMode="never"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingTop="@dimen/container_top_padding"
+            android:paddingStart="@dimen/container_side_padding"
+            android:paddingEnd="@dimen/container_side_padding"
+            android:paddingBottom="32dp">
+
+            <TextView
+                android:id="@+id/tvEditorComponentTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/state_primary_text"
+                android:textSize="22sp"
+                android:fontFamily="sans-serif-medium"
+                android:text="Edit Guide" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                style="@style/Basilience.BodyMuted"
+                android:text="Changes apply to this device only. Farmers assigned to it see the version you save here." />
+
+            <!-- MAIN IMAGE -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/ds_space_lg"
+                style="@style/Basilience.SectionLabel"
+                android:text="MAIN IMAGE" />
+
+            <ImageView
+                android:id="@+id/ivEditorImage"
+                android:layout_width="match_parent"
+                android:layout_height="200dp"
+                android:layout_marginTop="6dp"
+                android:scaleType="centerCrop"
+                android:background="@color/ds_surface_neutral"
+                android:contentDescription="@null" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnUploadImage"
+                    style="@style/BasilienceButton.Secondary"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Upload / Replace Image" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRestoreDefaultImage"
+                    style="@style/Basilience.RestoreDefaultButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="Restore Default Image" />
+
+            </LinearLayout>
+
+            <!-- PURPOSE -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/ds_space_lg"
+                style="@style/Basilience.SectionLabel"
+                android:text="PURPOSE" />
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etPurpose"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@color/ds_surface_neutral"
+                android:padding="10dp"
+                android:inputType="textMultiLine"
+                android:minLines="2" />
+
+            <!-- NORMAL OPERATION -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/ds_space_lg"
+                style="@style/Basilience.SectionLabel"
+                android:text="NORMAL OPERATION" />
+
+            <LinearLayout
+                android:id="@+id/containerNormalOperation"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="6dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAddNormalOperation"
+                style="@style/Basilience.RestoreDefaultButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="+ Add Step" />
+
+            <!-- INDICATORS -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/ds_space_lg"
+                style="@style/Basilience.SectionLabel"
+                android:text="INDICATORS" />
+
+            <LinearLayout
+                android:id="@+id/containerIndicators"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="6dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAddIndicator"
+                style="@style/Basilience.RestoreDefaultButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="+ Add Indicator" />
+
+            <!-- COMMON PROBLEMS -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/ds_space_lg"
+                style="@style/Basilience.SectionLabel"
+                android:text="COMMON PROBLEMS" />
+
+            <LinearLayout
+                android:id="@+id/containerCommonProblems"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="6dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAddCommonProblem"
+                style="@style/Basilience.RestoreDefaultButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="+ Add Problem" />
+
+            <!-- TROUBLESHOOTING -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/ds_space_lg"
+                style="@style/Basilience.SectionLabel"
+                android:text="TROUBLESHOOTING" />
+
+            <LinearLayout
+                android:id="@+id/containerTroubleshooting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="6dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAddTroubleshootingStep"
+                style="@style/Basilience.RestoreDefaultButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="+ Add Step" />
+
+            <!-- ACTIONS -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSaveGuide"
+                style="@style/BasilienceButton.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Save Changes" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRestoreDefaultGuide"
+                style="@style/BasilienceButton.Danger"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Restore Default Guide" />
+
+            <android.widget.ProgressBar
+                android:id="@+id/progressEditor"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:layout_gravity="center_horizontal"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+    </androidx.core.widget.NestedScrollView>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

@@ -338,26 +338,23 @@ public class Database_Helper {
         return checkAdminTask().onSuccessTask(aVoid -> db.collection("users").document(personnelId).update(updates));
     }
 
+    /**
+     * Requires the caller to have already reauthenticated the Admin
+     * (Personnel_Details_Fragment's password prompt) immediately before
+     * calling this - the removePersonnel callable independently re-checks
+     * that reauthentication is recent (auth_time within 300s) plus the
+     * Admin role/ownership, so there is no client-side path that can skip
+     * that check. The unlink write and the deviceAssignments deletes are
+     * done server-side in one Admin SDK batch, same atomicity as the old
+     * client batch this replaced.
+     */
     public Task<Void> deletePersonnelForCurrentAdmin(String personnelId) {
-        return checkAdminTask().onSuccessTask(aVoid -> {
-            String adminUid = getCurrentUid();
-            if (adminUid == null) return Tasks.forException(new Exception("Not logged in"));
-            DocumentReference personnelRef = db.collection("users").document(personnelId);
-            return personnelRef.get().continueWithTask(profileTask -> {
-                if (!profileTask.isSuccessful()) throw profileTask.getException();
-                DocumentSnapshot profile = profileTask.getResult();
-                if (!profile.exists() || !adminUid.equals(profile.getString("ownerAdminUid"))) {
-                    throw new FirebaseFirestoreException("This personnel is not linked to your account.", FirebaseFirestoreException.Code.PERMISSION_DENIED);
-                }
-                return db.collection("deviceAssignments").whereEqualTo("userUid", personnelId).get();
-            }).continueWithTask(assignmentsTask -> {
-                if (!assignmentsTask.isSuccessful()) throw assignmentsTask.getException();
-                com.google.firebase.firestore.WriteBatch batch = db.batch();
-                batch.update(personnelRef, "ownerAdminUid", null);
-                for (DocumentSnapshot assignment : assignmentsTask.getResult()) batch.delete(assignment.getReference());
-                return batch.commit();
-            });
-        });
+        Map<String, Object> data = new HashMap<>();
+        data.put("personnelUid", personnelId);
+        return FirebaseFunctions.getInstance("asia-southeast1")
+                .getHttpsCallable("removePersonnel")
+                .call(data)
+                .onSuccessTask(result -> Tasks.forResult(null));
     }
 
     public Task<Void> linkExistingPersonnelByEmail(String email) {

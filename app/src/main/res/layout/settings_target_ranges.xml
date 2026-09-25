@@ -99,10 +99,35 @@
                 android:textSize="13sp"
                 android:visibility="gone" />
 
+            <!-- RESTORE ALL DEFAULTS -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRestoreAllDefaults"
+                style="@style/BasilienceButton.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="18dp"
+                android:text="Restore All Defaults" />
+
             <!-- ================= pH ================= -->
-            <TextView
-                style="@style/Basilience.RangeSectionLabel"
-                android:text="pH" />
+            <LinearLayout style="@style/Basilience.RangeSectionRow">
+
+                <TextView
+                    style="@style/Basilience.RangeSectionLabel"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginTop="0dp"
+                    android:layout_marginBottom="0dp"
+                    android:text="pH" />
+
+                <TextView
+                    android:id="@+id/tvDefaultPh"
+                    style="@style/Basilience.DefaultBadge" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRestorePh"
+                    style="@style/Basilience.RestoreDefaultButton" />
+
+            </LinearLayout>
 
             <LinearLayout
                 style="@style/Basilience.RangeRow">
@@ -144,9 +169,25 @@
             </LinearLayout>
 
             <!-- ================= EC ================= -->
-            <TextView
-                style="@style/Basilience.RangeSectionLabel"
-                android:text="EC (mS/cm)" />
+            <LinearLayout style="@style/Basilience.RangeSectionRow">
+
+                <TextView
+                    style="@style/Basilience.RangeSectionLabel"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginTop="0dp"
+                    android:layout_marginBottom="0dp"
+                    android:text="EC (mS/cm)" />
+
+                <TextView
+                    android:id="@+id/tvDefaultEc"
+                    style="@style/Basilience.DefaultBadge" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRestoreEc"
+                    style="@style/Basilience.RestoreDefaultButton" />
+
+            </LinearLayout>
 
             <LinearLayout
                 style="@style/Basilience.RangeRow">
@@ -188,9 +229,25 @@
             </LinearLayout>
 
             <!-- ============ AIR TEMPERATURE ============ -->
-            <TextView
-                style="@style/Basilience.RangeSectionLabel"
-                android:text="Air Temperature (°C)" />
+            <LinearLayout style="@style/Basilience.RangeSectionRow">
+
+                <TextView
+                    style="@style/Basilience.RangeSectionLabel"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginTop="0dp"
+                    android:layout_marginBottom="0dp"
+                    android:text="Air Temperature (°C)" />
+
+                <TextView
+                    android:id="@+id/tvDefaultAirTemp"
+                    style="@style/Basilience.DefaultBadge" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRestoreAirTemp"
+                    style="@style/Basilience.RestoreDefaultButton" />
+
+            </LinearLayout>
 
             <LinearLayout
                 style="@style/Basilience.RangeRow">
@@ -232,9 +289,25 @@
             </LinearLayout>
 
             <!-- ================ HUMIDITY ================ -->
-            <TextView
-                style="@style/Basilience.RangeSectionLabel"
-                android:text="Humidity (%)" />
+            <LinearLayout style="@style/Basilience.RangeSectionRow">
+
+                <TextView
+                    style="@style/Basilience.RangeSectionLabel"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginTop="0dp"
+                    android:layout_marginBottom="0dp"
+                    android:text="Humidity (%)" />
+
+                <TextView
+                    android:id="@+id/tvDefaultHumidity"
+                    style="@style/Basilience.DefaultBadge" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRestoreHumidity"
+                    style="@style/Basilience.RestoreDefaultButton" />
+
+            </LinearLayout>
 
             <LinearLayout
                 style="@style/Basilience.RangeRow">
@@ -276,9 +349,25 @@
             </LinearLayout>
 
             <!-- =========== WATER TEMPERATURE =========== -->
-            <TextView
-                style="@style/Basilience.RangeSectionLabel"
-                android:text="Water Temperature (°C)" />
+            <LinearLayout style="@style/Basilience.RangeSectionRow">
+
+                <TextView
+                    style="@style/Basilience.RangeSectionLabel"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginTop="0dp"
+                    android:layout_marginBottom="0dp"
+                    android:text="Water Temperature (°C)" />
+
+                <TextView
+                    android:id="@+id/tvDefaultWaterTemp"
+                    style="@style/Basilience.DefaultBadge" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRestoreWaterTemp"
+                    style="@style/Basilience.RestoreDefaultButton" />
+
+            </LinearLayout>
 
             <LinearLayout
                 style="@style/Basilience.RangeRow">
@@ -320,9 +409,25 @@
             </LinearLayout>
 
             <!-- ============== WATER LEVEL ============== -->
-            <TextView
-                style="@style/Basilience.RangeSectionLabel"
-                android:text="Water Level (%)" />
+            <LinearLayout style="@style/Basilience.RangeSectionRow">
+
+                <TextView
+                    style="@style/Basilience.RangeSectionLabel"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginTop="0dp"
+                    android:layout_marginBottom="0dp"
+                    android:text="Water Level (%)" />
+
+                <TextView
+                    android:id="@+id/tvDefaultWaterLevel"
+                    style="@style/Basilience.DefaultBadge" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRestoreWaterLevel"
+                    style="@style/Basilience.RestoreDefaultButton" />
+
+            </LinearLayout>
 
             <LinearLayout
                 style="@style/Basilience.RangeRow">

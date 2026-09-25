@@ -8,6 +8,10 @@ public class FoggingSession {
     // visible in Recent Activity/PDF so the anomaly isn't hidden, but its
     // duration is excluded from report aggregates so it can't skew totals.
     private boolean anomalous;
+    private long countedStartMs;
+    private long countedEndMs;
+    private boolean hasCountedInterval;
+    private boolean clippedToReport;
 
     public FoggingSession(FoggingEvent startEvent) {
         this.startEvent = startEvent;
@@ -40,6 +44,40 @@ public class FoggingSession {
     public long getDurationMs() {
         if (!isCompleted()) return 0;
         return Math.max(0, endEvent.timestamp - startEvent.timestamp);
+    }
+
+    /**
+     * Sets the part of this session that counts inside the report window.
+     * Set once by FoggingReportProcessor; totals, chart buckets, the session
+     * table and the PDF all read this same interval. The raw start/end events
+     * are never changed. An empty interval (start == end) means the session
+     * contributes nothing (anomalous/incomplete, or entirely outside).
+     */
+    public void setCountedInterval(long countedStartMs, long countedEndMs) {
+        this.countedStartMs = countedStartMs;
+        this.countedEndMs = Math.max(countedStartMs, countedEndMs);
+        this.hasCountedInterval = true;
+    }
+
+    public long getCountedDurationMs() {
+        return hasCountedInterval ? countedEndMs - countedStartMs : getDurationMs();
+    }
+
+    public long getCountedStartMs() {
+        return hasCountedInterval ? countedStartMs : startEvent.timestamp;
+    }
+
+    public long getCountedEndMs() {
+        return hasCountedInterval ? countedEndMs : (endEvent != null ? endEvent.timestamp : startEvent.timestamp);
+    }
+
+    /** True when part of this session falls outside the report window, so its counted duration is shorter than its real one. */
+    public boolean isClippedToReport() {
+        return clippedToReport;
+    }
+
+    public void setClippedToReport(boolean clippedToReport) {
+        this.clippedToReport = clippedToReport;
     }
 
     public boolean isManual() {

@@ -10,7 +10,8 @@ const {getFunctions} = require("firebase-admin/functions");
 const crypto = require("crypto");
 
 admin.initializeApp({
-    databaseURL: "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app"
+    databaseURL: "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app",
+    storageBucket: "basilience-database.firebasestorage.app"
 });
 
 setGlobalOptions({ maxInstances: 10, region: "asia-southeast1" });
@@ -240,6 +241,72 @@ exports.changePersonnelPassword = onCall(async (request) => {
             code: error.code
         });
         throw new HttpsError("internal", "Unable to update the Personnel password.");
+    }
+});
+
+// Moved server-side (from a client-issued WriteBatch in
+// Database_Helper.deletePersonnelForCurrentAdmin) so removal can require the
+// same recent-authentication proof as changePersonnelPassword above, with no
+// client-side path that could skip it. The unlink (ownerAdminUid -> null)
+// and the deviceAssignments deletes stay in one Admin SDK batch, so they
+// remain atomic exactly as before; onDeviceAssignmentWrittenSyncNotification-
+// Counters, onDeviceAssignmentWrittenUpdateSmsRecipients and
+// onUserWrittenUpdateSmsRecipients all react to plain document writes
+// regardless of who made them, so they keep firing unchanged.
+exports.removePersonnel = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Authentication is required.");
+    }
+
+    const authTimeSeconds = Number(request.auth.token.auth_time);
+    const authenticationAgeSeconds = Math.floor(Date.now() / 1000) - authTimeSeconds;
+    if (!Number.isFinite(authTimeSeconds) || authenticationAgeSeconds < 0
+            || authenticationAgeSeconds > 300) {
+        throw new HttpsError("failed-precondition", "Recent Admin authentication is required.");
+    }
+
+    const personnelUid = typeof request.data?.personnelUid === "string"
+        ? request.data.personnelUid.trim() : "";
+    if (!personnelUid || personnelUid === request.auth.uid) {
+        throw new HttpsError("invalid-argument", "A valid Personnel account is required.");
+    }
+
+    const db = admin.firestore();
+    const [adminProfile, personnelProfile] = await Promise.all([
+        db.collection("users").doc(request.auth.uid).get(),
+        db.collection("users").doc(personnelUid).get()
+    ]);
+
+    if (!adminProfile.exists || String(adminProfile.data().role || "").toUpperCase() !== "ADMIN") {
+        throw new HttpsError("permission-denied", "Only an authenticated Admin may perform this action.");
+    }
+    if (!personnelProfile.exists || personnelProfile.data().ownerAdminUid !== request.auth.uid) {
+        throw new HttpsError("permission-denied", "This personnel is not linked to your account.");
+    }
+
+    try {
+        const assignments = await db.collection("deviceAssignments")
+            .where("userUid", "==", personnelUid).get();
+
+        const batch = db.batch();
+        batch.update(personnelProfile.ref, {ownerAdminUid: null});
+        assignments.forEach(assignment => batch.delete(assignment.ref));
+        await batch.commit();
+
+        logger.info("Personnel unlinked by authorized Admin", {
+            adminUid: request.auth.uid,
+            personnelUid,
+            assignmentsRemoved: assignments.size
+        });
+        return {success: true};
+    } catch (error) {
+        logger.error("Unable to remove Personnel", {
+            adminUid: request.auth.uid,
+            personnelUid,
+            error: error.message,
+            code: error.code
+        });
+        throw new HttpsError("internal", "Unable to remove this personnel.");
     }
 });
 
@@ -2353,6 +2420,40 @@ exports.onDeviceWrittenUpdateSmsRecipients = onDocumentWritten(
             }
         } catch (error) {
             logger.error("[SMS-SYNC] device write projection failed", {deviceId, error});
+            throw error;
+        }
+    }
+);
+
+// Deletes the previous Storage photo for a device's Hardware Guide component
+// override once it's no longer referenced - whether the Admin replaced the
+// image (imagePath changes), tapped "Restore Default Image" (imagePath
+// removed via field delete), or tapped "Restore Default Guide" (the whole
+// override document, and any imagePath it held, is deleted). All three write
+// shapes reduce to the same comparison: if the old document had an imagePath
+// and the new one doesn't have that same path, the old Storage object is now
+// orphaned and safe to delete. The app never deletes the Storage object
+// itself (see HardwareGuideRepository.java) specifically so a killed app
+// mid-save can't leave the app's own state and Storage disagreeing about
+// what was cleaned up - this trigger is the one place that happens.
+exports.onHardwareGuideWrittenCleanupImage = onDocumentWritten(
+    {document: "devices/{deviceId}/hardwareGuide/{componentKey}", retry: true},
+    async (event) => {
+        const before = event.data.before.exists ? event.data.before.data() : null;
+        const after = event.data.after.exists ? event.data.after.data() : null;
+        const oldPath = before ? before.imagePath : null;
+        const newPath = after ? after.imagePath : null;
+        if (!oldPath || oldPath === newPath) return;
+
+        try {
+            await admin.storage().bucket().file(oldPath).delete({ignoreNotFound: true});
+        } catch (error) {
+            logger.error("[HARDWARE-GUIDE] failed to delete orphaned image", {
+                deviceId: event.params.deviceId,
+                componentKey: event.params.componentKey,
+                oldPath,
+                error,
+            });
             throw error;
         }
     }

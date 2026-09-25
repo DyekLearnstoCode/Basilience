@@ -195,7 +195,8 @@ final class MobileGuideContent {
                         "Open Personnel from the management area to see everyone linked to your account.",
                         "\"Create Personnel\" registers a brand-new farmer account with a name, email, phone number, and password.",
                         "\"Add Existing Personnel\" links an existing, unlinked farmer account by email instead of creating a new one.",
-                        "Tap a person to view their details, edit their name/phone, reset their password, or remove them."))
+                        "Tap a person to view their details, edit their name/phone, reset their password, or remove them.",
+                        "Removing (unlinking) personnel requires re-entering your Admin password as a final confirmation step, after the initial \"Are you sure?\" prompt."))
                 .build());
 
         list.add(GuideSection.builder("Device Management")
@@ -314,6 +315,8 @@ final class MobileGuideContent {
                         "Each parameter has a Minimum and a Maximum. The Minimum is the lowest value considered acceptable, and the Maximum is the highest.",
                         "A reading below the minimum or above the maximum is marked as out of range in Monitoring, and appears in red on the Reports charts.",
                         "These same ranges also set the green (normal), yellow (near threshold), and red (out of range) zones shown on the Parameter Report's PDF and Excel exports.",
+                        "\"Restore Default\" next to a parameter resets just that parameter's Minimum and Maximum to its factory default. \"Restore All Defaults\" (with a confirmation) resets every parameter at once.",
+                        "Restoring only fills in the fields on screen - nothing changes until you tap Save Changes, so you can restore, review, and still back out without affecting the device. A small \"Default\" label appears next to a parameter whenever its fields currently match the factory default.",
                         "Enter the values for a parameter and tap Save Changes. The minimum must be lower than the maximum.",
                         "Changes reach the device within about a minute and are used for monitoring, alerts and reports from then on."))
                 .tip("Each growth cycle keeps the target ranges that were in use when the cycle was created, so changing the ranges later does not change that cycle's report. Cycles created before this feature use the ranges configured now.")

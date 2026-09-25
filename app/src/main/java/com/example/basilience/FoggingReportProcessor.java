@@ -90,19 +90,19 @@ public class FoggingReportProcessor {
                     currentSession.setEndEvent(event);
 
                     long rawDurationMs = currentSession.getDurationMs();
-                    long effectiveDurationMs;
+                    long sessionStartMs = currentSession.getStartEvent().timestamp;
                     if (rawDurationMs > MAX_PLAUSIBLE_SESSION_DURATION_MS) {
                         currentSession.setAnomalous(true);
-                        effectiveDurationMs = 0L;
+                        currentSession.setCountedInterval(sessionStartMs, sessionStartMs);
                         Log.w(TAG, "Excluding anomalous fogging session from report aggregates: start="
                                 + currentSession.getStartEvent().timestamp + " end=" + event.timestamp
                                 + " rawDurationMs=" + rawDurationMs + " exceeds MAX_PLAUSIBLE_SESSION_DURATION_MS="
                                 + MAX_PLAUSIBLE_SESSION_DURATION_MS + " (likely a reboot/offline gap between ON and OFF)");
                     } else {
-                        effectiveDurationMs = clippedDurationMs(currentSession, reportStartTimeMs, reportEndTimeMs);
+                        applyWindowClip(currentSession, event.timestamp, reportStartTimeMs, reportEndTimeMs);
                     }
 
-                    summary.addCompletedSession(currentSession, effectiveDurationMs);
+                    summary.addCompletedSession(currentSession);
                     currentSession = null;
                 }
                 // If OFF without ON, it is discarded.
@@ -116,15 +116,21 @@ public class FoggingReportProcessor {
                 summary.setCurrentlyRunningSession(currentSession);
 
                 long rawRunningDurationMs = Math.max(0, nowMs - currentSession.getStartEvent().timestamp);
+                long runningStartMs = currentSession.getStartEvent().timestamp;
                 if (rawRunningDurationMs > MAX_PLAUSIBLE_SESSION_DURATION_MS) {
+                    currentSession.setCountedInterval(runningStartMs, runningStartMs);
                     Log.w(TAG, "Currently-running fogging session exceeds MAX_PLAUSIBLE_SESSION_DURATION_MS="
                             + MAX_PLAUSIBLE_SESSION_DURATION_MS + "; excluding from aggregates but still showing as running. start="
-                            + currentSession.getStartEvent().timestamp);
+                            + runningStartMs);
                 } else {
-                    long effectiveEnd = Math.min(nowMs, reportEndTimeMs);
-                    long effectiveStart = Math.max(currentSession.getStartEvent().timestamp, reportStartTimeMs);
-                    long runningDurationMs = Math.max(0, effectiveEnd - effectiveStart);
-                    summary.addRunningSessionDuration(currentSession, runningDurationMs);
+                    // Same counted-interval rule as completed sessions, with
+                    // "now" as the running session's end so far. A minute of
+                    // slack keeps a window that simply ends at load time
+                    // from being reported as clipped.
+                    applyWindowClip(currentSession, nowMs, reportStartTimeMs, reportEndTimeMs);
+                    currentSession.setClippedToReport(runningStartMs < reportStartTimeMs
+                            || reportEndTimeMs < nowMs - 60_000L);
+                    summary.addRunningSessionDuration(currentSession);
                 }
             } else {
                 // No trustworthy confirmation that the fogger is running right
@@ -140,7 +146,9 @@ public class FoggingReportProcessor {
                 // silently: a recorded fogging start really did happen, and
                 // hiding it made an offline stall look like nothing at all.
                 currentSession.setAnomalous(true);
-                summary.addCompletedSession(currentSession, 0L);
+                currentSession.setCountedInterval(currentSession.getStartEvent().timestamp,
+                        currentSession.getStartEvent().timestamp);
+                summary.addCompletedSession(currentSession);
                 Log.w(TAG, "Unmatched fogging ON with no confirmed live-running state; recording as an"
                         + " incomplete session excluded from aggregates. start="
                         + currentSession.getStartEvent().timestamp);
@@ -170,17 +178,17 @@ public class FoggingReportProcessor {
         for (FoggingSession session : summary.getCompletedSessions()) {
             if (session.isAnomalous()) continue;
 
-            addOverlapToBuckets(summary, session.getStartEvent().timestamp, session.getEndEvent().timestamp,
+            // Buckets are filled from the same counted interval that feeds
+            // the totals, table and PDF, so they always add up to the total.
+            addOverlapToBuckets(summary, session.getCountedStartMs(), session.getCountedEndMs(),
                     reportStartTimeMs, reportEndTimeMs, bucketSizeMs);
         }
 
-        // Currently-running session also contributes to whichever buckets its
-        // elapsed-so-far runtime overlaps, clipped to now/report end the same
-        // way its total-duration contribution was above.
+        // The running session's counted interval is already clipped to
+        // now/report end, so it feeds the buckets the same way.
         FoggingSession runningSession = summary.getCurrentlyRunningSession();
-        if (runningSession != null
-                && Math.max(0, nowMs - runningSession.getStartEvent().timestamp) <= MAX_PLAUSIBLE_SESSION_DURATION_MS) {
-            addOverlapToBuckets(summary, runningSession.getStartEvent().timestamp, Math.min(nowMs, reportEndTimeMs),
+        if (runningSession != null) {
+            addOverlapToBuckets(summary, runningSession.getCountedStartMs(), runningSession.getCountedEndMs(),
                     reportStartTimeMs, reportEndTimeMs, bucketSizeMs);
         }
 
@@ -219,15 +227,13 @@ public class FoggingReportProcessor {
         }
     }
 
-    // Clips a completed session's duration to the report window so that only
-    // the portion of a session that actually falls within [windowStart, windowEnd]
-    // is counted toward aggregates - e.g. a session that started before the
-    // window and ended inside it only contributes windowStart..end, not its
-    // full real-world duration.
-    private static long clippedDurationMs(FoggingSession session, long windowStart, long windowEnd) {
-        if (!session.isCompleted()) return 0L;
-        long start = Math.max(session.getStartEvent().timestamp, windowStart);
-        long end = Math.min(session.getEndEvent().timestamp, windowEnd);
-        return Math.max(0, end - start);
+    // Records the part of a session that falls inside [windowStart, windowEnd]
+    // as its counted interval - e.g. 09:50-10:10 in a window starting at 10:00
+    // counts 10:00-10:10. sessionEndMs is the real OFF time, or "now" for a
+    // running session. Everything downstream reads this one interval.
+    private static void applyWindowClip(FoggingSession session, long sessionEndMs, long windowStart, long windowEnd) {
+        long sessionStartMs = session.getStartEvent().timestamp;
+        session.setCountedInterval(Math.max(sessionStartMs, windowStart), Math.min(sessionEndMs, windowEnd));
+        session.setClippedToReport(sessionStartMs < windowStart || sessionEndMs > windowEnd);
     }
 }

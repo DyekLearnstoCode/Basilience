@@ -215,6 +215,21 @@ service cloud.firestore {
         allow write: if isAdmin() && isAssignedToDevice(deviceId);
       }
 
+      // HARDWARE GUIDE sub-collection - per-device Admin customizations of the
+      // bundled Hardware Guide content (see HardwareGuideContent.java /
+      // HardwareGuideRepository.java). Read is open to anyone assigned to the
+      // device, Farmers included, since the guide itself isn't sensitive data -
+      // only the owning Admin may write, and only for a device they actually
+      // own, matching how device configuration is Admin-only elsewhere. The
+      // component key is validated purely by document id (HardwareComponentKey
+      // enum name()) rather than a hardcoded list here, so this rule doesn't
+      // need updating if the enum ever grows.
+      match /hardwareGuide/{componentKey} {
+        allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+        allow write: if isAdmin() &&
+          get(/databases/$(database)/documents/devices/$(deviceId)).data.ownerUid == request.auth.uid;
+      }
+
       // NOTIFICATIONS sub-collection
       match /notifications/{notifId} {
         allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));

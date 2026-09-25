@@ -1029,6 +1029,16 @@
                 app:cornerRadius="12dp"/>
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSendTestSms"
+                style="@style/BasilienceButton.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="12dp"
+                android:text="Send Test SMS"
+                android:textStyle="bold"
+                app:cornerRadius="12dp"/>
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDisableDeveloperMode"
                 android:layout_width="match_parent"
                 android:layout_height="52dp"

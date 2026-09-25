@@ -1,6 +1,5 @@
 package com.example.basilience;
 
-import android.app.DatePickerDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -24,6 +23,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.core.util.Pair;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
@@ -43,6 +43,8 @@ import com.github.mikephil.charting.data.BarEntry;
 import com.github.mikephil.charting.listener.ChartTouchListener;
 import com.github.mikephil.charting.listener.OnChartGestureListener;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.datepicker.CalendarConstraints;
+import com.google.android.material.datepicker.MaterialDatePicker;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.FirebaseDatabase;
@@ -644,65 +646,60 @@ public class FoggingReportsFragment extends Fragment {
         }
         long cycleStartMs = currentCycleStartMs();
         long cycleEndMs = currentCycleEndMs();
-        long initialStart = customStartMs != null ? customStartMs : cycleStartMs;
 
-        Calendar initCal = Calendar.getInstance(TimeZone.getTimeZone(TIMEZONE_ID));
-        initCal.setTimeInMillis(initialStart);
+        // Same Material date-range picker as Parameter Reports: dates outside
+        // the cycle are disabled, and the report only reloads on Save.
+        // MaterialDatePicker works in UTC calendar days, so the helpers below
+        // convert to/from Asia/Manila days.
+        long constraintStartUtc = manilaDateToUtcMidnight(cycleStartMs);
+        long constraintEndUtc = manilaDateToUtcMidnight(cycleEndMs);
+        CalendarConstraints constraints = new CalendarConstraints.Builder()
+                .setStart(constraintStartUtc)
+                .setEnd(constraintEndUtc)
+                .build();
 
-        DatePickerDialog startDialog = new DatePickerDialog(requireContext(), (view, year, month, day) -> {
-            Calendar picked = Calendar.getInstance(TimeZone.getTimeZone(TIMEZONE_ID));
-            picked.set(year, month, day, 0, 0, 0);
-            picked.set(Calendar.MILLISECOND, 0);
-            long pickedStartMs = picked.getTimeInMillis();
+        long initialStartUtc = clampUtc(manilaDateToUtcMidnight(customStartMs != null ? customStartMs : cycleStartMs),
+                constraintStartUtc, constraintEndUtc);
+        long initialEndUtc = clampUtc(manilaDateToUtcMidnight(customEndMs != null ? customEndMs : cycleEndMs),
+                constraintStartUtc, constraintEndUtc);
+        if (initialEndUtc < initialStartUtc) initialEndUtc = initialStartUtc;
 
-            if (pickedStartMs < startOfDayManila(cycleStartMs)) {
-                NotificationHelper.showError(getContext(), "Start date cannot be before this cycle's start date ("
-                        + DateUtils.formatDate(cycleStartMs) + ").");
-                return;
-            }
-            if (pickedStartMs > endOfDayManila(cycleEndMs)) {
-                NotificationHelper.showError(getContext(), "Start date cannot be after this cycle's end date ("
-                        + DateUtils.formatDate(cycleEndMs) + ").");
-                return;
-            }
-            promptCustomEndDate(pickedStartMs, cycleStartMs, cycleEndMs);
-        }, initCal.get(Calendar.YEAR), initCal.get(Calendar.MONTH), initCal.get(Calendar.DAY_OF_MONTH));
-        startDialog.setTitle("Select Start Date");
-        startDialog.show();
+        MaterialDatePicker<Pair<Long, Long>> picker = MaterialDatePicker.Builder.dateRangePicker()
+                .setTitleText("Select Report Range")
+                .setCalendarConstraints(constraints)
+                .setSelection(new Pair<>(initialStartUtc, initialEndUtc))
+                .build();
+
+        picker.addOnPositiveButtonClickListener(selection -> {
+            if (selection == null || selection.first == null || selection.second == null) return;
+            customStartMs = startOfDayManila(utcMidnightToManilaDate(selection.first));
+            customEndMs = endOfDayManila(utcMidnightToManilaDate(selection.second));
+            updateFilterSelection("Custom");
+        });
+
+        picker.show(requireActivity().getSupportFragmentManager(), "custom_report_range");
     }
 
-    private void promptCustomEndDate(long pickedStartMs, long cycleStartMs, long cycleEndMs) {
-        long initialEnd = customEndMs != null ? customEndMs : cycleEndMs;
-        Calendar initCal = Calendar.getInstance(TimeZone.getTimeZone(TIMEZONE_ID));
-        initCal.setTimeInMillis(initialEnd);
+    private long manilaDateToUtcMidnight(long manilaMs) {
+        Calendar manilaCal = Calendar.getInstance(TimeZone.getTimeZone(TIMEZONE_ID));
+        manilaCal.setTimeInMillis(manilaMs);
+        Calendar utcCal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+        utcCal.clear();
+        utcCal.set(manilaCal.get(Calendar.YEAR), manilaCal.get(Calendar.MONTH), manilaCal.get(Calendar.DAY_OF_MONTH));
+        return utcCal.getTimeInMillis();
+    }
 
-        DatePickerDialog endDialog = new DatePickerDialog(requireContext(), (view, year, month, day) -> {
-            Calendar picked = Calendar.getInstance(TimeZone.getTimeZone(TIMEZONE_ID));
-            picked.set(year, month, day, 23, 59, 59);
-            picked.set(Calendar.MILLISECOND, 999);
-            long pickedEndMs = picked.getTimeInMillis();
+    private long utcMidnightToManilaDate(long utcMidnightMs) {
+        Calendar utcCal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+        utcCal.setTimeInMillis(utcMidnightMs);
+        Calendar manilaCal = Calendar.getInstance(TimeZone.getTimeZone(TIMEZONE_ID));
+        manilaCal.clear();
+        manilaCal.set(utcCal.get(Calendar.YEAR), utcCal.get(Calendar.MONTH), utcCal.get(Calendar.DAY_OF_MONTH), 12, 0, 0);
+        return manilaCal.getTimeInMillis();
+    }
 
-            if (pickedEndMs > endOfDayManila(cycleEndMs)) {
-                NotificationHelper.showError(getContext(), "End date cannot be after this cycle's end date ("
-                        + DateUtils.formatDate(cycleEndMs) + ").");
-                return;
-            }
-            if (pickedEndMs < startOfDayManila(cycleStartMs)) {
-                NotificationHelper.showError(getContext(), "End date cannot be before this cycle's start date ("
-                        + DateUtils.formatDate(cycleStartMs) + ").");
-                return;
-            }
-            if (pickedEndMs < pickedStartMs) {
-                NotificationHelper.showError(getContext(), "End date cannot be before the selected start date.");
-                return;
-            }
-
-            customStartMs = pickedStartMs;
-            customEndMs = pickedEndMs;
-            updateFilterSelection("Custom");
-        }, initCal.get(Calendar.YEAR), initCal.get(Calendar.MONTH), initCal.get(Calendar.DAY_OF_MONTH));
-        endDialog.setTitle("Select End Date");
-        endDialog.show();
+    private long clampUtc(long value, long min, long max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private long startOfDayManila(long ms) {
@@ -913,18 +910,70 @@ public class FoggingReportsFragment extends Fragment {
                     if (!boundarySnapshots.isEmpty()) {
                         DocumentSnapshot doc = boundarySnapshots.getDocuments().get(0);
                         FoggingEvent boundaryEvent = doc.toObject(FoggingEvent.class);
-                        if (boundaryEvent != null && "ON".equalsIgnoreCase(boundaryEvent.event)) {
+                        // Only a session whose OFF lands inside the window
+                        // belongs to it. If the window has no events, or its
+                        // first event is another ON, the earlier ON ended
+                        // outside the range and would show up as a phantom
+                        // out-of-range session.
+                        boolean firstInWindowIsOff = !events.isEmpty()
+                                && "OFF".equalsIgnoreCase(events.get(0).event);
+                        if (boundaryEvent != null && "ON".equalsIgnoreCase(boundaryEvent.event) && firstInWindowIsOff) {
                             boundaryEvent.id = doc.getId();
                             events.add(boundaryEvent);
                         }
                     }
-                    resolveRunningStateAndRender(filter, events, requestGeneration);
+                    fetchTrailingEventAndContinue(filter, events, requestGeneration);
                 })
                 .addOnFailureListener(e -> {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
                     // Best-effort lookback only; proceed without it rather than
                     // failing the whole report over this secondary query.
                     Log.w("FoggingReports", "Unable to load boundary event for session clipping", e);
+                    fetchTrailingEventAndContinue(filter, events, requestGeneration);
+                });
+    }
+
+    // A session that started inside the window but whose OFF arrived after
+    // the window's end (e.g. a Custom range ending at midnight) would
+    // otherwise look like an unmatched ON and be shown as an incomplete or
+    // running session. Look ahead for the single next event so it can be
+    // reconstructed as a normal session; the processor clips its counted
+    // duration to the window end.
+    private void fetchTrailingEventAndContinue(FoggingReportFilter filter, List<FoggingEvent> events, long requestGeneration) {
+        FoggingEvent lastInWindow = null;
+        for (FoggingEvent e : events) {
+            if (e.timestamp >= filter.effectiveStartMs
+                    && (lastInWindow == null || e.timestamp >= lastInWindow.timestamp)) {
+                lastInWindow = e;
+            }
+        }
+        if (lastInWindow == null || !"ON".equalsIgnoreCase(lastInWindow.event)) {
+            resolveRunningStateAndRender(filter, events, requestGeneration);
+            return;
+        }
+
+        db.collection("devices")
+                .document(selectedDeviceId)
+                .collection("foggingLogs")
+                .whereGreaterThan("timestamp", filter.effectiveEndMs)
+                .orderBy("timestamp", Query.Direction.ASCENDING)
+                .limit(1)
+                .get()
+                .addOnSuccessListener(trailingSnapshots -> {
+                    if (!isAdded() || requestGeneration != reportRequestGeneration) return;
+                    if (!trailingSnapshots.isEmpty()) {
+                        DocumentSnapshot doc = trailingSnapshots.getDocuments().get(0);
+                        FoggingEvent trailingEvent = doc.toObject(FoggingEvent.class);
+                        if (trailingEvent != null && "OFF".equalsIgnoreCase(trailingEvent.event)) {
+                            trailingEvent.id = doc.getId();
+                            events.add(trailingEvent);
+                        }
+                    }
+                    resolveRunningStateAndRender(filter, events, requestGeneration);
+                })
+                .addOnFailureListener(e -> {
+                    if (!isAdded() || requestGeneration != reportRequestGeneration) return;
+                    Log.w("FoggingReports", "Unable to load trailing event for session completion", e);
                     resolveRunningStateAndRender(filter, events, requestGeneration);
                 });
     }
@@ -1786,6 +1835,11 @@ public class FoggingReportsFragment extends Fragment {
 
         final FoggingReportFilter filter = currentFilter;
         final List<FoggingSession> sessions = new ArrayList<>(processedSessions);
+        // Same session set the on-screen table shows, including a session
+        // still running now (which processedSessions leaves out).
+        if (currentSummary.getCurrentlyRunningSession() != null) {
+            sessions.add(currentSummary.getCurrentlyRunningSession());
+        }
         final String status = currentStatus;
         final String interpretation = currentInterpretation;
         // The exact totals object the visible report was rendered from. It is

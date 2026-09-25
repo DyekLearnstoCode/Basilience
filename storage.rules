@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && getUserData().role == 'ADMIN';
+    }
+
+    function ownsDevice(deviceId) {
+      return isAdmin() &&
+        firestore.get(/databases/(default)/documents/devices/$(deviceId)).data.ownerUid == request.auth.uid;
+    }
+
+    function isAssignedToDevice(deviceId) {
+      let assignmentId = request.auth.uid + "_" + deviceId;
+      return firestore.exists(/databases/(default)/documents/deviceAssignments/$(assignmentId));
+    }
+
+    // Admin-uploaded Hardware Guide photos - devices/{deviceId}/hardwareGuide/{componentKey}
+    // in Firestore stores each one's download URL. Read matches that
+    // document's own read rule (device owner or an assigned Farmer); only the
+    // owning Admin may write, and only under their own device's path -
+    // mirrors firestore.rules' hardwareGuide sub-collection.
+    match /hardwareGuideImages/{deviceId}/{componentKey}/{fileName} {
+      allow read: if isSignedIn() && (isAdmin() || isAssignedToDevice(deviceId));
+      allow write: if ownsDevice(deviceId) &&
+        request.resource.size < 10 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+      allow delete: if ownsDevice(deviceId);
+    }
+  }
+}

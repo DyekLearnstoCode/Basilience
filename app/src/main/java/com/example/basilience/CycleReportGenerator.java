@@ -581,8 +581,19 @@ public class CycleReportGenerator {
 
                     paint.setColor(PDF_BODY);
                     canvas.drawText(DateUtils.formatDateTime(new Timestamp(session.getStartEvent().timestamp / 1000, 0)), x + 5, y, paint);
-                    canvas.drawText(session.isAnomalous() ? "Incomplete record"
-                            : DurationFormatter.formatSession(session.getDurationMs()), x + 180, y, paint);
+                    String pdfDuration;
+                    if (session.isAnomalous()) {
+                        pdfDuration = "Incomplete record";
+                    } else if (!session.isCompleted()) {
+                        pdfDuration = session.isClippedToReport()
+                                ? "Running, " + DurationFormatter.formatRuntime(session.getCountedDurationMs()) + " in range"
+                                : "Running now";
+                    } else {
+                        // Counted (in-range) duration, same as totals/chart.
+                        pdfDuration = DurationFormatter.formatSession(session.getCountedDurationMs())
+                                + (session.isClippedToReport() ? " in range" : "");
+                    }
+                    canvas.drawText(pdfDuration, x + 180, y, paint);
                     canvas.drawText(session.getDisplayType(), x + 320, y, paint);
 
                     paint.setColor(PDF_RULE);

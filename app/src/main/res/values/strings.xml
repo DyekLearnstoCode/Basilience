@@ -29,7 +29,7 @@
     <string name="personnel_confirm_password">Confirm Password</string>
     <string name="personnel_save">Save Personnel</string>
     <string name="personnel_update">Update Personnel</string>
-    <string name="personnel_delete">Delete Personnel</string>
+    <string name="personnel_delete">Unlink Personnel</string>
     <string name="personnel_edit">Edit Profile</string>
 
     <!-- Settings -->
@@ -47,6 +47,7 @@
     <string name="loading_saving">Saving changes&#8230;</string>
     <string name="loading_syncing">Syncing data&#8230;</string>
     <string name="loading_deleting">Deleting&#8230;</string>
+    <string name="loading_unlinking_personnel">Unlinking&#8230;</string>
     <string name="loading_please_wait">Please wait a moment</string>
     <string name="loading_cycles">Loading growth cycles&#8230;</string>
 

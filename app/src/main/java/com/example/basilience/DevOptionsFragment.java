@@ -102,7 +102,10 @@ public class DevOptionsFragment extends Fragment {
     private TextView tvDiagnosticWaterLevelDistance;
     private TextView tvDiagnosticWaterDepth;
 
-    private MaterialButton btnPush, btnEnableProvisioningAp, btnDisableDeveloperMode;
+    private MaterialButton btnPush, btnEnableProvisioningAp, btnDisableDeveloperMode, btnSendTestSms;
+    private DatabaseReference testSmsRef;
+    private ValueEventListener testSmsListener;
+    private Runnable testSmsTimeout;
     private MaterialButton btnFilterSensorTest, btnFilterMock, btnFilterRefill, btnSensorTest;
     private View containerToolFilters;
     private MaterialButton btnSaveRefillThresholds;
@@ -273,6 +276,7 @@ public class DevOptionsFragment extends Fragment {
         // Always-visible actions below the tabs
         btnEnableProvisioningAp = view.findViewById(R.id.btnEnableProvisioningAp);
         btnDisableDeveloperMode = view.findViewById(R.id.btnDisableDeveloperMode);
+        btnSendTestSms = view.findViewById(R.id.btnSendTestSms);
 
         // RTC health (Device Configuration / Admin only)
         cardRtcHealth = view.findViewById(R.id.cardRtcHealth);
@@ -496,6 +500,9 @@ public class DevOptionsFragment extends Fragment {
         if (btnEnableProvisioningAp != null) {
             btnEnableProvisioningAp.setOnClickListener(v -> enableProvisioningApMode());
         }
+        if (btnSendTestSms != null) {
+            btnSendTestSms.setOnClickListener(v -> confirmSendTestSms());
+        }
         if (btnDisableDeveloperMode != null) {
             btnDisableDeveloperMode.setOnClickListener(v -> disableDeveloperMode(navController));
         }
@@ -523,6 +530,7 @@ public class DevOptionsFragment extends Fragment {
             cardAutomationTestMode.setVisibility(View.GONE);
             containerIgnoreWaterLevel.setVisibility(View.GONE);
             btnEnableProvisioningAp.setVisibility(View.GONE);
+            btnSendTestSms.setVisibility(View.GONE);
             btnDisableDeveloperMode.setVisibility(View.GONE);
             if (rowTargetRangesLink != null) rowTargetRangesLink.setVisibility(View.GONE);
             if (tvParameterConfigEyebrow != null) tvParameterConfigEyebrow.setVisibility(View.GONE);
@@ -1329,6 +1337,76 @@ public class DevOptionsFragment extends Fragment {
                 });
     }
 
+    private void confirmSendTestSms() {
+        if (deviceRef == null || testSmsRef != null) return;
+
+        NotificationHelper.showConfirmation(requireContext(),
+                "Send Test SMS?",
+                "The device will text every user with access to it who has a mobile number saved. Carrier charges may apply. The device must be online to receive this request.",
+                "Send", "Cancel", this::sendTestSms);
+    }
+
+    // Writes the one-shot request the firmware polls at commands/testSms. The
+    // firmware deletes that node as soon as it hands the request to its SMS
+    // queue, so the node disappearing is the app's confirmation. If it is
+    // still there after the timeout the device is not listening, and the
+    // request is removed so it cannot fire later as a surprise SMS.
+    private void sendTestSms() {
+        if (deviceRef == null || testSmsRef != null) return;
+
+        showLoading("Sending Test SMS...", "Sending request to the device...");
+        final DatabaseReference ref = deviceRef.child("commands").child("testSms");
+        testSmsRef = ref;
+
+        Map<String, Object> request = new HashMap<>();
+        request.put("timestamp", System.currentTimeMillis());
+
+        ref.setValue(request)
+                .addOnSuccessListener(aVoid -> {
+                    if (!isAdded() || testSmsRef != ref) return;
+                    showLoading("Test SMS requested", "Waiting for the device to accept it...");
+
+                    testSmsListener = ref.addValueEventListener(new ValueEventListener() {
+                        @Override
+                        public void onDataChange(@NonNull DataSnapshot snapshot) {
+                            if (snapshot.exists()) return;
+                            finishTestSmsRequest();
+                            if (isAdded()) NotificationHelper.showSuccess(requireContext(),
+                                    "The device accepted the request and is sending the SMS. Texts can take a minute to arrive.");
+                        }
+
+                        @Override
+                        public void onCancelled(@NonNull DatabaseError error) {
+                            finishTestSmsRequest();
+                            if (isAdded()) NotificationHelper.showError(requireContext(), "Test SMS Failed", error.getMessage());
+                        }
+                    });
+
+                    testSmsTimeout = () -> {
+                        ref.removeValue();
+                        finishTestSmsRequest();
+                        if (isAdded()) NotificationHelper.showWarning(requireContext(), "Device Did Not Respond",
+                                "The device did not pick up the request, so it was cancelled. Check that it is online and try again.");
+                    };
+                    mainHandler.postDelayed(testSmsTimeout, 20000L);
+                })
+                .addOnFailureListener(e -> {
+                    finishTestSmsRequest();
+                    if (isAdded()) NotificationHelper.showError(requireContext(), "Test SMS Failed", e.getMessage());
+                });
+    }
+
+    private void finishTestSmsRequest() {
+        if (testSmsRef != null && testSmsListener != null) {
+            testSmsRef.removeEventListener(testSmsListener);
+        }
+        if (testSmsTimeout != null) mainHandler.removeCallbacks(testSmsTimeout);
+        testSmsRef = null;
+        testSmsListener = null;
+        testSmsTimeout = null;
+        hideLoading();
+    }
+
     private void disableDeveloperMode(NavController navController) {
         if (getContext() == null) return;
 
@@ -1376,6 +1454,14 @@ public class DevOptionsFragment extends Fragment {
         }
         if (mockAckRef != null && mockAckListener != null) {
             mockAckRef.removeEventListener(mockAckListener);
+        }
+        // A request still pending when the screen closes is withdrawn so it
+        // cannot fire as a surprise SMS later.
+        if (testSmsRef != null) {
+            testSmsRef.removeValue();
+            if (testSmsListener != null) testSmsRef.removeEventListener(testSmsListener);
+            testSmsRef = null;
+            testSmsListener = null;
         }
         mainHandler.removeCallbacksAndMessages(null);
         super.onDestroyView();

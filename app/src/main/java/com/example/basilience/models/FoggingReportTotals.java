@@ -14,11 +14,11 @@ import java.util.Map;
  * which is what applies the report's effective range, boundary-session
  * clipping, running-session contribution and anomalous-session exclusion.
  *
- * <p>Deliberately NOT derived from summing a list of sessions: raw
- * {@code FoggingSession.getDurationMs()} values are the unclipped
- * start-to-end durations, so re-adding them would undo the processor's
- * clipping and exclusions. The PDF generator therefore receives this object
- * and prints it verbatim rather than recomputing anything.
+ * <p>Deliberately NOT derived from summing raw
+ * {@code FoggingSession.getDurationMs()} values, which are the unclipped
+ * start-to-end durations. The totals come from each session's counted
+ * (window-clipped) interval, the same one the table and PDF rows show. The
+ * PDF generator receives this object and prints it verbatim.
  *
  * <p>It carries only plain data - no Android or Fragment state - so it is
  * safe to hand to the PDF generator and to a background thread.

@@ -1,6 +1,9 @@
 package com.example.basilience.models;
 
 import androidx.annotation.DrawableRes;
+import androidx.annotation.Nullable;
+
+import com.example.basilience.HardwareComponentKey;
 
 import java.util.Collections;
 import java.util.List;
@@ -27,6 +30,12 @@ public class GuideSection {
     private final String warning;
     private final String roleLabel;
     private final boolean adminOnly;
+    private final HardwareComponentKey hardwareKey;
+    private final String purpose;
+    private final List<String> indicators;
+    private final List<String> commonProblems;
+    private final List<String> troubleshooting;
+    private final String imageUrl;
 
     private GuideSection(Builder b) {
         this.title = b.title;
@@ -38,6 +47,12 @@ public class GuideSection {
         this.warning = b.warning;
         this.roleLabel = b.roleLabel;
         this.adminOnly = b.adminOnly;
+        this.hardwareKey = b.hardwareKey;
+        this.purpose = b.purpose;
+        this.indicators = b.indicators == null ? Collections.emptyList() : b.indicators;
+        this.commonProblems = b.commonProblems == null ? Collections.emptyList() : b.commonProblems;
+        this.troubleshooting = b.troubleshooting == null ? Collections.emptyList() : b.troubleshooting;
+        this.imageUrl = b.imageUrl;
     }
 
     public String getTitle() { return title; }
@@ -51,9 +66,42 @@ public class GuideSection {
     public String getRoleLabel() { return roleLabel; }
     /** True if this section should be hidden entirely from non-Admin accounts (see MobileGuideFragment). */
     public boolean isAdminOnly() { return adminOnly; }
+    /** Which physical component this section documents, or null for a system-wide/cross-cutting section. */
+    @Nullable
+    public HardwareComponentKey getHardwareKey() { return hardwareKey; }
+    /** Short "what this is and why it matters" paragraph - the structured-section counterpart to {@link #getDescription()}. */
+    public String getPurpose() { return purpose; }
+    /** What the user should observe to tell this component's state - rendered as a bullet list. */
+    public List<String> getIndicators() { return indicators; }
+    /** Known failure modes for this component - rendered as a bullet list. */
+    public List<String> getCommonProblems() { return commonProblems; }
+    /** Actionable steps to resolve a problem with this component - rendered as a numbered list. */
+    public List<String> getTroubleshooting() { return troubleshooting; }
+    /** Admin-uploaded replacement photo (HTTPS download URL), or null to use the bundled {@link #getImageResId()}/placeholder. */
+    @Nullable
+    public String getImageUrl() { return imageUrl; }
 
     public static Builder builder(String title) {
         return new Builder(title);
+    }
+
+    /** A Builder pre-populated with this section's current values, for producing an admin-override copy without restating every untouched field. */
+    public Builder toBuilder() {
+        return new Builder(title)
+                .description(description)
+                .image(imageResId)
+                .imagePlaceholder(imagePlaceholderCaption)
+                .steps(steps)
+                .tip(tip)
+                .warning(warning)
+                .role(roleLabel)
+                .adminOnly(adminOnly)
+                .hardwareKey(hardwareKey)
+                .purpose(purpose)
+                .indicators(indicators)
+                .commonProblems(commonProblems)
+                .troubleshooting(troubleshooting)
+                .imageUrl(imageUrl);
     }
 
     public static class Builder {
@@ -67,6 +115,12 @@ public class GuideSection {
         private String warning;
         private String roleLabel;
         private boolean adminOnly;
+        private HardwareComponentKey hardwareKey;
+        private String purpose;
+        private List<String> indicators;
+        private List<String> commonProblems;
+        private List<String> troubleshooting;
+        private String imageUrl;
 
         private Builder(String title) {
             this.title = title;
@@ -113,6 +167,42 @@ public class GuideSection {
         /** Hides this section entirely from non-Admin accounts, rather than just labeling it. */
         public Builder adminOnly(boolean adminOnly) {
             this.adminOnly = adminOnly;
+            return this;
+        }
+
+        /** Tags this section as documenting one specific physical component, enabling deep-link scroll/highlight from a notification. */
+        public Builder hardwareKey(HardwareComponentKey hardwareKey) {
+            this.hardwareKey = hardwareKey;
+            return this;
+        }
+
+        /** Short "what this is and why it matters" paragraph. Use for a restructured component section instead of {@link #description}. */
+        public Builder purpose(String purpose) {
+            this.purpose = purpose;
+            return this;
+        }
+
+        /** What the user should observe to tell this component's current state (e.g. a status line, a sound, a reading). */
+        public Builder indicators(List<String> indicators) {
+            this.indicators = indicators;
+            return this;
+        }
+
+        /** Known failure modes for this component. */
+        public Builder commonProblems(List<String> commonProblems) {
+            this.commonProblems = commonProblems;
+            return this;
+        }
+
+        /** Actionable steps to try when this component has a problem. */
+        public Builder troubleshooting(List<String> troubleshooting) {
+            this.troubleshooting = troubleshooting;
+            return this;
+        }
+
+        /** Admin-uploaded replacement photo (HTTPS download URL). Leave unset to use the bundled {@link #image}/{@link #imagePlaceholder}. */
+        public Builder imageUrl(String imageUrl) {
+            this.imageUrl = imageUrl;
             return this;
         }
 

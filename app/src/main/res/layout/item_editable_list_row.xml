@@ -1,0 +1,48 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="top"
+    android:layout_marginBottom="8dp">
+
+    <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/etRowText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:background="@color/ds_surface_neutral"
+        android:padding="10dp"
+        android:inputType="textMultiLine"
+        android:minLines="1" />
+
+    <ImageButton
+        android:id="@+id/btnMoveUp"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:layout_marginStart="4dp"
+        android:background="@null"
+        android:rotation="180"
+        android:src="@drawable/ic_arrow_drop_down"
+        app:tint="@color/nav_inactive"
+        android:contentDescription="Move up" />
+
+    <ImageButton
+        android:id="@+id/btnMoveDown"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="@null"
+        android:src="@drawable/ic_arrow_drop_down"
+        app:tint="@color/nav_inactive"
+        android:contentDescription="Move down" />
+
+    <ImageButton
+        android:id="@+id/btnRemoveRow"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="@null"
+        android:src="@drawable/ic_delete"
+        app:tint="@color/state_warning"
+        android:contentDescription="Remove" />
+
+</LinearLayout>

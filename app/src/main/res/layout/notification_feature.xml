@@ -21,13 +21,33 @@
         </com.google.android.material.appbar.CollapsingToolbarLayout>
     </com.google.android.material.appbar.AppBarLayout>
 
-    <androidx.core.widget.NestedScrollView
+    <!--
+         The RecyclerView used to live inside this same NestedScrollView with
+         wrap_content height + nestedScrollingEnabled="false", forcing
+         LinearLayoutManager to measure every single row to compute a total
+         height - defeating RecyclerView's whole point (recycling only the
+         visible rows) and, confirmed via on-device testing with a large
+         history (200+ rows after paginating), eventually hitting Android's
+         internal "this size is invalid" measurement failure and getting
+         stuck: Room/Paging3 kept syncing new pages correctly underneath, but
+         the RecyclerView's own measured height stopped growing to show them.
+
+         Fix: this outer LinearLayout is still the CoordinatorLayout's
+         scrolling-behavior sibling (so the collapsing header still works -
+         nested scroll events from the RecyclerView below still bubble up
+         through it to the AppBarLayout normally, regardless of the plain
+         ViewGroups in between), but it no longer scrolls its own content.
+         The filter/category/select controls stay a fixed, always-visible
+         header; the RecyclerView gets the remaining space (0dp height,
+         weight 1) and scrolls and recycles itself, exactly as intended.
+    -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_marginTop="@dimen/container_overlap_margin"
         android:background="@drawable/top_rounded_white"
         android:elevation="5dp"
-        android:fillViewport="true"
+        android:orientation="vertical"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <LinearLayout
@@ -36,8 +56,7 @@
             android:orientation="vertical"
             android:paddingTop="@dimen/container_top_padding"
             android:paddingStart="@dimen/container_side_padding"
-            android:paddingEnd="@dimen/container_side_padding"
-            android:paddingBottom="@dimen/container_side_padding">
+            android:paddingEnd="@dimen/container_side_padding">
 
             <!-- TITLE: Notifications is a bottom-nav tab root (peer to Home/
                  Dashboard and the Reports selector), not a screen pushed from
@@ -128,15 +147,19 @@
             <!-- SECOND ROW: a single compact category dropdown (replaces the
                  old always-visible 9-chip horizontal scroller - same
                  filtering power, a fraction of the vertical space and no
-                 layout shift as counts change) plus the Select mode toggle,
-                 sharing one row. -->
+                 layout shift as counts change), the Select mode toggle, and
+                 a persistent "Mark all as read" - moved here from the old
+                 per-month header action now that Paging 3's Room-backed list
+                 has no header rows (see NotificationAdapter's own comment on
+                 why: PagingData.insertSeparators() is Kotlin-coroutine-only
+                 and adding Kotlin just for section headers was ruled out). -->
             <LinearLayout
                 android:id="@+id/rowCategoryAndSelect"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:layout_marginBottom="12dp">
+                android:layout_marginBottom="8dp">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnCategoryDropdown"
@@ -167,6 +190,26 @@
                     android:textAllCaps="false"
                     android:textSize="13sp"
                     android:text="Select" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="end|center_vertical"
+                android:layout_marginBottom="8dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnMarkAllRead"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:textAllCaps="false"
+                    android:textSize="13sp"
+                    android:text="Mark all as read" />
 
             </LinearLayout>
 
@@ -215,6 +258,18 @@
 
             </LinearLayout>
 
+        </LinearLayout>
+
+        <!-- SCROLLING/RECYCLING CONTENT: the RecyclerView owns the remaining
+             space and scrolls itself (default nestedScrollingEnabled=true),
+             so it still cooperates with the AppBarLayout's collapse
+             animation while recycling rows normally, however many are
+             loaded. -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
             <!-- LOADING STATE: shown until the first snapshot resolves (either
                  into a populated list or the empty state below), so opening
                  the screen never reads as blank/broken while Firestore is
@@ -228,18 +283,42 @@
                 android:indeterminateTint="@color/primary"
                 android:visibility="visible" />
 
-            <!-- SCROLL CONTENT -->
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/recyclerNotifications"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:nestedScrollingEnabled="false" />
+                android:layout_height="match_parent"
+                android:paddingStart="@dimen/container_side_padding"
+                android:paddingEnd="@dimen/container_side_padding"
+                android:clipToPadding="false" />
 
-            <!-- LOAD MORE: fetches the next page of older notifications
-                 on demand (Database_Helper.loadOlderNotifications), rather
-                 than the live listener syncing an ever-larger window up
-                 front. Hidden until the first page loads, and again once
-                 the oldest notification has been reached. -->
+            <!-- EMPTY STATE -->
+            <TextView
+                android:id="@+id/tvEmptyNotifications"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="48dp"
+                android:gravity="center"
+                android:text="No notifications yet."
+                android:textColor="@android:color/darker_gray"
+                android:textSize="15sp"
+                android:visibility="gone" />
+
+        </FrameLayout>
+
+        <!-- LOAD MORE: fetches the next page of older notifications on
+             demand (Database_Helper.loadOlderNotifications), rather than the
+             live listener syncing an ever-larger window up front. Fixed
+             below the RecyclerView rather than scrolling with it - hidden
+             until the first page loads, and again once the oldest
+             notification has been reached. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="@dimen/container_side_padding"
+            android:paddingEnd="@dimen/container_side_padding"
+            android:paddingBottom="@dimen/container_side_padding">
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnLoadMore"
                 style="@style/Widget.MaterialComponents.Button.TextButton"
@@ -260,19 +339,8 @@
                 android:indeterminateTint="@color/primary"
                 android:visibility="gone" />
 
-            <!-- EMPTY STATE -->
-            <TextView
-                android:id="@+id/tvEmptyNotifications"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="48dp"
-                android:gravity="center"
-                android:text="No notifications yet."
-                android:textColor="@android:color/darker_gray"
-                android:textSize="15sp"
-                android:visibility="gone" />
-
         </LinearLayout>
-    </androidx.core.widget.NestedScrollView>
+
+    </LinearLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

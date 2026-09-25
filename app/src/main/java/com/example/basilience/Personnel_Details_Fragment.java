@@ -26,6 +26,7 @@ import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestoreException;
+import com.google.firebase.functions.FirebaseFunctionsException;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -110,7 +111,7 @@ public class Personnel_Details_Fragment extends Fragment {
         btnDelete.setOnClickListener(v -> NotificationHelper.showDestructiveConfirmation(
                 requireContext(), "Unlink Personnel",
                 "This will remove the personnel from your account but will not delete their Basilience account. Their device access will also be removed.",
-                "Unlink", () -> deletePersonnel(navController)));
+                "Unlink", () -> showRemovePersonnelPasswordDialog(navController)));
 
         showViewMode();
         loadPersonnel(navController);
@@ -437,8 +438,58 @@ public class Personnel_Details_Fragment extends Fragment {
                 });
     }
 
+    /**
+     * Final security gate before deletePersonnel() actually runs, shown only
+     * after the existing destructive confirmation. Reauthenticates the
+     * signed-in Admin against Firebase Auth so removePersonnel's server-side
+     * auth_time check (see functions/index.js) passes; a wrong password
+     * leaves this dialog open with an inline error instead of dismissing it,
+     * so the Admin can retry without re-confirming the whole action. The
+     * password itself never leaves this method's local variables - not
+     * stored on the fragment, not logged.
+     */
+    private void showRemovePersonnelPasswordDialog(NavController navController) {
+        View content = LayoutInflater.from(requireContext())
+                .inflate(R.layout.dialog_confirm_password, null);
+        TextInputLayout passwordLayout = content.findViewById(R.id.layoutConfirmPassword);
+        TextInputEditText passwordField = content.findViewById(R.id.etConfirmPassword);
+
+        NotificationHelper.showCustomViewDialog(requireContext(), "Confirm Your Password",
+                "For security, re-enter your Admin password to unlink this personnel.",
+                content, "Confirm", "Cancel", (dialog, ignored) -> {
+                    String password = value(passwordField);
+                    passwordLayout.setError(null);
+                    if (password.isEmpty()) {
+                        passwordLayout.setError("Password is required");
+                        return;
+                    }
+
+                    FirebaseUser admin = FirebaseAuth.getInstance().getCurrentUser();
+                    if (admin == null || admin.getEmail() == null) {
+                        NotificationHelper.showError(requireContext(), "Unable to verify the Admin account.");
+                        return;
+                    }
+
+                    admin.reauthenticate(EmailAuthProvider.getCredential(admin.getEmail(), password))
+                            .addOnSuccessListener(unused -> {
+                                if (!isAdded()) return;
+                                dialog.dismiss();
+                                deletePersonnel(navController);
+                            })
+                            .addOnFailureListener(e -> {
+                                if (!isAdded()) return;
+                                if (e instanceof FirebaseAuthInvalidCredentialsException) {
+                                    passwordLayout.setError("Incorrect password");
+                                } else {
+                                    Log.e(TAG, "Failed to reauthenticate before personnel removal", e);
+                                    passwordLayout.setError("Unable to verify your password. Please try again.");
+                                }
+                            });
+                });
+    }
+
     private void deletePersonnel(NavController navController) {
-        showLoading(true, getString(R.string.loading_deleting));
+        showLoading(true, getString(R.string.loading_unlinking_personnel));
         btnDelete.setEnabled(false);
         helper.deletePersonnelForCurrentAdmin(personnelId)
                 .addOnSuccessListener(unused -> {
@@ -456,10 +507,13 @@ public class Personnel_Details_Fragment extends Fragment {
                     btnDelete.setEnabled(true);
                     Log.e(TAG, "Failed to delete personnel", e);
                     String message = "Unable to remove this personnel. Please try again.";
-                    if (e instanceof FirebaseFirestoreException
-                            && ((FirebaseFirestoreException) e).getCode()
-                                    == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
-                        message = e.getMessage();
+                    if (e instanceof FirebaseFunctionsException) {
+                        FirebaseFunctionsException.Code code = ((FirebaseFunctionsException) e).getCode();
+                        if (code == FirebaseFunctionsException.Code.PERMISSION_DENIED
+                                || code == FirebaseFunctionsException.Code.FAILED_PRECONDITION
+                                || code == FirebaseFunctionsException.Code.NOT_FOUND) {
+                            message = e.getMessage();
+                        }
                     }
                     NotificationHelper.showError(requireContext(), message);
                 });
