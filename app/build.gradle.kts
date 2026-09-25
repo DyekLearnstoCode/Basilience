@@ -64,6 +64,25 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+
+    // Apache POI (XLSX export) ships duplicate META-INF licence/module files
+    // across its jars that AGP's resource merger otherwise fails the build
+    // on - none of this is app code, just packaging metadata.
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/LICENSE*",
+                "META-INF/NOTICE*",
+                "META-INF/DEPENDENCIES",
+                "META-INF/*.SF",
+                "META-INF/*.DSA",
+                "META-INF/*.RSA",
+                "META-INF/versions/9/module-info.class",
+                "module-info.class",
+                "**/module-info.class"
+            )
+        }
+    }
 }
 
 // Gradle's own default output name is "<module>-<buildType>.apk" (app-debug.apk,
@@ -96,6 +115,14 @@ dependencies {
     implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("com.airbnb.android:lottie:6.3.0")
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
+
+    // XLSX export (Parameter Reports). poi-ooxml pulls in a StAX (javax.xml.stream)
+    // dependency at runtime - Android's own javax.xml.stream classes are stubs that
+    // throw at runtime, so a real StAX implementation (Aalto) must be on the
+    // classpath explicitly, or workbook writing fails on-device despite compiling fine.
+    implementation("org.apache.poi:poi:5.2.5")
+    implementation("org.apache.poi:poi-ooxml:5.2.5")
+    implementation("com.fasterxml:aalto-xml:1.3.2")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)

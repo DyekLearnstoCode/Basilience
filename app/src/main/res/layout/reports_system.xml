@@ -452,6 +452,152 @@
                         android:layout_height="@dimen/ds_chart_height" />
                 </LinearLayout>
 
+                <!-- READINGS TABLE: a frozen left column of labels (Date &amp;
+                     Time, pH, EC, ...) - the y-axis - and one horizontally
+                     scrolling column per logged reading - the x-axis -
+                     matching the daily-log-style table the client's IT
+                     expert asked for alongside the chart above. The
+                     RecyclerView's own horizontal scrollbar is left visible
+                     (not the usual fade-out) as the scroll indicator. -->
+                <LinearLayout
+                    android:id="@+id/tableReadingsContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/ds_space_xl"
+                    android:orientation="vertical"
+                    android:background="@drawable/ds_surface_chart_bg"
+                    android:padding="@dimen/ds_surface_padding">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        style="@style/Basilience.SectionTitle"
+                        android:text="Readings Table" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        style="@style/Basilience.Caption"
+                        android:layout_marginTop="2dp"
+                        android:layout_marginBottom="@dimen/ds_space_md"
+                        android:text="Every reading in the selected period - swipe sideways to see more. Dates are shown as MM/DD/YY." />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <!-- FROZEN LABEL COLUMN (y-axis): stays in place while
+                             the reading columns scroll past it on the right.
+                             Row order/heights must match
+                             item_parameter_table_row.xml exactly. -->
+                        <LinearLayout
+                            android:layout_width="@dimen/ds_table_label_col_width"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="@dimen/ds_table_datetime_row_height"
+                                android:gravity="center_vertical"
+                                style="@style/Basilience.MetricLabel"
+                                android:textSize="11sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
+                                android:text="Date &amp; Time" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="@dimen/ds_table_row_height"
+                                android:gravity="center_vertical"
+                                style="@style/Basilience.MetricLabel"
+                                android:textSize="11sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
+                                android:text="pH" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="@dimen/ds_table_row_height"
+                                android:gravity="center_vertical"
+                                style="@style/Basilience.MetricLabel"
+                                android:textSize="11sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
+                                android:text="EC" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="@dimen/ds_table_row_height"
+                                android:gravity="center_vertical"
+                                style="@style/Basilience.MetricLabel"
+                                android:textSize="11sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
+                                android:text="Air Temp" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="@dimen/ds_table_row_height"
+                                android:gravity="center_vertical"
+                                style="@style/Basilience.MetricLabel"
+                                android:textSize="11sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
+                                android:text="Humidity" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="@dimen/ds_table_row_height"
+                                android:gravity="center_vertical"
+                                style="@style/Basilience.MetricLabel"
+                                android:textSize="11sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
+                                android:text="Water Temp" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="@dimen/ds_table_row_height"
+                                android:gravity="center_vertical"
+                                style="@style/Basilience.MetricLabel"
+                                android:textSize="11sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
+                                android:text="Water Level" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="1dp"
+                            android:layout_height="match_parent"
+                            android:background="@color/ds_divider" />
+
+                        <!-- READING COLUMNS (x-axis): one column per logged
+                             moment, scrollable sideways. A visible (not
+                             fading) horizontal scrollbar signals there's
+                             more to scroll. -->
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/recyclerReadingsTable"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="4dp"
+                            android:nestedScrollingEnabled="false"
+                            android:scrollbars="horizontal"
+                            android:scrollbarFadeDuration="0"
+                            android:scrollbarStyle="outsideOverlay" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvReadingsTableEmpty"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:paddingVertical="16dp"
+                        style="@style/Basilience.BodyMuted"
+                        android:text="No readings for this period."
+                        android:visibility="gone" />
+                </LinearLayout>
+
                 <!-- WHAT THIS MEANS: a lighter, less prominent surface from
                      the same soft-green family as the insight hero. -->
                 <LinearLayout

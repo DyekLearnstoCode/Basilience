@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One column of the Parameter Report's readings table: a single logged
+     moment. Row order/heights must match the frozen label column in
+     reports_system.xml exactly (Date & Time, pH, EC, Air Temp, Humidity,
+     Water Temp, Water Level) so values line up with their labels. A
+     trailing divider line separates this column from the next one. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal">
+
+    <LinearLayout
+        android:layout_width="@dimen/ds_table_reading_col_width"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/colDateTime"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/ds_table_datetime_row_height"
+            android:gravity="center"
+            android:lineSpacingExtra="1dp"
+            android:textSize="10sp"
+            android:textColor="@color/state_primary_text"
+            android:text="09/22/26\n12:28 PM" />
+
+        <TextView
+            android:id="@+id/colPh"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/ds_table_row_height"
+            android:gravity="center"
+            android:textSize="12sp"
+            android:fontFamily="sans-serif-medium"
+            android:text="--" />
+
+        <TextView
+            android:id="@+id/colEc"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/ds_table_row_height"
+            android:gravity="center"
+            android:textSize="12sp"
+            android:fontFamily="sans-serif-medium"
+            android:text="--" />
+
+        <TextView
+            android:id="@+id/colAirTemp"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/ds_table_row_height"
+            android:gravity="center"
+            android:textSize="12sp"
+            android:fontFamily="sans-serif-medium"
+            android:text="--" />
+
+        <TextView
+            android:id="@+id/colHumidity"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/ds_table_row_height"
+            android:gravity="center"
+            android:textSize="12sp"
+            android:fontFamily="sans-serif-medium"
+            android:text="--" />
+
+        <TextView
+            android:id="@+id/colWaterTemp"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/ds_table_row_height"
+            android:gravity="center"
+            android:textSize="12sp"
+            android:fontFamily="sans-serif-medium"
+            android:text="--" />
+
+        <TextView
+            android:id="@+id/colWaterLevel"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/ds_table_row_height"
+            android:gravity="center"
+            android:textSize="12sp"
+            android:fontFamily="sans-serif-medium"
+            android:text="--" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="1dp"
+        android:layout_height="match_parent"
+        android:background="@color/ds_divider" />
+
+</LinearLayout>

@@ -1968,11 +1968,17 @@ public class Database_Helper {
 
     /**
      * Attaches a real-time Firestore listener to devices/{deviceId}/notifications,
-     * ordered by timestamp descending, limited to the most recent
-     * {@link #NOTIFICATIONS_LIVE_PAGE_SIZE} entries - new notifications and
-     * read-state changes within this window appear immediately. Older
-     * history is not part of this live window at all; see
-     * loadOlderNotifications() for fetching it on demand.
+     * ordered by timestamp descending (document ID descending as a tiebreaker -
+     * two notifications can legitimately share a millisecond timestamp, e.g.
+     * several alerts written by the same Cloud Function invocation, and
+     * without a secondary sort key Firestore does not guarantee the same
+     * relative order for such ties across this listener vs
+     * loadOlderNotifications()'s separate query, which risks a doc being
+     * skipped or fetched twice right at a pagination boundary), limited to
+     * the most recent {@link #NOTIFICATIONS_LIVE_PAGE_SIZE} entries - new
+     * notifications and read-state changes within this window appear
+     * immediately. Older history is not part of this live window at all;
+     * see loadOlderNotifications() for fetching it on demand.
      */
     public ListenerRegistration listenToNotifications(EventListener<QuerySnapshot> listener) {
         if (selectedDeviceId == null || selectedDeviceId.isEmpty()) return null;
@@ -1981,6 +1987,7 @@ public class Database_Helper {
                 .document(selectedDeviceId)
                 .collection("notifications")
                 .orderBy("timestamp", Query.Direction.DESCENDING)
+                .orderBy(FieldPath.documentId(), Query.Direction.DESCENDING)
                 .limit(NOTIFICATIONS_LIVE_PAGE_SIZE)
                 .addSnapshotListener(listener);
     }
@@ -1993,7 +2000,9 @@ public class Database_Helper {
      * listener's own snapshot or a previous call to this method) - Firestore
      * cursors are anchored to a real document position, not an offset, so
      * this stays correct even while the live page above keeps shifting as
-     * new notifications arrive.
+     * new notifications arrive. Same (timestamp desc, document ID desc)
+     * ordering as listenToNotifications() above, so a startAfter cursor
+     * captured from either query resolves identically in the other.
      */
     public Task<QuerySnapshot> loadOlderNotifications(DocumentSnapshot startAfterDoc) {
         if (selectedDeviceId == null || selectedDeviceId.isEmpty() || startAfterDoc == null) {
@@ -2003,6 +2012,7 @@ public class Database_Helper {
                 .document(selectedDeviceId)
                 .collection("notifications")
                 .orderBy("timestamp", Query.Direction.DESCENDING)
+                .orderBy(FieldPath.documentId(), Query.Direction.DESCENDING)
                 .startAfter(startAfterDoc)
                 .limit(NOTIFICATIONS_OLDER_PAGE_SIZE)
                 .get();

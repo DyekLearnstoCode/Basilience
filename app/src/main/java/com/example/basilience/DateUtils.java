@@ -18,6 +18,8 @@ public class DateUtils {
             ThreadLocal.withInitial(() -> new SimpleDateFormat("MMM dd, yyyy • h:mm a", Locale.getDefault()));
     private static final ThreadLocal<SimpleDateFormat> DATE_FORMAT =
             ThreadLocal.withInitial(() -> new SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()));
+    private static final ThreadLocal<SimpleDateFormat> DATE_SLASH_FORMAT =
+            ThreadLocal.withInitial(() -> new SimpleDateFormat("MM/dd/yy", Locale.getDefault()));
     private static final ThreadLocal<SimpleDateFormat> SHORT_DATE_FORMAT =
             ThreadLocal.withInitial(() -> new SimpleDateFormat("MMM dd", Locale.getDefault()));
     private static final ThreadLocal<SimpleDateFormat> TIME_FORMAT =
@@ -61,5 +63,14 @@ public class DateUtils {
 
     public static String formatTime(long milliseconds) {
         return TIME_FORMAT.get().format(new java.util.Date(milliseconds));
+    }
+
+    /**
+     * Formats a moment onto two lines for a narrow table cell: MM/dd/yy on
+     * top, h:mm a underneath. Example: "09/22/26\n12:28 PM".
+     */
+    public static String formatDateTimeCompact(long milliseconds) {
+        java.util.Date date = new java.util.Date(milliseconds);
+        return DATE_SLASH_FORMAT.get().format(date) + "\n" + TIME_FORMAT.get().format(date);
     }
 }

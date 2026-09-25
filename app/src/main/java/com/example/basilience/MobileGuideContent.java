@@ -155,7 +155,10 @@ final class MobileGuideContent {
                         "Choose a Period: Entire, Today, 7D, 30D, or Custom.",
                         "The chart, Average/Highest/Lowest metrics, and \"What This Means\" summary update for that selection.",
                         "The dashed Minimum and Maximum lines are the target ranges that were in use when that growth cycle was created, so an older report keeps reading the way it did at the time. Readings outside them are drawn in red.",
-                        "Use the share icon at the top to export the report as a PDF."))
+                        "Below the chart, the Readings Table lists every logged reading for all six parameters side by side - swipe sideways to see more.",
+                        "Use the share icon at the top to export. PDF gives a summarized analytical report (target ranges, statistics, a trend chart, and key findings); Excel gives a comprehensive workbook with every raw reading plus a formatted chart sheet per parameter.",
+                        "Either export lets you include All Parameters or just the ones you Select.",
+                        "Excel's (and the PDF's) parameter charts shade green for normal readings, yellow for readings nearing a threshold, and red for readings outside it, using the same target ranges shown as the dashed lines above."))
                 .build());
 
         list.add(GuideSection.builder("Fogging Report")
@@ -171,14 +174,16 @@ final class MobileGuideContent {
                 .build());
 
         list.add(GuideSection.builder("Notifications")
-                .description("The Notification tab keeps a history of alerts for your devices.")
+                .description("The Notification tab keeps a history of alerts for your devices. A badge on the tab shows how many are unread.")
                 .image(com.example.basilience.R.drawable.guide_notifications)
-                .imagePlaceholder("Notifications screen with the All/Unread/Read filters and a few entries")
+                .imagePlaceholder("Notifications screen with the All/Unread/Read filters, the Category dropdown, and a few entries")
                 .steps(Arrays.asList(
-                        "Use the All, Unread, and Read chips to filter the list.",
-                        "Tapping a notification marks it as read.",
-                        "\"Mark all as read\" is available at the top of each month's group when there are unread notifications."))
-                .tip("Categories you may see: Parameter Alert, Harvest Ready, Hardware Issue, Device Unreachable, Device Back Online, and Information.")
+                        "Use the All, Unread, and Read buttons to filter by read state.",
+                        "Tap \"Category\" to narrow the list to one topic at a time - pH, EC, Water Temp, Air Temp, Humidity, Water Level, or System & Other. A count shows next to a topic when it has unread notifications.",
+                        "Tapping a notification opens its details and marks it as read - just for you, so it stays unread for anyone else assigned to the device until they open it too.",
+                        "Tap \"Select\" to check off several notifications and mark just those as read, or use \"Mark all as read\" to clear every unread notification for this device at once, including ones you haven't scrolled to yet.",
+                        "Opening the Notifications tab does not mark anything as read by itself."))
+                .tip("Categories you may see under System & Other: Harvest Ready, Hardware Issue, Device Unreachable, Device Back Online, and Information.")
                 .build());
 
         list.add(GuideSection.builder("Personnel Management")
@@ -308,6 +313,7 @@ final class MobileGuideContent {
                         "Tap \"Parameter Target Ranges\" to open it as its own screen.",
                         "Each parameter has a Minimum and a Maximum. The Minimum is the lowest value considered acceptable, and the Maximum is the highest.",
                         "A reading below the minimum or above the maximum is marked as out of range in Monitoring, and appears in red on the Reports charts.",
+                        "These same ranges also set the green (normal), yellow (near threshold), and red (out of range) zones shown on the Parameter Report's PDF and Excel exports.",
                         "Enter the values for a parameter and tap Save Changes. The minimum must be lower than the maximum.",
                         "Changes reach the device within about a minute and are used for monitoring, alerts and reports from then on."))
                 .tip("Each growth cycle keeps the target ranges that were in use when the cycle was created, so changing the ranges later does not change that cycle's report. Cycles created before this feature use the ranges configured now.")

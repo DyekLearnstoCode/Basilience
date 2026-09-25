@@ -16,6 +16,7 @@ import androidx.navigation.fragment.NavHostFragment;
 import androidx.navigation.ui.NavigationUI;
 import androidx.core.view.WindowInsetsControllerCompat;
 
+import com.google.android.material.badge.BadgeDrawable;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.card.MaterialCardView;
 import com.google.firebase.database.DataSnapshot;
@@ -25,6 +26,7 @@ import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.ListenerRegistration;
 import com.google.firebase.auth.FirebaseAuth;
 import android.util.Log;
 import java.util.HashMap;
@@ -105,6 +107,7 @@ public class MainActivity extends AppCompatActivity {
 
 
     private BottomNavigationView bottomNav;
+    private ListenerRegistration notificationCounterListener;
 
     private ValueEventListener currentParameterAlertListener;
     private DatabaseReference currentParameterAlertsRef;
@@ -180,6 +183,7 @@ public class MainActivity extends AppCompatActivity {
         });
 
         bottomNav = findViewById(R.id.bottom_navigation);
+        startNotificationCounterListener();
 
         NavHostFragment navHostFragment =
                 (NavHostFragment) getSupportFragmentManager()
@@ -1014,8 +1018,56 @@ public class MainActivity extends AppCompatActivity {
         return null;
     }
 
+    // Listens to the function-maintained unread counter (see
+    // functions/index.js's onNotificationWrittenSyncUnreadCounters) rather
+    // than anything NotificationFragment computes - the badge must stay
+    // correct even if that fragment has never been opened this session, and
+    // this single lightweight document read/listen is what makes that true.
+    private void startNotificationCounterListener() {
+        String uid = FirebaseAuth.getInstance().getUid();
+        if (uid == null || bottomNav == null) return;
+
+        notificationCounterListener = FirebaseFirestore.getInstance()
+                .collection("users").document(uid)
+                .collection("counters").document("notifications")
+                .addSnapshotListener((snapshot, error) -> {
+                    if (error != null) {
+                        Log.e("MainActivity", "Notification counter listener failed", error);
+                        return;
+                    }
+                    long total = 0;
+                    if (snapshot != null && snapshot.exists()) {
+                        Long value = snapshot.getLong("total");
+                        if (value != null) total = value;
+                    }
+                    updateNotificationBadge(total);
+                });
+    }
+
+    private void updateNotificationBadge(long unreadTotal) {
+        if (bottomNav == null) return;
+        // Badges are keyed by item id independently of which menu is
+        // currently inflated (bottom_nav_menu vs management_bottom_nav_menu,
+        // the latter has no Notification tab at all) - set/removed here
+        // unconditionally, and the library only actually renders it once the
+        // Notification tab is inflated again.
+        // Clamped at 0 defensively: a decrement racing ahead of its matching
+        // increment (e.g. offline queue replay order) should never surface
+        // as a negative badge - it always self-corrects on the next write.
+        long clamped = Math.max(0, unreadTotal);
+        if (clamped <= 0) {
+            bottomNav.removeBadge(R.id.Notification);
+            return;
+        }
+        BadgeDrawable badge = bottomNav.getOrCreateBadge(R.id.Notification);
+        badge.setVisible(true);
+        badge.setNumber((int) Math.min(clamped, Integer.MAX_VALUE));
+        badge.setMaxCharacterCount(3);
+    }
+
     @Override
     protected void onDestroy() {
+        if (notificationCounterListener != null) notificationCounterListener.remove();
         stopCurrentParameterAlertListener();
         if (parameterAlertDialog != null && parameterAlertDialog.isShowing()) parameterAlertDialog.dismiss();
         parameterAlertDialog = null;

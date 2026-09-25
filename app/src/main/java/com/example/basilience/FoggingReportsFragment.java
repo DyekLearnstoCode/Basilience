@@ -865,12 +865,14 @@ public class FoggingReportsFragment extends Fragment {
     }
 
     private void fetchFoggingLogs(FoggingReportFilter filter, long requestGeneration) {
-        db.collection("devices")
-                .document(selectedDeviceId)
-                .collection("foggingLogs")
-                .whereGreaterThanOrEqualTo("timestamp", filter.effectiveStartMs)
-                .orderBy("timestamp", Query.Direction.DESCENDING)
-                .get()
+        // Bounded to [effectiveStartMs, effectiveEndMs] via Database_Helper's
+        // shared query - previously only the lower bound was enforced here,
+        // so a completed cycle's report (or any past Today/7 Days/30 Days/
+        // Custom window) could pull in and display sessions that happened
+        // after the selected period ended, inflating both the session count
+        // and the Fogging Sessions table/PDF with sessions the farmer never
+        // asked to see.
+        dbHelper.getFoggingLogs(filter.effectiveStartMs, filter.effectiveEndMs)
                 .addOnSuccessListener(queryDocumentSnapshots -> {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
                     List<FoggingEvent> events = new ArrayList<>();
@@ -1036,16 +1038,17 @@ public class FoggingReportsFragment extends Fragment {
             return;
         }
 
-        // Recent Activity - at most 10 entries total, running session first.
+        // Fogging Sessions table - every session in the selected period,
+        // running session first, then most recent first. Previously capped
+        // at 10 entries ("Recent Activity"); the client's IT expert asked
+        // for a full tabular report alongside the chart, same as Parameter
+        // Report's readings table, so nothing here is left out any more.
         List<FoggingSession> recentList = new ArrayList<>();
         if (summary.getCurrentlyRunningSession() != null) {
             recentList.add(summary.getCurrentlyRunningSession());
         }
-        for (int i = summary.getCompletedSessions().size() - 1; i >= 0 && recentList.size() < 10; i--) {
+        for (int i = summary.getCompletedSessions().size() - 1; i >= 0; i--) {
             recentList.add(summary.getCompletedSessions().get(i));
-        }
-        if (recentList.size() > 10) {
-            recentList = new ArrayList<>(recentList.subList(0, 10));
         }
         adapter.updateData(recentList);
 

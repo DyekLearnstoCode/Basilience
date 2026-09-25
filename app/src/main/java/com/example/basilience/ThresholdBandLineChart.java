@@ -2,6 +2,7 @@ package com.example.basilience;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.util.AttributeSet;
@@ -37,27 +38,45 @@ public class ThresholdBandLineChart extends LineChart {
         public final float yMin;
         public final float yMax;
         public final int color;
+        /** Drawn centered inside the band, only when the band is tall enough on screen to hold it legibly. Null draws nothing. */
+        public final String label;
 
         public Band(float yMin, float yMax, int color) {
+            this(yMin, yMax, color, null);
+        }
+
+        public Band(float yMin, float yMax, int color, String label) {
             this.yMin = yMin;
             this.yMax = yMax;
             this.color = color;
+            this.label = label;
         }
     }
 
     private final List<Band> bands = new ArrayList<>();
     private final Paint bandPaint = new Paint();
+    private final Paint bandLabelPaint = new Paint();
 
     public ThresholdBandLineChart(Context context) {
         super(context);
+        initLabelPaint();
     }
 
     public ThresholdBandLineChart(Context context, AttributeSet attrs) {
         super(context, attrs);
+        initLabelPaint();
     }
 
     public ThresholdBandLineChart(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
+        initLabelPaint();
+    }
+
+    private void initLabelPaint() {
+        float density = getResources().getDisplayMetrics().density;
+        bandLabelPaint.setAntiAlias(true);
+        bandLabelPaint.setColor(Color.argb(150, 0, 0, 0));
+        bandLabelPaint.setTextSize(11f * density);
     }
 
     /** Replaces the current bands. Pass null/empty to clear (e.g. no configured thresholds for this parameter). */
@@ -99,6 +118,16 @@ public class ThresholdBandLineChart extends LineChart {
             bandPaint.setColor(band.color);
             bandPaint.setStyle(Paint.Style.FILL);
             canvas.drawRect(content.left, points[1], content.right, points[3], bandPaint);
+
+            if (band.label != null) {
+                float bandHeightPx = points[3] - points[1];
+                float textHeight = bandLabelPaint.getFontMetrics().descent - bandLabelPaint.getFontMetrics().ascent;
+                if (bandHeightPx > textHeight * 2.2f) {
+                    float centerY = (points[1] + points[3]) / 2f;
+                    float baseline = centerY - (bandLabelPaint.getFontMetrics().ascent + bandLabelPaint.getFontMetrics().descent) / 2f;
+                    canvas.drawText(band.label, content.left + 6f, baseline, bandLabelPaint);
+                }
+            }
         }
         canvas.restore();
     }

@@ -125,6 +125,96 @@
                     android:text="Read" />
             </LinearLayout>
 
+            <!-- SECOND ROW: a single compact category dropdown (replaces the
+                 old always-visible 9-chip horizontal scroller - same
+                 filtering power, a fraction of the vertical space and no
+                 layout shift as counts change) plus the Select mode toggle,
+                 sharing one row. -->
+            <LinearLayout
+                android:id="@+id/rowCategoryAndSelect"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="12dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCategoryDropdown"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="0dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="8dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:textAllCaps="false"
+                    android:textSize="13sp"
+                    android:textColor="@color/state_primary_text"
+                    app:icon="@drawable/ic_dropdown_arrow"
+                    app:iconGravity="textEnd"
+                    app:iconTint="@color/state_primary_text"
+                    android:text="All Categories" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSelectMode"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:textAllCaps="false"
+                    android:textSize="13sp"
+                    android:text="Select" />
+
+            </LinearLayout>
+
+            <!-- SELECTION ACTION BAR: replaces the row above while selection
+                 mode is active (see NotificationFragment.setSelectionMode). -->
+            <LinearLayout
+                android:id="@+id/rowSelectionActions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="12dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/tvSelectionCount"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="0 selected"
+                    android:textSize="13sp"
+                    android:textColor="@color/state_primary_text" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnMarkSelectedRead"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:textAllCaps="false"
+                    android:textSize="13sp"
+                    android:text="Mark selected as read" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCancelSelection"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:textAllCaps="false"
+                    android:textSize="13sp"
+                    android:textColor="@android:color/darker_gray"
+                    android:text="Cancel" />
+
+            </LinearLayout>
+
             <!-- LOADING STATE: shown until the first snapshot resolves (either
                  into a populated list or the empty state below), so opening
                  the screen never reads as blank/broken while Firestore is

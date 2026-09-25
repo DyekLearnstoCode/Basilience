@@ -29,6 +29,19 @@
             android:gravity="center_vertical"
             android:baselineAligned="false">
 
+            <!-- SELECTION CHECKBOX: gone outside selection mode, shown (and
+                 replaces the icon badge's spot conceptually - both are shown
+                 side by side, checkbox first) while NotificationFragment's
+                 selection mode is active. -->
+            <CheckBox
+                android:id="@+id/cbSelect"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="12dp"
+                android:visibility="gone"
+                android:clickable="false"
+                android:focusable="false" />
+
             <!-- Icon Badge with soft background -->
             <FrameLayout
                 android:layout_width="48dp"

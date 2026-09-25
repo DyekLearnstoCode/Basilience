@@ -37,6 +37,28 @@ const MANILA_TIME_ZONE = "Asia/Manila";
 // as evidence for a later, unrelated cooling cycle.
 const COOLING_EPISODE_MAX_AGE_MS = 60 * 60 * 1000;
 
+// Canonical parameter grouping used across every notification producer below
+// and mirrored client-side in NotificationParameterKeys.java (keep the two in
+// sync - client-side derivation for historical documents that predate the
+// parameterKey field relies on this exact same key set and mapping).
+const ALERT_KEY_TO_PARAMETER_KEY = {
+    phLow: "ph",
+    phHigh: "ph",
+    ecLow: "ec",
+    ecHigh: "ec",
+    waterTempOutOfRange: "waterTemp",
+    waterTempLow: "waterTemp",
+    lowAirTemperature: "airTemp",
+    highTemperature: "airTemp",
+    humidityLow: "humidity",
+    humidityHigh: "humidity",
+    waterLevelLow: "waterLevel",
+    waterLevelHigh: "waterLevel",
+    lowWater: "waterLevel",
+    criticalLowWater: "waterLevel"
+    // sensorFault intentionally absent - it is type "hardware", not "parameter".
+};
+
 function safeEventId(eventId) {
     return crypto.createHash("sha256").update(String(eventId)).digest("hex");
 }
@@ -282,6 +304,325 @@ async function getDeviceUserTokens(db, deviceId) {
     return Array.from(tokensSet);
 }
 
+// Same owner + linked-assignment eligibility as getDeviceUserTokens() above,
+// but returning uids regardless of whether that user currently has an FCM
+// token - a user with push disabled/uninstalled still reads notifications
+// in-app and still needs an accurate unread badge. Kept as its own function
+// rather than refactored out of getDeviceUserTokens() so the push-delivery
+// path above is never put at risk by a shared-code change.
+async function getDeviceEligibleUserIds(db, deviceId) {
+    const uids = new Set();
+    if (!deviceId) return uids;
+
+    try {
+        const deviceDoc = await db.collection("devices").doc(deviceId).get();
+        let ownerUid = null;
+        if (deviceDoc.exists) {
+            const data = deviceDoc.data();
+            ownerUid = data.ownerUid || data.ownerAdminUid;
+            if (ownerUid) uids.add(ownerUid);
+        }
+
+        const assignmentsSnapshot = await db.collection("deviceAssignments")
+            .where("deviceId", "==", deviceId)
+            .get();
+
+        for (const doc of assignmentsSnapshot.docs) {
+            const userUid = doc.data().userUid;
+            if (!userUid || userUid === ownerUid) continue;
+            const userDoc = await db.collection("users").doc(userUid).get();
+            if (!userDoc.exists) continue;
+            const user = userDoc.data();
+            if ((user.role === "FARMER" || user.role === "PERSONNEL") && user.ownerAdminUid === ownerUid) {
+                uids.add(userUid);
+            }
+        }
+    } catch (e) {
+        logger.error(`Error resolving eligible users for device ${deviceId}:`, e);
+    }
+
+    return uids;
+}
+
+// Maintains users/{uid}/counters/notifications { perDevice: {deviceId: n}, total: n }
+// as a materialized, function-owned cache derived purely from the same
+// devices/{deviceId}/notifications documents and readBy writes the client
+// already makes (see NotificationFragment/Database_Helper.markNotificationsRead).
+// readBy stays the only source of truth for read/unread state - this counter
+// is never independently writable by the client (see firestore.rules) and can
+// only change in response to a real write here, so it cannot drift out of
+// sync with readBy the way a second client-writable flag could.
+//
+// A new document increments every eligible recipient's counter by 1. An
+// update only ever adds keys to readBy (enforced by firestore.rules - a
+// client update may only add the caller's own uid), so any uid newly present
+// in after.readBy that was absent from before.readBy gets decremented by 1.
+// Historical documents that predate this trigger are handled by a one-time
+// backfill script (see functions/scripts/backfillNotificationCounters.js),
+// not by this trigger, which only ever applies a delta to what is already
+// stored.
+exports.onNotificationWrittenSyncUnreadCounters = onDocumentWritten(
+    {document: "devices/{deviceId}/notifications/{notificationId}", retry: true},
+    async (event) => {
+        const deviceId = event.params.deviceId;
+        const before = event.data.before.exists ? event.data.before.data() : null;
+        const after = event.data.after.exists ? event.data.after.data() : null;
+        const db = admin.firestore();
+
+        if (!before && after) {
+            // Created
+            const uids = await getDeviceEligibleUserIds(db, deviceId);
+            if (uids.size === 0) return;
+            const batch = db.batch();
+            for (const uid of uids) {
+                const ref = db.collection("users").doc(uid).collection("counters").doc("notifications");
+                batch.set(ref, {
+                    perDevice: {[deviceId]: admin.firestore.FieldValue.increment(1)},
+                    total: admin.firestore.FieldValue.increment(1)
+                }, {merge: true});
+            }
+            await batch.commit();
+            return;
+        }
+
+        if (before && after) {
+            // Updated - only readBy additions decrement a counter; nothing
+            // else this document holds is ever legally changed by a client
+            // (firestore.rules restricts client updates to readBy alone).
+            const beforeReadBy = before.readBy || {};
+            const afterReadBy = after.readBy || {};
+            const newlyRead = Object.keys(afterReadBy).filter((uid) => !(uid in beforeReadBy));
+            if (newlyRead.length === 0) return;
+
+            // bulkReadUids is written ONLY by markAllNotificationsReadForDevice
+            // (Admin SDK, bypasses firestore.rules - a client can never set
+            // this field itself, since its update rule allows touching readBy
+            // alone). A uid present here had its readBy entry added as part
+            // of a bulk mark-all operation, which reconciles the counter
+            // ONCE itself via recomputeUserDeviceUnreadCount() after every
+            // affected document is written - decrementing here too would
+            // double-count that uid's contribution. This check needs no
+            // extra read/transaction (the before/after diff already has
+            // everything) and is evaluated from immutable per-document data,
+            // so it stays correct even if this trigger invocation is delayed
+            // or retried long after the bulk operation finished - there is
+            // no "flag gets cleared" window to race against.
+            const bulkReadUids = new Set(after.bulkReadUids || []);
+            const uidsToDecrement = newlyRead.filter((uid) => !bulkReadUids.has(uid));
+            if (uidsToDecrement.length === 0) return;
+
+            const batch = db.batch();
+            for (const uid of uidsToDecrement) {
+                const ref = db.collection("users").doc(uid).collection("counters").doc("notifications");
+                batch.set(ref, {
+                    perDevice: {[deviceId]: admin.firestore.FieldValue.increment(-1)},
+                    total: admin.firestore.FieldValue.increment(-1)
+                }, {merge: true});
+            }
+            await batch.commit();
+            return;
+        }
+
+        if (before && !after) {
+            // Deleted - not currently exercised anywhere (firestore.rules
+            // forbids client delete and no function deletes notifications),
+            // kept only so the counter cannot go stale if that ever changes.
+            const uids = await getDeviceEligibleUserIds(db, deviceId);
+            const readBy = before.readBy || {};
+            const batch = db.batch();
+            let any = false;
+            for (const uid of uids) {
+                if (uid in readBy) continue; // was already read - no unread to remove
+                any = true;
+                const ref = db.collection("users").doc(uid).collection("counters").doc("notifications");
+                batch.set(ref, {
+                    perDevice: {[deviceId]: admin.firestore.FieldValue.increment(-1)},
+                    total: admin.firestore.FieldValue.increment(-1)
+                }, {merge: true});
+            }
+            if (any) await batch.commit();
+        }
+    }
+);
+
+// Recomputes uid's TRUE current unread count for deviceId from scratch -
+// every devices/{deviceId}/notifications document whose readBy lacks uid -
+// and reconciles users/{uid}/counters/notifications to match. Used when a
+// user's ELIGIBILITY for a device changes (newly assigned, or claims/re-
+// claims a device as owner), never for an ordinary new notification -
+// onNotificationWrittenSyncUnreadCounters's +1/-1 deltas have no way to
+// account for history the user didn't have access to yet, so this
+// establishes a correct starting value instead of extending a delta chain
+// from the wrong base.
+async function recomputeUserDeviceUnreadCount(db, uid, deviceId) {
+    const notificationsSnapshot = await db.collection("devices").doc(deviceId)
+        .collection("notifications").get();
+
+    let unreadCount = 0;
+    for (const doc of notificationsSnapshot.docs) {
+        const readBy = doc.data().readBy || {};
+        if (!(uid in readBy)) unreadCount++;
+    }
+
+    const counterRef = db.collection("users").doc(uid).collection("counters").doc("notifications");
+    await db.runTransaction(async (transaction) => {
+        const snap = await transaction.get(counterRef);
+        const perDevice = (snap.exists && snap.data().perDevice) || {};
+        const oldValue = perDevice[deviceId] || 0;
+        const delta = unreadCount - oldValue;
+        if (delta === 0 && snap.exists) return;
+        transaction.set(counterRef, {
+            perDevice: {[deviceId]: unreadCount},
+            total: admin.firestore.FieldValue.increment(delta)
+        }, {merge: true});
+    });
+}
+
+// Removes deviceId's entire contribution from uid's badge - used when a
+// user's eligibility for a device is REVOKED (unassigned, or device
+// unclaimed). Without this, a user who can no longer read a device's
+// notifications at all (isAssignedToDevice() now fails, and they aren't the
+// owner) would be left holding whatever unread count they had at the moment
+// access was revoked forever - nothing they can do in-app (they can't open
+// notifications they no longer have read access to) would ever decrement it.
+async function clearUserDeviceUnreadCount(db, uid, deviceId) {
+    const counterRef = db.collection("users").doc(uid).collection("counters").doc("notifications");
+    await db.runTransaction(async (transaction) => {
+        const snap = await transaction.get(counterRef);
+        if (!snap.exists) return;
+        const perDevice = snap.data().perDevice || {};
+        if (!(deviceId in perDevice)) return;
+        const oldValue = perDevice[deviceId] || 0;
+        transaction.update(counterRef, {
+            [`perDevice.${deviceId}`]: admin.firestore.FieldValue.delete(),
+            total: admin.firestore.FieldValue.increment(-oldValue)
+        });
+    });
+}
+
+// Keeps unread counters correct across every eligibility change - personnel
+// assigned/unassigned, a personnel profile unlinked (deletePersonnelForCurrentAdmin
+// always deletes their assignment docs in the same batch), and device
+// claim/unclaim (claimDevice/unclaimDevice always write the owner's own
+// deterministic assignment doc in the same transaction/batch as the
+// ownerUid change - see Database_Helper.java) - without needing a second
+// trigger on the devices collection, since every one of those flows already
+// goes through a deviceAssignments write.
+//
+// firestore.rules makes deviceAssignments identity/role immutable (create
+// or delete only, no update), so there is no "before && after" case to
+// reconcile here.
+exports.onDeviceAssignmentWrittenSyncNotificationCounters = onDocumentWritten(
+    {document: "deviceAssignments/{assignmentId}", retry: true},
+    async (event) => {
+        const before = event.data.before.exists ? event.data.before.data() : null;
+        const after = event.data.after.exists ? event.data.after.data() : null;
+        const db = admin.firestore();
+
+        if (!before && after) {
+            const {userUid, deviceId} = after;
+            if (!userUid || !deviceId) return;
+            // Re-derives eligibility from live device/user state rather than
+            // trusting the assignment doc alone, so a stale/orphaned write
+            // can never seed a counter for a user who doesn't actually
+            // qualify (matches the same eligibility used to create the
+            // notification counters in the first place).
+            const eligible = await getDeviceEligibleUserIds(db, deviceId);
+            if (!eligible.has(userUid)) return;
+            await recomputeUserDeviceUnreadCount(db, userUid, deviceId);
+            return;
+        }
+
+        if (before && !after) {
+            const {userUid, deviceId} = before;
+            if (!userUid || !deviceId) return;
+            // Re-checks current eligibility (post-delete) before clearing -
+            // e.g. a personnel with two independent assignment docs to the
+            // same device would be a data anomaly, but this guards against
+            // ever wrongly clearing a still-legitimately-eligible user.
+            const eligible = await getDeviceEligibleUserIds(db, deviceId);
+            if (eligible.has(userUid)) return;
+            await clearUserDeviceUnreadCount(db, userUid, deviceId);
+        }
+    }
+);
+
+// Marks every currently-unread devices/{deviceId}/notifications document as
+// read for the caller, at whatever scale the device's full history is - NOT
+// limited to whatever page the Android client has paginated into memory.
+// Runs server-side rather than as thousands of individual client writes,
+// which would be slow and expensive over a farmer's mobile connection.
+//
+// Each notification write also stamps bulkReadUids so
+// onNotificationWrittenSyncUnreadCounters skips its own per-document
+// decrement for this uid (see that trigger's comment) - the ONLY counter
+// write for this whole operation is the single recomputeUserDeviceUnreadCount()
+// call after every batch has committed, so the badge lands on the correct
+// value in one hop instead of visibly catching up over thousands of
+// contending single-document writes.
+//
+// Idempotent: re-invoking (e.g. a client retry after a dropped response)
+// finds nothing left unread to write in the batch phase, and the reconcile
+// step recomputes from scratch regardless, so it always converges on the
+// same correct total no matter how many times it runs.
+exports.markAllNotificationsReadForDevice = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Authentication is required.");
+    }
+    const uid = request.auth.uid;
+    const deviceId = request.data && request.data.deviceId;
+    if (!deviceId || typeof deviceId !== "string") {
+        throw new HttpsError("invalid-argument", "A deviceId is required.");
+    }
+
+    const db = admin.firestore();
+
+    // Mirrors firestore.rules' own read-eligibility for this device
+    // (isAdmin() || isAssignedToDevice(deviceId)) - a callable runs with
+    // Admin SDK privileges and bypasses security rules entirely, so this
+    // check has to be made explicitly rather than relied on implicitly.
+    const [userDoc, assignmentDoc] = await Promise.all([
+        db.collection("users").doc(uid).get(),
+        db.collection("deviceAssignments").doc(`${uid}_${deviceId}`).get()
+    ]);
+    const isAdminRole = userDoc.exists && userDoc.data().role === "ADMIN";
+    if (!isAdminRole && !assignmentDoc.exists) {
+        throw new HttpsError("permission-denied", "You do not have access to this device's notifications.");
+    }
+
+    const notificationsSnapshot = await db.collection("devices").doc(deviceId)
+        .collection("notifications").get();
+
+    const unreadDocs = notificationsSnapshot.docs.filter((doc) => {
+        const readBy = doc.data().readBy || {};
+        return !(uid in readBy);
+    });
+
+    if (unreadDocs.length === 0) {
+        return {markedCount: 0};
+    }
+
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < unreadDocs.length; i += CHUNK_SIZE) {
+        const batch = db.batch();
+        for (const doc of unreadDocs.slice(i, i + CHUNK_SIZE)) {
+            batch.update(doc.ref, {
+                [`readBy.${uid}`]: admin.firestore.FieldValue.serverTimestamp(),
+                bulkReadUids: admin.firestore.FieldValue.arrayUnion(uid)
+            });
+        }
+        await batch.commit();
+    }
+
+    // Single authoritative counter reconciliation for the whole operation -
+    // see this function's own top comment and onNotificationWrittenSyncUnreadCounters's
+    // bulkReadUids check for why the per-document writes above never touch
+    // the counter themselves.
+    await recomputeUserDeviceUnreadCount(db, uid, deviceId);
+
+    return {markedCount: unreadDocs.length};
+});
+
 async function createAutomationSuccessNotification({
     db,
     deviceId,
@@ -303,7 +644,6 @@ async function createAutomationSuccessNotification({
             message: content.message,
             type: content.type,
             timestamp: Date.now(),
-            isRead: false,
             eventId: notificationId,
             requestId,
             operation,
@@ -405,7 +745,6 @@ async function createHarvestReminder(db, deviceId, cycleId, nextHarvestDate, rem
             message,
             type: "harvest",
             timestamp: Date.now(),
-            isRead: false,
             eventId: notificationId,
             cycleId,
             nextHarvestDate: scheduledEpochMs,
@@ -751,7 +1090,6 @@ async function emitWaterTemperatureCoolingSuccess(db, deviceId, notificationId) 
             message,
             type,
             timestamp: Date.now(),
-            isRead: false,
             eventId: notificationId,
             source: "AUTOMATIC",
             lifecycle: "SUCCESS"
@@ -920,8 +1258,8 @@ exports.onAlertUpdated = onValueUpdated({
                 message: alert.message,
                 type: alert.type,
                 timestamp: Date.now(),
-                isRead: false,
-                eventId: notificationId
+                eventId: notificationId,
+                parameterKey: ALERT_KEY_TO_PARAMETER_KEY[alert.key] || null
                 });
             } catch (error) {
                 if (error && (error.code === 6 || error.code === "already-exists")) {
@@ -1115,7 +1453,6 @@ async function handleDeviceConnectivityTransition(eventId, deviceId, wasOnline, 
             generatedAt,
             lastServerSeen: Number.isFinite(lastServerSeen) ? lastServerSeen : null,
             presenceState,
-            isRead: false,
             eventId: notificationId
         });
         if (cameOnline) {
@@ -1229,7 +1566,6 @@ exports.onHarvestCreated = onDocumentCreated("devices/{deviceId}/cycles/{cycleId
             message,
             type: "harvest",
             timestamp: Date.now(),
-            isRead: false,
             eventId: notificationId,
             cycleId,
             harvestId,
@@ -1726,7 +2062,6 @@ exports.onStatusUpdated = onValueUpdated({
                 message: status.message,
                 type: status.type,
                 timestamp: Date.now(),
-                isRead: false,
                 eventId: notificationId
                 });
             } catch (error) {
@@ -2288,6 +2623,14 @@ exports.onNotificationQueued = onValueWritten({
         DEVICE_UNREACHABLE: "connectivity_offline",
         HARVEST_DUE: "harvest"
     };
+    // Same canonical parameter grouping as ALERT_KEY_TO_PARAMETER_KEY above,
+    // just keyed by the firmware's own event-type spelling instead of the
+    // RTDB alert key - the two vocabularies never fully overlap.
+    const FIRMWARE_TYPE_TO_PARAMETER_KEY = {
+        LOW_WATER: "waterLevel",
+        HIGH_WATER_TEMP: "waterTemp",
+        HIGH_AIR_TEMP: "airTemp"
+    };
 
     const db = admin.firestore();
     const notificationRef = db.collection("devices").doc(deviceId).collection("notifications").doc(eventId);
@@ -2297,12 +2640,25 @@ exports.onNotificationQueued = onValueWritten({
             title: data.title || "Basilience Alert",
             message: data.message || "",
             type: FIRMWARE_TYPE_TO_HISTORY_TYPE[data.type] || "info",
-            // Original device-observed time is preserved, never replaced by
-            // replay/server time - only falls back to now() if the firmware
-            // itself never had a valid RTC timestamp to offer.
-            timestamp: (data.timestampValid && data.occurredAt) ? data.occurredAt * 1000 : Date.now(),
-            isRead: false,
+            // timestamp drives sort order/pagination in the Android client
+            // (Database_Helper's orderBy(timestamp desc)) and must always be
+            // insertion-monotonic for that to work - a backdated value here
+            // could sort behind a page the client already paginated past,
+            // where nothing would ever re-fetch it (the live listener only
+            // watches the newest N documents; a "startAfter" pagination
+            // cursor, once past, never revisits earlier ground). occurredAtMs
+            // below is where the true device-observed time actually lives
+            // now; the Android client displays that instead when present, so
+            // this split costs nothing on the "show the real time" intent
+            // the old single-field approach had.
+            timestamp: Date.now(),
+            // Original device-observed time, display-only - never used for
+            // sort/pagination. Null if the firmware never had a valid RTC
+            // timestamp to offer (see timestampValid in the task report's
+            // timestamp-behavior notes).
+            occurredAtMs: (data.timestampValid && data.occurredAt) ? data.occurredAt * 1000 : null,
             eventId,
+            parameterKey: FIRMWARE_TYPE_TO_PARAMETER_KEY[data.type] || null,
             offlineRecorded: true,
             smsFallbackUsed: Boolean(data.smsFallbackUsed)
         });

@@ -20,6 +20,7 @@ import com.google.firebase.firestore.ListenerRegistration;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 public class Cycle_Details_Fragment extends Fragment {
@@ -238,6 +239,12 @@ public class Cycle_Details_Fragment extends Fragment {
                             }
                         }
                     }
+                    // Database_Helper.listenToCycles() orders ascending by
+                    // cycleNumber - other screens (fogging/system report
+                    // filters) rely on that to preselect the latest cycle.
+                    // Here, the newest (current) cycle should show first, so
+                    // reverse just this screen's local copy of the list.
+                    Collections.reverse(cycles);
                     adapter.notifyDataSetChanged();
                     renderCyclesState(snapshot);
                 }

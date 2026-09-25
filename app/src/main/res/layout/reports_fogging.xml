@@ -665,8 +665,15 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     style="@style/Basilience.SectionTitle"
-                    android:text="Recent Fogging Activity"
+                    android:text="Fogging Sessions"
                     android:layout_marginBottom="@dimen/ds_space_xs" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    style="@style/Basilience.Caption"
+                    android:layout_marginBottom="@dimen/ds_space_md"
+                    android:text="Every fogging session recorded in the selected period" />
 
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/rvRecentActivity"
@@ -681,7 +688,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     style="@style/Basilience.BodyMuted"
-                    android:text="No recent activity"
+                    android:text="No fogging sessions for this period."
                     android:gravity="center"
                     android:padding="24dp"
                     android:visibility="gone" />

@@ -17,6 +17,7 @@ import com.google.firebase.Timestamp;
 import com.example.basilience.models.FoggingReportFilter;
 import com.example.basilience.models.FoggingReportTotals;
 import com.example.basilience.models.FoggingSession;
+import com.example.basilience.models.ParameterExportBundle;
 import com.example.basilience.models.ParameterReportFilter;
 
 import java.io.File;
@@ -64,6 +65,12 @@ public class CycleReportGenerator {
     // what the Fogging Report screen lists.
     private static final String[] FOGGING_STRATEGY_ORDER = {"normal", "startup", "hot", "cold"};
     private static final String[] FOGGING_STRATEGY_LABELS = {"Normal", "Startup", "Hot", "Cold"};
+
+    // Multi-parameter Parameter Report PDF: capped so a long report with
+    // several noisy parameters can never balloon the page count - this is a
+    // findings list, not a full log.
+    private static final int MAX_EXCURSIONS_PER_PARAMETER = 5;
+    private static final int PARAMETER_CHART_HEIGHT = 110;
 
     public CycleReportGenerator(Context context) {
         this.context = context;
@@ -251,32 +258,41 @@ public class CycleReportGenerator {
         return file;
     }
 
-    public File generateSensorReportPdf(ParameterReportFilter filter, Bitmap chartBitmap,
-                                         List<com.github.mikephil.charting.data.Entry> entries,
-                                         float avg, float high, float low, String unit,
-                                         String status, String targetRangeText, String evidenceText,
-                                         String interpretation, String userName) throws IOException {
+    /**
+     * Renders the (now multi-parameter) Parameter Report PDF as an
+     * analytical summary, not a copy of the app UI: report/cycle/period
+     * metadata, then per selected parameter a compact block (target range,
+     * status, average/min/max, a small chart built from the SAME bucketed
+     * aggregation XLSX uses - not a raw 5-minute dump - and up to
+     * {@link #MAX_EXCURSIONS_PER_PARAMETER} of its most notable out-of-range
+     * findings). Bounded in length regardless of how long the selected cycle
+     * is: aggregation caps the chart's point count and findings are capped
+     * per parameter, so this can never balloon into a per-reading table -
+     * that is the XLSX export's job now.
+     */
+    public File generateMultiParameterSensorReportPdf(ParameterReportFilter filter,
+                                                        List<ParameterExportBundle> bundles,
+                                                        String userName) throws IOException {
         PdfDocument document = new PdfDocument();
-        PdfDocument.PageInfo pageInfo = new PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, 1).create();
+        int pageNumber = 1;
+
+        PdfDocument.PageInfo pageInfo = new PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, pageNumber++).create();
         PdfDocument.Page page = document.startPage(pageInfo);
         Canvas canvas = page.getCanvas();
         Paint paint = new Paint();
 
         int x = MARGIN;
         int contentWidth = PAGE_WIDTH - (2 * MARGIN);
+        String reportTitle = bundles.size() == 1 ? bundles.get(0).displayParameter + " Report" : "Multi-Parameter Report";
 
-        // y is the TOP of the next block throughout; every helper returns the
-        // next free top, so no block can land on top of another.
         int y = drawModernReportHeader(canvas, paint, x, 50, "Parameter Report", userName, filter.cycleStatus);
 
-        // --- PARAMETER TITLE ---
         paint.setColor(PDF_HEADING);
         paint.setTextSize(PDF_SIZE_PARAM_TITLE);
         paint.setFakeBoldText(true);
-        y = drawTextBlock(canvas, paint, filter.displayParameter + " Report", x, y);
-        y += 14;
+        y = drawTextBlock(canvas, paint, reportTitle, x, y);
+        y += 8;
 
-        // --- DEVICE / CYCLE DETAILS ---
         applyBodyPaint(paint);
         y = drawTextBlock(canvas, paint, "Device: " + filter.deviceId, x, y);
         y = drawTextBlock(canvas, paint, "Cycle: " + filter.cycleLabel, x, y);
@@ -287,62 +303,36 @@ public class CycleReportGenerator {
         y = drawTextBlock(canvas, paint, "Report Period: " + filter.periodLabel + " ("
                 + DateUtils.formatDate(filter.effectiveStartMs) + " - "
                 + DateUtils.formatDate(filter.effectiveEndMs) + ")", x, y);
+
+        StringBuilder paramList = new StringBuilder();
+        for (int i = 0; i < bundles.size(); i++) {
+            if (i > 0) paramList.append(", ");
+            paramList.append(bundles.get(i).displayParameter);
+        }
+        y = drawTextBlock(canvas, paint, "Parameters Included: " + paramList, x, y);
         y += PDF_GAP_SECTION;
 
-        // --- SETTINGS USED ---
-        // targetRangeText already carries its own label ("Acceptable range:",
-        // "Upper limit:", "Low-water threshold:") matching what's shown on
-        // screen, so it isn't wrapped in another "Target Range:" prefix here.
-        y = drawSectionHeading(canvas, paint, "Settings Used", x, y);
-        y = drawWrappedBlock(canvas, targetRangeText, x, y, contentWidth, PDF_SIZE_BODY, PDF_BODY);
-        y += PDF_GAP_SECTION;
+        for (ParameterExportBundle bundle : bundles) {
+            List<ChartAggregation.Bucket> buckets = ControlChartRenderer.aggregateForChart(bundle,
+                    filter.effectiveStartMs, filter.effectiveEndMs);
+            List<ChartAggregation.Excursion> excursions = ChartAggregation.findExcursions(bundle.samples,
+                    bundle.rangeMin, bundle.rangeMax, MAX_EXCURSIONS_PER_PARAMETER);
 
-        // --- SUMMARY ---
-        y = drawSectionHeading(canvas, paint, "Summary", x, y);
-        applyBodyPaint(paint);
-        y = drawTextBlock(canvas, paint, "Status: " + status, x, y);
-        y = drawTextBlock(canvas, paint,
-                String.format(Locale.getDefault(), "Average: %.2f%s", avg, unit), x, y);
-        y = drawTextBlock(canvas, paint,
-                String.format(Locale.getDefault(), "Minimum: %.2f%s", low, unit), x, y);
-        y = drawTextBlock(canvas, paint,
-                String.format(Locale.getDefault(), "Maximum: %.2f%s", high, unit), x, y);
-        y = drawTextBlock(canvas, paint, "Readings: " + evidenceText, x, y);
-        y += PDF_GAP_SECTION;
-
-        // --- TREND CHART ---
-        // The chart is the one elastic block on the page, so it absorbs the
-        // squeeze: measure what the interpretation below will actually need,
-        // then give the chart whatever room is left above the footer. A long
-        // interpretation shrinks the chart rather than running off the page.
-        if (chartBitmap != null) {
-            y = drawSectionHeading(canvas, paint, "Trend", x, y);
-
-            int interpretationHeight = measureWrappedHeight(interpretation, contentWidth,
-                    PDF_SIZE_BODY);
-            int reservedBelowChart = PDF_GAP_SECTION
-                    + (int) Math.ceil(PDF_SIZE_SECTION * 1.4f) + PDF_GAP_AFTER_HEADING
-                    + interpretationHeight;
-            int availableForChart = PDF_FOOTER_SAFE_Y - y - reservedBelowChart;
-
-            int targetWidth = contentWidth;
-            float aspectRatio = (float) chartBitmap.getWidth() / chartBitmap.getHeight();
-            int targetHeight = (int) (targetWidth / aspectRatio);
-            int maxHeight = Math.min(190, availableForChart);
-            if (maxHeight > 60 && targetHeight > maxHeight) {
-                targetHeight = maxHeight;
-                targetWidth = (int) (targetHeight * aspectRatio);
+            int blockHeight = estimateParameterBlockHeight(bundle, excursions, contentWidth);
+            if (y + blockHeight > PDF_FOOTER_SAFE_Y) {
+                drawModernReportFooter(canvas, paint, pageNumber - 1);
+                document.finishPage(page);
+                pageInfo = new PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, pageNumber++).create();
+                page = document.startPage(pageInfo);
+                canvas = page.getCanvas();
+                y = drawModernReportHeader(canvas, paint, x, 50, "Parameter Report", userName, filter.cycleStatus);
             }
-            Rect destRect = new Rect(x, y, x + targetWidth, y + targetHeight);
-            canvas.drawBitmap(chartBitmap, null, destRect, paint);
-            y += targetHeight + PDF_GAP_SECTION;
+
+            y = drawParameterBlock(canvas, paint, bundle, buckets, excursions, x, y, contentWidth);
+            y += PDF_GAP_SECTION;
         }
 
-        // --- INTERPRETATION ---
-        y = drawSectionHeading(canvas, paint, "Interpretation", x, y);
-        drawWrappedBlock(canvas, interpretation, x, y, contentWidth, PDF_SIZE_BODY, PDF_BODY);
-
-        drawModernReportFooter(canvas, paint, 1);
+        drawModernReportFooter(canvas, paint, pageNumber - 1);
         document.finishPage(page);
 
         File dir = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
@@ -350,8 +340,7 @@ public class CycleReportGenerator {
 
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
         String fileName = "Basilience_ParamReport_" + sanitizeForFilename(filter.deviceId) + "_"
-                + sanitizeForFilename(filter.cycleLabel) + "_" + filter.canonicalParameter.replace(" ", "")
-                + "_" + timeStamp + ".pdf";
+                + sanitizeForFilename(filter.cycleLabel) + "_" + timeStamp + ".pdf";
         File file = new File(dir, fileName);
         FileOutputStream fos = new FileOutputStream(file);
         document.writeTo(fos);
@@ -359,6 +348,71 @@ public class CycleReportGenerator {
         fos.close();
 
         return file;
+    }
+
+    /** Worst-case height for one parameter's block, so pagination can decide BEFORE drawing whether it fits. */
+    private int estimateParameterBlockHeight(ParameterExportBundle bundle, List<ChartAggregation.Excursion> excursions,
+                                              int contentWidth) {
+        int titleHeight = (int) Math.ceil(PDF_SIZE_PARAM_TITLE * 1.4f) + 6;
+        int statsHeight = (int) Math.ceil(PDF_SIZE_BODY * 1.4f) * 5; // target range + status + avg + min + max lines
+        int chartHeight = PARAMETER_CHART_HEIGHT + PDF_GAP_AFTER_HEADING + (int) Math.ceil(PDF_SIZE_SECTION * 1.4f);
+        int findingsHeight = excursions.isEmpty() ? 0
+                : (int) Math.ceil(PDF_SIZE_SECTION * 1.4f) + PDF_GAP_AFTER_HEADING
+                    + excursions.size() * (int) Math.ceil(PDF_SIZE_BODY * 1.4f);
+        int interpretationHeight = (int) Math.ceil(PDF_SIZE_SECTION * 1.4f) + PDF_GAP_AFTER_HEADING
+                + measureWrappedHeight(bundle.interpretation, contentWidth, PDF_SIZE_BODY);
+        return titleHeight + statsHeight + PDF_GAP_SECTION + chartHeight + PDF_GAP_SECTION
+                + findingsHeight + (excursions.isEmpty() ? 0 : PDF_GAP_SECTION) + interpretationHeight;
+    }
+
+    private int drawParameterBlock(Canvas canvas, Paint paint, ParameterExportBundle bundle,
+                                    List<ChartAggregation.Bucket> buckets, List<ChartAggregation.Excursion> excursions,
+                                    int x, int y, int contentWidth) {
+        paint.setColor(PDF_HEADING);
+        paint.setTextSize(PDF_SIZE_PARAM_TITLE);
+        paint.setFakeBoldText(true);
+        y = drawTextBlock(canvas, paint, bundle.displayParameter, x, y);
+        y += 6;
+
+        applyBodyPaint(paint);
+        String numberFormat = "%." + bundle.decimals + "f%s";
+        y = drawWrappedBlock(canvas, bundle.targetRangeText, x, y, contentWidth, PDF_SIZE_BODY, PDF_BODY);
+        y = drawTextBlock(canvas, paint, "Status: " + bundle.status, x, y);
+        y = drawTextBlock(canvas, paint,
+                "Average: " + String.format(Locale.getDefault(), numberFormat, bundle.average, bundle.unit), x, y);
+        y = drawTextBlock(canvas, paint,
+                "Minimum: " + String.format(Locale.getDefault(), numberFormat, bundle.low, bundle.unit), x, y);
+        y = drawTextBlock(canvas, paint,
+                "Maximum: " + String.format(Locale.getDefault(), numberFormat, bundle.high, bundle.unit)
+                        + "  (" + bundle.readingCount + " readings)", x, y);
+        y += PDF_GAP_AFTER_HEADING;
+
+        ChartAggregation.Excursion topExcursion = excursions.isEmpty() ? null : excursions.get(0);
+        Bitmap chartBitmap = ControlChartRenderer.render(context, bundle, buckets, contentWidth * 2, PARAMETER_CHART_HEIGHT * 2, topExcursion);
+        if (chartBitmap != null) {
+            Rect destRect = new Rect(x, y, x + contentWidth, y + PARAMETER_CHART_HEIGHT);
+            canvas.drawBitmap(chartBitmap, null, destRect, paint);
+            chartBitmap.recycle();
+        }
+        y += PARAMETER_CHART_HEIGHT + PDF_GAP_SECTION;
+
+        if (!excursions.isEmpty()) {
+            y = drawSectionHeading(canvas, paint, "Out-of-Range Findings", x, y);
+            applyBodyPaint(paint);
+            for (ChartAggregation.Excursion e : excursions) {
+                String durationText = e.endMs > e.startMs
+                        ? DurationFormatter.formatRuntime(e.endMs - e.startMs) : "instant";
+                y = drawTextBlock(canvas, paint, DateUtils.formatDateTime(e.startMs) + " - peak "
+                        + String.format(Locale.getDefault(), numberFormat, e.peakValue, bundle.unit)
+                        + ", " + durationText, x, y);
+            }
+            y += PDF_GAP_AFTER_HEADING;
+        }
+
+        y = drawSectionHeading(canvas, paint, "Interpretation", x, y);
+        y = drawWrappedBlock(canvas, bundle.interpretation, x, y, contentWidth, PDF_SIZE_BODY, PDF_BODY);
+
+        return y;
     }
 
     /**

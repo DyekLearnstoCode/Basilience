@@ -46,4 +46,13 @@
          so the "one intentional surface" language stays visually uniform. -->
     <dimen name="ds_surface_radius">14dp</dimen>
     <dimen name="ds_surface_padding">16dp</dimen>
+
+    <!-- Parameter Report's combined readings table: a frozen left label
+         column (Date &amp; Time, pH, EC, ...) plus one horizontally
+         scrolling column per reading. Every row uses a fixed height so the
+         frozen labels and the scrolling reading columns always line up. -->
+    <dimen name="ds_table_label_col_width">82dp</dimen>
+    <dimen name="ds_table_reading_col_width">88dp</dimen>
+    <dimen name="ds_table_row_height">30dp</dimen>
+    <dimen name="ds_table_datetime_row_height">40dp</dimen>
 </resources>

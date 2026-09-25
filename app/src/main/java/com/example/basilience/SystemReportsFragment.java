@@ -1,9 +1,7 @@
 package com.example.basilience;
 
-import android.app.DatePickerDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -24,13 +22,21 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.core.util.Pair;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
+import com.example.basilience.models.ParameterExportBundle;
+import com.example.basilience.models.ParameterTableRow;
 import com.example.basilience.models.ParameterReportFilter;
+import com.google.android.material.datepicker.CalendarConstraints;
+import com.google.android.material.datepicker.MaterialDatePicker;
 import com.github.mikephil.charting.components.LimitLine;
 import com.github.mikephil.charting.components.XAxis;
 import com.github.mikephil.charting.components.YAxis;
@@ -55,15 +61,14 @@ import com.google.firebase.firestore.QueryDocumentSnapshot;
 import com.google.firebase.firestore.QuerySnapshot;
 
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Calendar;
+import java.util.Map;
 import java.util.Objects;
 import java.util.TimeZone;
 
@@ -81,6 +86,12 @@ public class SystemReportsFragment extends Fragment {
     // keep using every raw reading, never this thinned copy.
     private static final int CHART_DOWNSAMPLE_THRESHOLD = 1500;
     private static final int CHART_DOWNSAMPLE_TARGET_POINTS = 750;
+
+    // Canonical parameter keys, in the order every export (parameter
+    // selection dialog, XLSX sheet order, PDF section order) presents them.
+    private static final String[] EXPORTABLE_PARAMETERS = {
+            "pH", "EC", "Air Temperature", "Humidity", "Water Temperature", "Water Level"
+    };
 
     private Spinner spinnerCycle;
     private Spinner spinnerParameter;
@@ -101,6 +112,15 @@ public class SystemReportsFragment extends Fragment {
     private View reportContentContainer, noCyclesEmptyState;
     private TextView tvNoCyclesEmptyState;
     private View periodSelectorRow;
+    private RecyclerView recyclerReadingsTable;
+    private TextView tvReadingsTableEmpty;
+    private final List<ParameterTableRow> readingsTableRows = new ArrayList<>();
+    private ParameterTableAdapter readingsTableAdapter;
+    // Numeric (not display-string) per-parameter raw samples, rebuilt from
+    // the same document snapshot populateReadingsTable() already iterates -
+    // export's source of truth for stats/charts/Raw Data, independent of
+    // which single parameter is currently charted above.
+    private final Map<String, List<ChartAggregation.Sample>> currentParameterSamples = new HashMap<>();
     private CoachMarkTour coachMarkTour;
     private String selectedDeviceId;
     private String userRole = RoleConstants.ROLE_FARMER;
@@ -230,6 +250,14 @@ public class SystemReportsFragment extends Fragment {
         btnCustom = view.findViewById(R.id.btnCustom);
         btnShare = view.findViewById(R.id.btnShare);
         periodSelectorRow = view.findViewById(R.id.periodSelectorRow);
+        recyclerReadingsTable = view.findViewById(R.id.recyclerReadingsTable);
+        tvReadingsTableEmpty = view.findViewById(R.id.tvReadingsTableEmpty);
+        if (recyclerReadingsTable != null) {
+            recyclerReadingsTable.setLayoutManager(
+                    new LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false));
+            readingsTableAdapter = new ParameterTableAdapter(readingsTableRows);
+            recyclerReadingsTable.setAdapter(readingsTableAdapter);
+        }
         ImageButton btnInfo = view.findViewById(R.id.btnInfo);
         if (btnInfo != null) {
             btnInfo.setOnClickListener(v -> showInfoDialog());
@@ -414,6 +442,7 @@ public class SystemReportsFragment extends Fragment {
         hideLayoutLoading();
         currentFilter = null;
         currentReadings = new ArrayList<>();
+        currentParameterSamples.clear();
     }
 
     /** Shows the report loading overlay. Shared by loadReportData() and the export actions below. */
@@ -523,6 +552,22 @@ public class SystemReportsFragment extends Fragment {
     // Custom date range
     // ------------------------------------------------------------------
 
+    /**
+     * A single Material date-range calendar replaces the old chained Start
+     * Date -&gt; End Date DatePickerDialogs. The picker's own header shows
+     * both ends and the range as they're picked, its CalendarConstraints
+     * gray out/disable any date outside the cycle so an invalid range can't
+     * be tapped in the first place, and customStartMs/customEndMs only
+     * commit (reloading the report) when the user taps Save - never on a
+     * single date tap.
+     *
+     * MaterialDatePicker works in UTC calendar days internally (a selection
+     * is documented as UTC midnight of that day), while every other date
+     * computation in this fragment is anchored to Asia/Manila
+     * (startOfDayManila/endOfDayManila). manilaDateToUtcMidnight/
+     * utcMidnightToManilaDate convert between the two so the picker only
+     * ever sees/returns the Manila calendar day, never a UTC-shifted one.
+     */
     private void startCustomRangeSelection() {
         if (selectedCycle == null) {
             // Previously a silent no-op - a user tapping Custom before a
@@ -533,65 +578,58 @@ public class SystemReportsFragment extends Fragment {
         }
         long cycleStartMs = currentCycleStartMs();
         long cycleEndMs = currentCycleEndMs();
-        long initialStart = customStartMs != null ? customStartMs : cycleStartMs;
 
-        Calendar initCal = Calendar.getInstance(TimeZone.getTimeZone(TIMEZONE_ID));
-        initCal.setTimeInMillis(initialStart);
+        long constraintStartUtc = manilaDateToUtcMidnight(cycleStartMs);
+        long constraintEndUtc = manilaDateToUtcMidnight(cycleEndMs);
+        CalendarConstraints constraints = new CalendarConstraints.Builder()
+                .setStart(constraintStartUtc)
+                .setEnd(constraintEndUtc)
+                .build();
 
-        DatePickerDialog startDialog = new DatePickerDialog(requireContext(), (view, year, month, day) -> {
-            Calendar picked = Calendar.getInstance(TimeZone.getTimeZone(TIMEZONE_ID));
-            picked.set(year, month, day, 0, 0, 0);
-            picked.set(Calendar.MILLISECOND, 0);
-            long pickedStartMs = picked.getTimeInMillis();
+        long initialStartUtc = clampUtc(manilaDateToUtcMidnight(customStartMs != null ? customStartMs : cycleStartMs),
+                constraintStartUtc, constraintEndUtc);
+        long initialEndUtc = clampUtc(manilaDateToUtcMidnight(customEndMs != null ? customEndMs : cycleEndMs),
+                constraintStartUtc, constraintEndUtc);
+        if (initialEndUtc < initialStartUtc) initialEndUtc = initialStartUtc;
 
-            if (pickedStartMs < startOfDayManila(cycleStartMs)) {
-                NotificationHelper.showError(getContext(), "Start date cannot be before this cycle's start date ("
-                        + DateUtils.formatDate(cycleStartMs) + ").");
-                return;
-            }
-            if (pickedStartMs > endOfDayManila(cycleEndMs)) {
-                NotificationHelper.showError(getContext(), "Start date cannot be after this cycle's end date ("
-                        + DateUtils.formatDate(cycleEndMs) + ").");
-                return;
-            }
-            promptCustomEndDate(pickedStartMs, cycleStartMs, cycleEndMs);
-        }, initCal.get(Calendar.YEAR), initCal.get(Calendar.MONTH), initCal.get(Calendar.DAY_OF_MONTH));
-        startDialog.setTitle("Select Start Date");
-        startDialog.show();
+        MaterialDatePicker<Pair<Long, Long>> picker = MaterialDatePicker.Builder.dateRangePicker()
+                .setTitleText("Select Report Range")
+                .setCalendarConstraints(constraints)
+                .setSelection(new Pair<>(initialStartUtc, initialEndUtc))
+                .build();
+
+        picker.addOnPositiveButtonClickListener(selection -> {
+            if (selection == null || selection.first == null || selection.second == null) return;
+            customStartMs = startOfDayManila(utcMidnightToManilaDate(selection.first));
+            customEndMs = endOfDayManila(utcMidnightToManilaDate(selection.second));
+            updateFilterSelection("Custom");
+        });
+
+        picker.show(requireActivity().getSupportFragmentManager(), "custom_report_range");
     }
 
-    private void promptCustomEndDate(long pickedStartMs, long cycleStartMs, long cycleEndMs) {
-        long initialEnd = customEndMs != null ? customEndMs : cycleEndMs;
-        Calendar initCal = Calendar.getInstance(TimeZone.getTimeZone(TIMEZONE_ID));
-        initCal.setTimeInMillis(initialEnd);
+    /** The UTC-midnight instant representing the same calendar day (year/month/day) that manilaMs falls on in Asia/Manila. */
+    private long manilaDateToUtcMidnight(long manilaMs) {
+        Calendar manilaCal = Calendar.getInstance(TimeZone.getTimeZone(TIMEZONE_ID));
+        manilaCal.setTimeInMillis(manilaMs);
+        Calendar utcCal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+        utcCal.clear();
+        utcCal.set(manilaCal.get(Calendar.YEAR), manilaCal.get(Calendar.MONTH), manilaCal.get(Calendar.DAY_OF_MONTH));
+        return utcCal.getTimeInMillis();
+    }
 
-        DatePickerDialog endDialog = new DatePickerDialog(requireContext(), (view, year, month, day) -> {
-            Calendar picked = Calendar.getInstance(TimeZone.getTimeZone(TIMEZONE_ID));
-            picked.set(year, month, day, 23, 59, 59);
-            picked.set(Calendar.MILLISECOND, 999);
-            long pickedEndMs = picked.getTimeInMillis();
+    /** The inverse of manilaDateToUtcMidnight: an Asia/Manila instant (midday, so callers can safely pass it through startOfDayManila/endOfDayManila) on the calendar day the picker's UTC-midnight value represents. */
+    private long utcMidnightToManilaDate(long utcMidnightMs) {
+        Calendar utcCal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+        utcCal.setTimeInMillis(utcMidnightMs);
+        Calendar manilaCal = Calendar.getInstance(TimeZone.getTimeZone(TIMEZONE_ID));
+        manilaCal.clear();
+        manilaCal.set(utcCal.get(Calendar.YEAR), utcCal.get(Calendar.MONTH), utcCal.get(Calendar.DAY_OF_MONTH), 12, 0, 0);
+        return manilaCal.getTimeInMillis();
+    }
 
-            if (pickedEndMs > endOfDayManila(cycleEndMs)) {
-                NotificationHelper.showError(getContext(), "End date cannot be after this cycle's end date ("
-                        + DateUtils.formatDate(cycleEndMs) + ").");
-                return;
-            }
-            if (pickedEndMs < startOfDayManila(cycleStartMs)) {
-                NotificationHelper.showError(getContext(), "End date cannot be before this cycle's start date ("
-                        + DateUtils.formatDate(cycleStartMs) + ").");
-                return;
-            }
-            if (pickedEndMs < pickedStartMs) {
-                NotificationHelper.showError(getContext(), "End date cannot be before the selected start date.");
-                return;
-            }
-
-            customStartMs = pickedStartMs;
-            customEndMs = pickedEndMs;
-            updateFilterSelection("Custom");
-        }, initCal.get(Calendar.YEAR), initCal.get(Calendar.MONTH), initCal.get(Calendar.DAY_OF_MONTH));
-        endDialog.setTitle("Select End Date");
-        endDialog.show();
+    private long clampUtc(long value, long min, long max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private long startOfDayManila(long ms) {
@@ -762,6 +800,11 @@ public class SystemReportsFragment extends Fragment {
         if (filter == null) {
             currentFilter = null;
             currentReadings = new ArrayList<>();
+            currentParameterSamples.clear();
+            readingsTableRows.clear();
+            if (readingsTableAdapter != null) readingsTableAdapter.notifyDataSetChanged();
+            if (recyclerReadingsTable != null) recyclerReadingsTable.setVisibility(View.GONE);
+            if (tvReadingsTableEmpty != null) tvReadingsTableEmpty.setVisibility(View.VISIBLE);
             showEmptyReportState("Select a cycle and parameter to view a report.");
             return;
         }
@@ -873,6 +916,11 @@ public class SystemReportsFragment extends Fragment {
         currentFilter = filter;
         currentReadings = readings;
 
+        // Combined readings table: every parameter, not just the one
+        // currently charted - independent of canonicalParameter/dbFieldName
+        // above, built straight from the same document snapshots.
+        populateReadingsTable(queryDocumentSnapshots);
+
         if (entries.isEmpty()) {
             currentInsight = null;
             showEmptyReportState("No parameter records were available for this period.");
@@ -920,6 +968,36 @@ public class SystemReportsFragment extends Fragment {
             dataSets.add(dataSet);
         }
 
+        // Point markers at a calculated interval - the line above already
+        // plots every point in plottedEntries; this overlay only decides
+        // which of them also get a visible dot, spaced so a dense period
+        // (e.g. 30 Days) doesn't turn into a smear of overlapping circles.
+        int markerWidthPx = lineChart.getWidth() > 0 ? lineChart.getWidth() : 720;
+        int stride = ControlChartRenderer.markerStride(plottedEntries.size(), markerWidthPx);
+        List<Entry> markerEntries = new ArrayList<>();
+        List<Integer> markerColors = new ArrayList<>();
+        for (int i = 0; i < plottedEntries.size(); i += stride) {
+            Entry e = plottedEntries.get(i);
+            markerEntries.add(e);
+            markerColors.add(ChartRangeSegmenter.isOutOfRange(e.getY(), rangeMin, rangeMax) ? outOfRangeColor : primaryColor);
+        }
+        int lastIndex = plottedEntries.size() - 1;
+        if (lastIndex >= 0 && (lastIndex % stride) != 0) {
+            Entry e = plottedEntries.get(lastIndex);
+            markerEntries.add(e);
+            markerColors.add(ChartRangeSegmenter.isOutOfRange(e.getY(), rangeMin, rangeMax) ? outOfRangeColor : primaryColor);
+        }
+        LineDataSet markerDataSet = new LineDataSet(markerEntries, "");
+        markerDataSet.setColor(Color.TRANSPARENT);
+        markerDataSet.setLineWidth(0f);
+        markerDataSet.setDrawCircles(true);
+        markerDataSet.setCircleRadius(3.2f);
+        markerDataSet.setDrawCircleHole(false);
+        markerDataSet.setCircleColors(markerColors);
+        markerDataSet.setDrawValues(false);
+        markerDataSet.setHighlightEnabled(false);
+        dataSets.add(markerDataSet);
+
         lineChart.setData(new LineData(dataSets));
 
         // A custom legend keeps this at one or two entries no matter how many
@@ -954,12 +1032,16 @@ public class SystemReportsFragment extends Fragment {
         lineChart.setHighlightPerDragEnabled(false);
 
         // Modernized chart chrome (Basilience Design System pilot): lighter
-        // grid/axis lines and no outer border/background - visual only, the
-        // dataset/entries above are untouched.
+        // grid/axis lines - visual only, the dataset/entries above are
+        // untouched. A visible frame around the plot area (matching the
+        // export chart's styling) replaces the previous borderless look, so
+        // the app and export charts read as the same kind of figure.
         int mutedAxisColor = Color.parseColor("#8A2E4F46");
         int hairlineColor = Color.parseColor("#F0F0F0");
         lineChart.setDrawGridBackground(false);
-        lineChart.setDrawBorders(false);
+        lineChart.setDrawBorders(true);
+        lineChart.setBorderColor(Color.parseColor("#B0B0B0"));
+        lineChart.setBorderWidth(1f);
         lineChart.getLegend().setTextColor(mutedAxisColor);
         lineChart.getLegend().setTextSize(11f);
 
@@ -1359,27 +1441,34 @@ public class SystemReportsFragment extends Fragment {
     // figure uses - the summary can no longer say "under 28" while the chart
     // shows 20-28. Control/hysteresis values are still shown, but described as
     // when equipment switches rather than presented as bounds.
-    private String getTargetRangeText(String canonicalParameter) {
-        Float min = configuredRangeMin(canonicalParameter);
-        Float max = configuredRangeMax(canonicalParameter);
-
+    /**
+     * The bare "Target range: X - Y" (or single-bound / unconfigured)
+     * phrasing, with no parameter-specific qualifier appended. Exports use
+     * this alone - the correction-target/hysteresis notes below are useful
+     * context for a farmer actively tuning dosing on screen, but read as
+     * noise in a printed report's metadata, which only needs the actual
+     * reporting range.
+     */
+    private String coreTargetRangeText(Float min, Float max, String unit, int decimals) {
         if (min == null && max == null) {
             return "No configured target range for this parameter.";
         }
-
-        final String unit = getUnitForParameter(canonicalParameter);
-        final int decimals = markerDecimalsForParameter(canonicalParameter);
         final String number = "%." + decimals + "f";
-
-        String text;
         if (min != null && max != null) {
-            text = String.format(Locale.getDefault(),
-                    "Target range: " + number + " \u2013 " + number + "%s", min, max, unit);
+            return String.format(Locale.getDefault(), "Target range: " + number + " – " + number + "%s", min, max, unit);
         } else if (max != null) {
-            text = String.format(Locale.getDefault(), "Upper limit: " + number + "%s", max, unit);
+            return String.format(Locale.getDefault(), "Upper limit: " + number + "%s", max, unit);
         } else {
-            text = String.format(Locale.getDefault(), "Lower limit: " + number + "%s", min, unit);
+            return String.format(Locale.getDefault(), "Lower limit: " + number + "%s", min, unit);
         }
+    }
+
+    private String getTargetRangeText(String canonicalParameter) {
+        Float min = configuredRangeMin(canonicalParameter);
+        Float max = configuredRangeMax(canonicalParameter);
+        String text = coreTargetRangeText(min, max, getUnitForParameter(canonicalParameter),
+                markerDecimalsForParameter(canonicalParameter));
+        if (min == null && max == null) return text;
 
         if (canonicalParameter.equalsIgnoreCase("pH")
                 && phTargetMinThreshold != null && phTargetMaxThreshold != null) {
@@ -1480,38 +1569,118 @@ public class SystemReportsFragment extends Fragment {
     // screen currently being shown - never recomputed independently.
     // ------------------------------------------------------------------
 
+    /**
+     * Export → choose PDF (single-page analytical summary) or Excel
+     * (comprehensive workbook) → choose all six parameters or a subset.
+     * Both formats and every parameter draw from the same currentFilter/
+     * currentParameterSamples state the screen is already showing - see
+     * buildExportBundles(). CSV export was retired in favor of XLSX, which
+     * covers the same "every reading" need without losing the ability to
+     * format/chart it.
+     */
     private void showExportOptions() {
-        String[] options = {"Share CSV", "Save as PDF"};
-        NotificationHelper.showSelectionDialog(requireContext(), "Export Report", options, index -> {
-            if (index == 0) {
-                exportDataToCSV();
+        if (currentFilter == null) {
+            Toast.makeText(getContext(), "Load a report before exporting.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String[] formatOptions = {"PDF (Summary Report)", "Excel (Comprehensive Data)"};
+        NotificationHelper.showSelectionDialog(requireContext(), "Export Report", formatOptions, formatIndex -> {
+            boolean isPdf = formatIndex == 0;
+            showParameterScopeDialog(isPdf);
+        });
+    }
+
+    private void showParameterScopeDialog(boolean isPdf) {
+        String[] scopeOptions = {"All Parameters", "Select Parameters..."};
+        NotificationHelper.showSelectionDialog(requireContext(), "Choose Parameters", scopeOptions, scopeIndex -> {
+            if (scopeIndex == 0) {
+                performExport(isPdf, Arrays.asList(EXPORTABLE_PARAMETERS));
             } else {
-                exportToPdf();
+                showMultiSelectParametersDialog(isPdf);
             }
         });
     }
 
-    private void exportToPdf() {
+    private void showMultiSelectParametersDialog(boolean isPdf) {
+        if (getContext() == null) return;
+        boolean[] checked = new boolean[EXPORTABLE_PARAMETERS.length];
+        Arrays.fill(checked, true);
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Select Parameters")
+                .setMultiChoiceItems(EXPORTABLE_PARAMETERS, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
+                .setPositiveButton("Export", (dialog, which) -> {
+                    List<String> selected = new ArrayList<>();
+                    for (int i = 0; i < checked.length; i++) {
+                        if (checked[i]) selected.add(EXPORTABLE_PARAMETERS[i]);
+                    }
+                    if (selected.isEmpty()) {
+                        Toast.makeText(getContext(), "Select at least one parameter.", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    performExport(isPdf, selected);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /**
+     * Builds one ParameterExportBundle per requested parameter from
+     * currentParameterSamples/configuredRangeMin/Max/computeInsight - the
+     * exact same per-parameter machinery the on-screen chart, stats and
+     * insight card already use for whichever single parameter happens to be
+     * charted, just run for every selected parameter instead of one. A
+     * parameter with no readings in this period still gets a bundle (status
+     * "INSUFFICIENT DATA") rather than being silently dropped, since the
+     * farmer explicitly chose to include it.
+     */
+    private List<ParameterExportBundle> buildExportBundles(List<String> canonicalParameters) {
+        List<ParameterExportBundle> bundles = new ArrayList<>();
+        for (String canonical : canonicalParameters) {
+            List<ChartAggregation.Sample> samples = currentParameterSamples.get(canonical);
+            if (samples == null) samples = new ArrayList<>();
+
+            List<Float> values = new ArrayList<>(samples.size());
+            float sum = 0f;
+            float high = Float.NEGATIVE_INFINITY;
+            float low = Float.POSITIVE_INFINITY;
+            for (ChartAggregation.Sample s : samples) {
+                values.add(s.value);
+                sum += s.value;
+                if (s.value > high) high = s.value;
+                if (s.value < low) low = s.value;
+            }
+            float avg = values.isEmpty() ? 0f : sum / values.size();
+            if (values.isEmpty()) {
+                high = 0f;
+                low = 0f;
+            }
+
+            Float rangeMin = configuredRangeMin(canonical);
+            Float rangeMax = configuredRangeMax(canonical);
+            ParameterInsight insight = computeInsight(canonical, values);
+            String exportTargetRangeText = coreTargetRangeText(rangeMin, rangeMax,
+                    getUnitForParameter(canonical), markerDecimalsForParameter(canonical));
+
+            bundles.add(new ParameterExportBundle(canonical, canonical, getUnitForParameter(canonical),
+                    markerDecimalsForParameter(canonical), rangeMin, rangeMax, exportTargetRangeText,
+                    avg, high, low, values.size(), insight.status, insight.interpretation, samples));
+        }
+        return bundles;
+    }
+
+    private void performExport(boolean isPdf, List<String> selectedParameters) {
         if (!isAdded() || getContext() == null) return;
         if (currentFilter == null) {
             Toast.makeText(getContext(), "Load a report before exporting.", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (currentReadings.isEmpty() || currentInsight == null) {
-            Toast.makeText(getContext(), "No valid data available to export.", Toast.LENGTH_SHORT).show();
-            return;
-        }
 
         final ParameterReportFilter filter = currentFilter;
 
-        // Chart capture + PDF generation below all run synchronously on this
-        // thread - showing the overlay and immediately doing that work in the
-        // same call would never actually let it paint first, so the heavy
-        // work is posted one frame out. btnShare is still tappable in that
-        // one-frame gap; the overlay's own bringToFront()+full-bleed touch
-        // interception (see actuatorLoadingOverlay's matching pattern) is
-        // what actually prevents a second tap from doing anything once it
-        // shows, not a disabled-state check here.
+        // Same one-frame-deferred pattern the old export used: showing the
+        // overlay and immediately doing the (now heavier, multi-parameter)
+        // generation work in the same call never actually lets it paint
+        // first.
         showLayoutLoading();
         View root = getView();
         if (root == null) {
@@ -1524,141 +1693,40 @@ public class SystemReportsFragment extends Fragment {
                 return;
             }
             try {
-                List<Entry> entries = new ArrayList<>();
-                int index = 0;
-                for (ParameterReading r : currentReadings) {
-                    entries.add(new Entry(index++, r.value));
+                List<ParameterExportBundle> bundles = buildExportBundles(selectedParameters);
+                if (bundles.isEmpty()) {
+                    NotificationHelper.showError(getContext(), "No data available to export.");
+                    return;
                 }
-                // getChartBitmap() captures the chart exactly as drawn, so a marker
-                // left over from a tap would otherwise be baked into the PDF. The
-                // static export should show a clean trend line and no point labels.
-                //
-                // The export must always reflect the full selected report range, not
-                // whatever the farmer happens to be zoomed into on screen - so both
-                // the viewport and the adaptive label spacing are reset to the full
-                // range before capture and restored afterward (by re-deriving from
-                // the restored viewport's own visible range, rather than caching a
-                // separate saved value that could drift out of sync), without
-                // requerying or altering any data.
-                lineChart.highlightValue(null);
-                android.graphics.Matrix savedMatrix = new android.graphics.Matrix(lineChart.getViewPortHandler().getMatrixTouch());
-                if (adaptiveXFormatter != null) {
-                    float fullSpanMinutes = (filter.effectiveEndMs - filter.effectiveStartMs) / 60000f;
-                    adaptiveXFormatter.updateVisibleRange(0f, fullSpanMinutes);
-                    applyAdaptiveXAxis(lineChart.getXAxis());
-                }
-                lineChart.fitScreen();
-                Bitmap chartBitmap = lineChart.getChartBitmap();
-                lineChart.getViewPortHandler().refresh(savedMatrix, lineChart, true);
-                if (adaptiveXFormatter != null) {
-                    adaptiveXFormatter.updateVisibleRange(lineChart.getLowestVisibleX(), lineChart.getHighestVisibleX());
-                    applyAdaptiveXAxis(lineChart.getXAxis());
-                }
-                lineChart.invalidate();
 
-                CycleReportGenerator generator = new CycleReportGenerator(requireContext());
                 String userName = "Basilience User";
+                File file;
+                String mimeType;
+                if (isPdf) {
+                    CycleReportGenerator generator = new CycleReportGenerator(requireContext());
+                    file = generator.generateMultiParameterSensorReportPdf(filter, bundles, userName);
+                    mimeType = "application/pdf";
+                } else {
+                    ExcelReportGenerator generator = new ExcelReportGenerator(requireContext());
+                    file = generator.generateSensorReportXlsx(filter, bundles, userName);
+                    mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+                }
 
-                File pdfFile = generator.generateSensorReportPdf(filter, chartBitmap, entries,
-                        currentAvg, currentHigh, currentLow, getUnitForParameter(filter.canonicalParameter),
-                        currentInsight.status, currentInsight.targetRangeText, currentInsight.evidenceText,
-                        currentInsight.interpretation, userName);
-
-                Uri contentUri = FileProvider.getUriForFile(requireContext(), requireContext().getPackageName() + ".fileprovider", pdfFile);
-                // ACTION_SEND (matching the CSV export just below), not ACTION_VIEW -
-                // a "share sheet" is meant to hand the file to another app (Drive,
-                // email, Messenger, etc.), not just open it in a PDF viewer.
+                Uri contentUri = FileProvider.getUriForFile(requireContext(), requireContext().getPackageName() + ".fileprovider", file);
+                // ACTION_SEND, not ACTION_VIEW - a "share sheet" is meant to
+                // hand the file to another app (Drive, email, Messenger,
+                // etc.), not just open it in a viewer.
                 Intent intent = new Intent(Intent.ACTION_SEND);
-                intent.setType("application/pdf");
-                intent.putExtra(Intent.EXTRA_SUBJECT, "Basilience " + filter.displayParameter + " Report - " + filter.cycleLabel);
-                intent.putExtra(Intent.EXTRA_TEXT, "Attached is the " + filter.displayParameter + " report for "
+                intent.setType(mimeType);
+                intent.putExtra(Intent.EXTRA_SUBJECT, "Basilience Parameter Report - " + filter.cycleLabel);
+                intent.putExtra(Intent.EXTRA_TEXT, "Attached is the parameter report for "
                         + filter.cycleLabel + " (" + filter.periodLabel + ").");
                 intent.putExtra(Intent.EXTRA_STREAM, contentUri);
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 startActivity(Intent.createChooser(intent, "Export Report via:"));
             } catch (IOException e) {
-                Log.e("PDF_EXPORT_ERROR", "Error generating PDF", e);
-                NotificationHelper.showError(getContext(), "We couldn't generate the PDF report. Please try again.");
-            } finally {
-                hideLayoutLoading();
-            }
-        });
-    }
-
-    private void exportDataToCSV() {
-        if (!isAdded() || getContext() == null) return;
-        if (currentFilter == null) {
-            Toast.makeText(getContext(), "Load a report before exporting.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if (currentReadings.isEmpty()) {
-            Toast.makeText(getContext(), "No data available to export.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        final ParameterReportFilter filter = currentFilter;
-
-        // Same one-frame-deferred pattern as exportToPdf() - see its comment.
-        showLayoutLoading();
-        View root = getView();
-        if (root == null) {
-            hideLayoutLoading();
-            return;
-        }
-        root.post(() -> {
-            if (!isAdded() || getContext() == null) {
-                hideLayoutLoading();
-                return;
-            }
-            try {
-                String unit = getUnitForParameter(filter.canonicalParameter).trim();
-                SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-                dateFormat.setTimeZone(TimeZone.getTimeZone(TIMEZONE_ID));
-
-                StringBuilder csvBuilder = new StringBuilder();
-                csvBuilder.append("# Basilience Parameter Report\n");
-                csvBuilder.append("# Device: ").append(filter.deviceId).append('\n');
-                csvBuilder.append("# Cycle: ").append(filter.cycleLabel).append('\n');
-                csvBuilder.append("# Cycle ID: ").append(filter.cycleId).append('\n');
-                csvBuilder.append("# Parameter: ").append(filter.displayParameter).append('\n');
-                csvBuilder.append("# Report Period: ").append(filter.periodLabel).append(" (")
-                        .append(DateUtils.formatDate(filter.effectiveStartMs)).append(" - ")
-                        .append(DateUtils.formatDate(filter.effectiveEndMs)).append(")\n");
-                csvBuilder.append("Timestamp,Parameter,Value,Unit\n");
-
-                for (ParameterReading r : currentReadings) {
-                    csvBuilder.append(dateFormat.format(new Date(r.timestampMs))).append(',')
-                            .append(filter.displayParameter).append(',')
-                            .append(String.format(Locale.US, "%.2f", r.value)).append(',')
-                            .append(unit).append('\n');
-                }
-
-                File cachePath = new File(getContext().getCacheDir(), "exports");
-                if (!cachePath.exists()) cachePath.mkdirs();
-
-                String filename = "Basilience_Report_" + CycleReportGenerator.sanitizeForFilename(filter.deviceId) + "_"
-                        + CycleReportGenerator.sanitizeForFilename(filter.cycleLabel) + "_"
-                        + filter.canonicalParameter.replace(" ", "") + "_" + System.currentTimeMillis() + ".csv";
-                File csvFile = new File(cachePath, filename);
-                try (FileWriter writer = new FileWriter(csvFile)) {
-                    writer.append(csvBuilder.toString());
-                    writer.flush();
-                }
-
-                Uri contentUri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", csvFile);
-                if (contentUri != null) {
-                    Intent shareIntent = new Intent(Intent.ACTION_SEND);
-                    shareIntent.setType("text/csv");
-                    shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Basilience " + filter.displayParameter + " Report - " + filter.cycleLabel);
-                    shareIntent.putExtra(Intent.EXTRA_TEXT, "Attached is the " + filter.displayParameter + " report for "
-                            + filter.cycleLabel + " (" + filter.periodLabel + ").");
-                    shareIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
-                    shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    startActivity(Intent.createChooser(shareIntent, "Export Report via:"));
-                }
-            } catch (IOException e) {
-                Log.e("CSV_EXPORT_ERROR", "Error writing CSV file", e);
-                NotificationHelper.showError(getContext(), "We couldn't generate the CSV file. Please try again.");
+                Log.e("EXPORT_ERROR", "Error generating report", e);
+                NotificationHelper.showError(getContext(), "We couldn't generate the report. Please try again.");
             } finally {
                 hideLayoutLoading();
             }
@@ -1708,6 +1776,83 @@ public class SystemReportsFragment extends Fragment {
         }
         if (parameter.equalsIgnoreCase("Water Level")) return value >= 0 && value <= 100;
         return false;
+    }
+
+    /**
+     * Fills the combined "Readings Table" - every parameter's value at each
+     * logged moment, side by side - straight from the same document
+     * snapshots the selected parameter's chart already loaded, so no second
+     * query is needed. Independent of which parameter is currently charted;
+     * reuses the same configuredRangeMin/Max and marker formatting the chart
+     * and CSV/PDF exports already use, so a cell's value and status can
+     * never disagree with the chart above it.
+     */
+    private void populateReadingsTable(QuerySnapshot snapshot) {
+        if (readingsTableAdapter == null) return;
+
+        Float phMin = configuredRangeMin("pH"), phMax = configuredRangeMax("pH");
+        Float ecMin = configuredRangeMin("EC"), ecMax = configuredRangeMax("EC");
+        Float airMin = configuredRangeMin("Air Temperature"), airMax = configuredRangeMax("Air Temperature");
+        Float humMin = configuredRangeMin("Humidity"), humMax = configuredRangeMax("Humidity");
+        Float waterTempMin = configuredRangeMin("Water Temperature"), waterTempMax = configuredRangeMax("Water Temperature");
+        Float waterLevelMin = configuredRangeMin("Water Level"), waterLevelMax = configuredRangeMax("Water Level");
+
+        readingsTableRows.clear();
+        for (String key : EXPORTABLE_PARAMETERS) {
+            currentParameterSamples.put(key, new ArrayList<>());
+        }
+        for (QueryDocumentSnapshot doc : snapshot) {
+            Long timestamp = doc.getLong("timestamp");
+            if (timestamp == null) continue;
+
+            Double ph = doc.getDouble("ph");
+            Double ec = doc.getDouble("ec");
+            Double airTemp = doc.getDouble("air_temp");
+            Double humidity = doc.getDouble("humidity");
+            Double waterTemp = doc.getDouble("water_temp");
+            Double waterLevel = doc.getDouble("water_level");
+
+            addSampleIfValid("pH", timestamp, ph);
+            addSampleIfValid("EC", timestamp, ec);
+            addSampleIfValid("Air Temperature", timestamp, airTemp);
+            addSampleIfValid("Humidity", timestamp, humidity);
+            addSampleIfValid("Water Temperature", timestamp, waterTemp);
+            addSampleIfValid("Water Level", timestamp, waterLevel);
+
+            readingsTableRows.add(new ParameterTableRow(
+                    DateUtils.formatDateTimeCompact(timestamp),
+                    formatTableCell(ph, "pH"), cellOutOfRange(ph, "pH", phMin, phMax),
+                    formatTableCell(ec, "EC"), cellOutOfRange(ec, "EC", ecMin, ecMax),
+                    formatTableCell(airTemp, "Air Temperature"), cellOutOfRange(airTemp, "Air Temperature", airMin, airMax),
+                    formatTableCell(humidity, "Humidity"), cellOutOfRange(humidity, "Humidity", humMin, humMax),
+                    formatTableCell(waterTemp, "Water Temperature"), cellOutOfRange(waterTemp, "Water Temperature", waterTempMin, waterTempMax),
+                    formatTableCell(waterLevel, "Water Level"), cellOutOfRange(waterLevel, "Water Level", waterLevelMin, waterLevelMax)));
+        }
+        readingsTableAdapter.notifyDataSetChanged();
+
+        if (recyclerReadingsTable != null) {
+            recyclerReadingsTable.setVisibility(readingsTableRows.isEmpty() ? View.GONE : View.VISIBLE);
+        }
+        if (tvReadingsTableEmpty != null) {
+            tvReadingsTableEmpty.setVisibility(readingsTableRows.isEmpty() ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private void addSampleIfValid(String canonicalParameter, long timestamp, Double value) {
+        if (!isValidParameterValue(canonicalParameter, value)) return;
+        List<ChartAggregation.Sample> list = currentParameterSamples.get(canonicalParameter);
+        if (list != null) list.add(new ChartAggregation.Sample(timestamp, value.floatValue()));
+    }
+
+    private String formatTableCell(Double value, String canonicalParameter) {
+        if (!isValidParameterValue(canonicalParameter, value)) return "--";
+        int decimals = markerDecimalsForParameter(canonicalParameter);
+        return String.format(Locale.getDefault(), "%." + decimals + "f%s", value, markerUnitForParameter(canonicalParameter));
+    }
+
+    private boolean cellOutOfRange(Double value, String canonicalParameter, Float min, Float max) {
+        if (!isValidParameterValue(canonicalParameter, value)) return false;
+        return (min != null && value < min) || (max != null && value > max);
     }
 
     private String getUnitForParameter(String parameter) {
@@ -1774,6 +1919,12 @@ public class SystemReportsFragment extends Fragment {
         lineChart.setThresholdBands(null);
         lineChart.clear();
         lineChart.invalidate();
+        // The combined readings table is independent of the currently
+        // charted parameter (see populateReadingsTable()'s own comment) -
+        // this empty state means only the SELECTED parameter had no valid
+        // entries, so the table (already populated earlier in this same
+        // renderReport() call, if this was reached from there) is left as
+        // is rather than being wiped here too.
         tvAverage.setText("--");
         tvHigh.setText("--");
         tvLow.setText("--");
@@ -1813,7 +1964,9 @@ public class SystemReportsFragment extends Fragment {
                                 + "• Tap the 'Parameter' dropdown to pick what you want to check (like pH or Water Level).\n"
                                 + "• Use the period filter (Entire, Today, 7D, 30D, Custom) to narrow the range - it always stays inside the selected cycle's dates.\n"
                                 + "• Read the insight summary for a plain-language take on how that parameter behaved.\n"
-                                + "• Tap any point on the trend chart to see that exact reading and when it was recorded."}
+                                + "• Tap any point on the trend chart to see that exact reading and when it was recorded.\n"
+                                + "• The Readings Table below the chart lists every logged reading for all six parameters side by side.\n"
+                                + "• Use the share icon to export: PDF for a summarized report, or Excel for a comprehensive workbook with every raw reading - either can include all parameters or just the ones you select."}
         };
         NotificationHelper.showGuideDialog(requireContext(), "How to use Parameter Reports",
                 sections, "Got it");

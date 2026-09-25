@@ -76,6 +76,17 @@ service cloud.firestore {
          (resource.data.ownerAdminUid == null || resource.data.ownerAdminUid == request.auth.uid) &&
          (request.resource.data.ownerAdminUid == null || request.resource.data.ownerAdminUid == request.auth.uid));
       allow delete: if isAdmin() && resource.data.ownerAdminUid == request.auth.uid;
+
+      // Materialized unread-notification counter (see
+      // functions/index.js's onNotificationWrittenSyncUnreadCounters).
+      // readBy on each notification document stays the only source of
+      // truth for read/unread state - this is a function-maintained cache
+      // derived from it, never independently writable by the client, so it
+      // can only ever reflect real notification/readBy writes.
+      match /counters/notifications {
+        allow read: if isSignedIn() && request.auth.uid == uid;
+        allow write: if false;
+      }
     }
 
     // DEVICES collection
@@ -288,9 +299,5 @@ service cloud.firestore {
        allow write: if false; // Only written by IoT devices/cloud functions
     }
 
-    match /notifications/{notifId} {
-       allow read: if isSignedIn() && (resource.data.userUid == request.auth.uid || isAdmin());
-       allow write: if isAdmin();
-    }
   }
 }
