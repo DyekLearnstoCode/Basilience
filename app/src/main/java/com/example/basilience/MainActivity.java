@@ -246,9 +246,9 @@ public class MainActivity extends AppCompatActivity {
                         bottomNav.getMenu().clear();
                         bottomNav.inflateMenu(R.menu.management_bottom_nav_menu);
                         
-                        // RBAC: Hide Personnel for Farmers
-                        String userRole = prefs.getString("user_role", RoleConstants.ROLE_ADMIN);
-                        if (RoleConstants.ROLE_FARMER.equalsIgnoreCase(userRole)) {
+                        // RBAC: Hide Personnel for anyone who is not a valid Admin
+                        // (a missing or invalid cached role is never treated as Admin)
+                        if (!RoleConstants.isAdmin(prefs)) {
                             if (bottomNav.getMenu().findItem(R.id.personnelFragment) != null) {
                                 bottomNav.getMenu().findItem(R.id.personnelFragment).setVisible(false);
                             }
@@ -282,19 +282,17 @@ public class MainActivity extends AppCompatActivity {
                             bottomNav.getMenu().clear();
                             bottomNav.inflateMenu(R.menu.bottom_nav_menu);
                             
-                            // RBAC: Hide Reports for Farmers
-                            String userRole = prefs.getString("user_role", RoleConstants.ROLE_ADMIN);
-                            if (RoleConstants.ROLE_FARMER.equalsIgnoreCase(userRole)) {
+                            // RBAC: Hide Reports for anyone who is not a valid Admin
+                            if (!RoleConstants.isAdmin(prefs)) {
                                 if (bottomNav.getMenu().findItem(R.id.reportschoiceFragment) != null) {
                                     bottomNav.getMenu().findItem(R.id.reportschoiceFragment).setVisible(false);
                                 }
                             }
                         }
 
-                        // RBAC: Navigate away if farmer tries to access reports
+                        // RBAC: Navigate away if a non-Admin tries to access reports
                         if (id == R.id.reportschoiceFragment) {
-                            String role = prefs.getString("user_role", RoleConstants.ROLE_ADMIN);
-                            if (RoleConstants.ROLE_FARMER.equalsIgnoreCase(role)) {
+                            if (!RoleConstants.isAdmin(prefs)) {
                                 navController.navigate(R.id.home);
                             }
                         }

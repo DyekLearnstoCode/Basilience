@@ -207,53 +207,64 @@ public class Auth_Register_Activity extends AppCompatActivity {
 
         showLoading(true, "Creating account...");
 
+        // Once the Auth account exists, the profile write, the verification
+        // email and any rollback are data operations that must finish whether
+        // or not this screen is still visible. Only UI (loading overlay,
+        // dialogs, navigation) is skipped when the Activity is gone.
         helper.registerAuth(email, password)
                 .addOnSuccessListener(authResult -> {
-                    // Check if activity is still alive
-                    if (isFinishing() || isDestroyed()) return;
-
-                    String uid = helper.getCurrentUid();
+                    final com.google.firebase.auth.FirebaseUser createdUser = authResult.getUser();
+                    final String uid = createdUser != null ? createdUser.getUid() : helper.getCurrentUid();
                     if (uid == null) {
-                        showLoading(false, null);
-                        NotificationHelper.showError(this, "Unable to complete registration. Please try again.");
+                        if (isUiAlive()) {
+                            showLoading(false, null);
+                            NotificationHelper.showError(this, "Unable to complete registration. Please try again.");
+                        }
                         return;
                     }
 
                     helper.createUserProfile(uid, name, email, "", RoleConstants.ROLE_ADMIN, null)
                             .addOnSuccessListener(unused -> {
-                                if (isFinishing() || isDestroyed()) return;
-
                                 helper.sendEmailVerification(new Database_Helper.EmailVerificationCallback() {
                                     @Override
                                     public void onSuccess() {
-                                        if (isFinishing() || isDestroyed()) return;
+                                        if (!isUiAlive()) {
+                                            // Nobody is left to acknowledge the dialog that
+                                            // signs out, so do it here.
+                                            helper.logout();
+                                            return;
+                                        }
                                         showLoading(false, null);
                                         showVerifyEmailDialog();
                                     }
 
                                     @Override
                                     public void onFailure(String errorMessage) {
-                                        if (isFinishing() || isDestroyed()) return;
-                                        showLoading(false, null);
                                         Log.e(TAG, "Failed to send verification email: " + errorMessage);
+                                        helper.logout();
+                                        if (!isUiAlive()) return;
+                                        showLoading(false, null);
                                         NotificationHelper.showError(
                                                 Auth_Register_Activity.this,
                                                 "Your account was created, but we couldn't send a verification email. Please try signing in to resend it."
                                         );
-                                        helper.logout();
                                         gotoLogin();
                                     }
                                 });
                             })
                             .addOnFailureListener(e -> {
-                                if (isFinishing() || isDestroyed()) return;
-                                showLoading(false, null);
                                 Log.e(TAG, "Failed to save user profile", e);
+                                // Registration must complete or fail as a whole: roll back
+                                // the just-created Auth account so it is not left without
+                                // a Firestore profile (which could never sign in, and could
+                                // not register again with the same email).
+                                rollbackCreatedAccount(createdUser);
+                                if (!isUiAlive()) return;
+                                showLoading(false, null);
                                 NotificationHelper.showError(
                                         Auth_Register_Activity.this,
                                         "Unable to save your profile. Please try again."
                                 );
-                                helper.logout();
                                 gotoLogin();
                             });
                 })
@@ -267,6 +278,24 @@ public class Auth_Register_Activity extends AppCompatActivity {
                                 "Registration could not be completed. Check your connection and details, then try again.");
                     }
                 });
+    }
+
+    private boolean isUiAlive() {
+        return !isFinishing() && !isDestroyed();
+    }
+
+    // Deletes the account that was just created but could not get a profile.
+    // If the delete itself fails (for example the connection dropped), the
+    // session is at least signed out; login then reports the missing profile.
+    private void rollbackCreatedAccount(com.google.firebase.auth.FirebaseUser createdUser) {
+        if (createdUser == null) {
+            helper.logout();
+            return;
+        }
+        createdUser.delete().addOnFailureListener(error -> {
+            Log.w(TAG, "Could not roll back the new account after a profile failure", error);
+            helper.logout();
+        });
     }
 
     private void showVerifyEmailDialog() {

@@ -299,7 +299,7 @@ public class Auth_Login_Activity extends AppCompatActivity {
 
                     if (!user.isEmailVerified()) {
                         showLoading(false, null);
-                        helper.logout();
+                        helper.logoutAndClearSession(this);
                         NotificationHelper.showError(this,
                                 "Your email is not verified! Please check your email inbox (including spam/junk), click the verification link, then log in again.");
                         return;
@@ -312,23 +312,24 @@ public class Auth_Login_Activity extends AppCompatActivity {
                             document -> {
                                 if (!document.exists()) {
                                     showLoading(false, null);
-                                    helper.logout();
-                                    SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-                                    prefs.edit()
-                                            .remove(KEY_IS_LOGGED_IN)
-                                            .remove("user_role")
-                                            .remove("owner_uid")
-                                            .remove(RoleConstants.PREF_DEVELOPER_TESTER)
-                                            .remove(RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID)
-                                            .remove("selected_device_id")
-                                            .remove("is_developer")
-                                            .apply();
+                                    helper.logoutAndClearSession(this);
                                     NotificationHelper.showInfo(this, "Account Profile Missing",
                                             "Your sign-in account exists, but your Basilience profile could not be found. Please contact your administrator or recover the account profile.");
                                     return;
                                 }
 
-                                String role = document.getString("role");
+                                // Only the canonical ADMIN or FARMER roles are valid. A
+                                // profile with a missing, blank or unrecognized role is an
+                                // invalid account state: it is signed out here rather than
+                                // let into the app under a guessed role.
+                                String role = RoleConstants.normalize(document.getString("role"));
+                                if (role == null) {
+                                    showLoading(false, null);
+                                    helper.logoutAndClearSession(this);
+                                    NotificationHelper.showInfo(this, "Account Role Missing",
+                                            "Your account does not have a valid role assigned. Please contact your administrator.");
+                                    return;
+                                }
                                 String ownerUid = document.getString("ownerAdminUid");
                                 // isDeveloper is never self-service - only settable via the
                                 // Firebase Console/Admin SDK (see firestore.rules) - and gates
@@ -338,6 +339,15 @@ public class Auth_Login_Activity extends AppCompatActivity {
                                 boolean isDeveloper = Boolean.TRUE.equals(document.getBoolean("isDeveloper"));
                                 SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
                                 SharedPreferences.Editor editor = prefs.edit();
+                                // A different account than the one that last used this
+                                // device (or an older install that never recorded one)
+                                // must not inherit the previous account's selected device.
+                                if (!uid.equals(prefs.getString("session_uid", null))) {
+                                    editor.remove("selected_device_id");
+                                    editor.remove(RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID);
+                                    editor.remove("developer_mode_enabled");
+                                }
+                                editor.putString("session_uid", uid);
                                 editor.putBoolean(KEY_IS_LOGGED_IN, cbRemember.isChecked());
                                 editor.putString("user_role", role);
                                 editor.putString("owner_uid", ownerUid);
@@ -391,15 +401,22 @@ public class Auth_Login_Activity extends AppCompatActivity {
     private void revalidateRememberedSession(String uid) {
         showLoading(true, "Restoring session...");
         awaitBackendTask(helper.getUserProfile(uid), document -> {
-            String role = document.exists() ? document.getString("role") : null;
-            if (!RoleConstants.ROLE_ADMIN.equalsIgnoreCase(role)
-                    && !RoleConstants.ROLE_FARMER.equalsIgnoreCase(role)) {
+            String role = document.exists() ? RoleConstants.normalize(document.getString("role")) : null;
+            if (role == null) {
                 clearInvalidSession();
                 NotificationHelper.showInfo(this, "Account Profile Missing",
                         "Your saved sign-in is no longer linked to a valid Basilience profile.");
                 return;
             }
-            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            SharedPreferences restoredPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            SharedPreferences.Editor restoredEditor = restoredPrefs.edit();
+            String previousUid = restoredPrefs.getString("session_uid", null);
+            if (previousUid != null && !previousUid.equals(uid)) {
+                restoredEditor.remove("selected_device_id");
+                restoredEditor.remove(RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID);
+                restoredEditor.remove("developer_mode_enabled");
+            }
+            restoredEditor.putString("session_uid", uid)
                     .putString("user_role", role)
                     .putString("owner_uid", document.getString("ownerAdminUid"))
                     .putBoolean("is_developer", Boolean.TRUE.equals(document.getBoolean("isDeveloper")))
@@ -418,16 +435,7 @@ public class Auth_Login_Activity extends AppCompatActivity {
     }
 
     private void clearInvalidSession() {
-        helper.logout();
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-                .remove(KEY_IS_LOGGED_IN)
-                .remove("user_role")
-                .remove("owner_uid")
-                .remove(RoleConstants.PREF_DEVELOPER_TESTER)
-                .remove(RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID)
-                .remove("selected_device_id")
-                .remove("is_developer")
-                .apply();
+        helper.logoutAndClearSession(this);
         showLoading(false, null);
     }
 

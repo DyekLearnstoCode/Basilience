@@ -30,7 +30,6 @@ public class AccountFragment extends Fragment {
 
     private static final String TAG = "AccountFragment";
     private static final String PREFS_NAME = "basilience_prefs";
-    private static final String KEY_IS_LOGGED_IN = "is_logged_in";
 
     private View layoutViewMode, layoutEditMode, layoutLoading;
     private TextView tvNameValue, tvEmailValue, tvPhoneValue, tvLoadingTitle;
@@ -251,11 +250,11 @@ public class AccountFragment extends Fragment {
         NotificationHelper.showConfirmation(requireContext(), "Logout",
                 "Are you sure you want to log out?", () -> {
                     showLoading(true, getString(R.string.loading_logging_out));
-                    helper.logout().addOnCompleteListener(task -> {
+                    // Local session state is cleared by the shared logout path
+                    // itself, so it no longer depends on this fragment still
+                    // being attached when sign-out finishes.
+                    helper.logoutAndClearSession(requireContext()).addOnCompleteListener(task -> {
                         if (!isAdded() || getActivity() == null) return;
-                        SharedPreferences prefs = getActivity()
-                                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-                        prefs.edit().putBoolean(KEY_IS_LOGGED_IN, false).apply();
                         Intent intent = new Intent(getActivity(), Auth_Login_Activity.class);
                         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
                         startActivity(intent);

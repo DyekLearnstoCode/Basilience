@@ -146,6 +146,50 @@ public class Database_Helper {
         return auth.sendPasswordResetEmail(email);
     }
 
+    // Local state that belongs to the signed-in account or to the session and
+    // must not carry into the next account. Deliberately excludes app-wide
+    // device-local state (onboarding completion, "has seen" tours, per-device
+    // connectivity presentation) and Firebase/Room offline data, which is
+    // already scoped by uid/device.
+    private static final String[] SESSION_PREF_KEYS = {
+            "is_logged_in",
+            "session_uid",
+            "user_role",
+            "owner_uid",
+            "is_developer",
+            RoleConstants.PREF_DEVELOPER_TESTER,
+            RoleConstants.PREF_DEVELOPER_MODE_DEVICE_ID,
+            "developer_mode_enabled",
+            "selected_device_id"
+    };
+
+    /**
+     * Clears the session-scoped local state (see SESSION_PREF_KEYS) and stops
+     * device-presence monitoring. Synchronous and independent of any
+     * Fragment/Activity, so it runs even if the screen that started the
+     * logout is already gone. Removing selected_device_id also makes
+     * MainActivity's preference listener stop its device alert listener.
+     */
+    public static void clearLocalSessionState(Context context) {
+        if (context == null) return;
+        DeviceConnectionManager.getInstance().stopMonitoring();
+        SharedPreferences.Editor editor = context.getApplicationContext()
+                .getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE).edit();
+        for (String key : SESSION_PREF_KEYS) editor.remove(key);
+        editor.apply();
+    }
+
+    /**
+     * The one logout path: clears local session state first, then removes
+     * this installation's FCM token from the account and signs out (logout()).
+     * The returned task completes once sign-out has finished or its 5s bound
+     * has elapsed; callers should only navigate from it.
+     */
+    public Task<Void> logoutAndClearSession(Context context) {
+        clearLocalSessionState(context);
+        return logout();
+    }
+
     public Task<Void> logout() {
         String uid = getCurrentUid();
         if (uid == null) {
