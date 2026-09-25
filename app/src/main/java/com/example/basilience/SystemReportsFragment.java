@@ -322,7 +322,11 @@ public class SystemReportsFragment extends Fragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        // Invalidate any in-flight report request so its callback cannot
+        // render into the destroyed view.
+        ++reportRequestGeneration;
         if (cyclesListener != null) cyclesListener.remove();
+        cyclesListener = null;
         if (coachMarkTour != null) {
             coachMarkTour.finish();
             coachMarkTour = null;
@@ -829,7 +833,7 @@ public class SystemReportsFragment extends Fragment {
                     maybeShowCoachMarkTour();
                 })
                 .addOnFailureListener(e -> {
-                    if (requestGeneration != reportRequestGeneration) return;
+                    if (!isAdded() || requestGeneration != reportRequestGeneration) return;
                     hideLayoutLoading();
                     Log.e("CHART_FETCH_ERROR", "Failed to fetch logs", e);
                     currentFilter = null;

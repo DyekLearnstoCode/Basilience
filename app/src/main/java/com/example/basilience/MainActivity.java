@@ -109,6 +109,9 @@ public class MainActivity extends AppCompatActivity {
     private BottomNavigationView bottomNav;
     private ListenerRegistration notificationCounterListener;
 
+    private SharedPreferences basiliencePrefs;
+    private SharedPreferences.OnSharedPreferenceChangeListener selectedDevicePrefListener;
+
     private ValueEventListener currentParameterAlertListener;
     private DatabaseReference currentParameterAlertsRef;
     private String currentParameterAlertDeviceId;
@@ -170,7 +173,11 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        prefs.registerOnSharedPreferenceChangeListener((sharedPreferences, key) -> {
+        // SharedPreferences keeps its listeners only weakly, so this must live
+        // in a field (a bare lambda is garbage-collected and silently stops
+        // firing) and be unregistered in onDestroy() so a destroyed Activity
+        // never keeps reacting to device changes.
+        selectedDevicePrefListener = (sharedPreferences, key) -> {
             if ("selected_device_id".equals(key)) {
                 String newDeviceId = sharedPreferences.getString("selected_device_id", null);
                 if (newDeviceId != null) {
@@ -180,7 +187,9 @@ public class MainActivity extends AppCompatActivity {
                 }
                 startCurrentParameterAlertListener(newDeviceId);
             }
-        });
+        };
+        basiliencePrefs = prefs;
+        prefs.registerOnSharedPreferenceChangeListener(selectedDevicePrefListener);
 
         bottomNav = findViewById(R.id.bottom_navigation);
         startNotificationCounterListener();
@@ -1067,6 +1076,11 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        if (basiliencePrefs != null && selectedDevicePrefListener != null) {
+            basiliencePrefs.unregisterOnSharedPreferenceChangeListener(selectedDevicePrefListener);
+        }
+        selectedDevicePrefListener = null;
+        basiliencePrefs = null;
         if (notificationCounterListener != null) notificationCounterListener.remove();
         stopCurrentParameterAlertListener();
         if (parameterAlertDialog != null && parameterAlertDialog.isShowing()) parameterAlertDialog.dismiss();

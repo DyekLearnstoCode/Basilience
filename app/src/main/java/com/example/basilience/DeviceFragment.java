@@ -130,18 +130,20 @@ public class DeviceFragment extends Fragment {
                 }
                 dbHelper.claimDevice(token)
                         .addOnSuccessListener(aVoid -> {
-                            if (!isAdded()) return;
+                            // Reset first: this flag outlives the view, so it must
+                            // clear even when the fragment is no longer attached.
                             deviceMutationInProgress = false;
-                            btnClaimDevice.setEnabled(true);
+                            if (!isAdded() || getView() == null) return;
+                            if (btnClaimDevice != null) btnClaimDevice.setEnabled(true);
                             hideLayoutLoading();
                             NotificationHelper.showSuccess(requireContext(), "Device successfully claimed!");
-                            etClaimToken.setText("");
+                            if (etClaimToken != null) etClaimToken.setText("");
                             loadDevices();
                         })
                         .addOnFailureListener(e -> {
-                            if (!isAdded()) return;
                             deviceMutationInProgress = false;
-                            btnClaimDevice.setEnabled(true);
+                            if (!isAdded() || getView() == null) return;
+                            if (btnClaimDevice != null) btnClaimDevice.setEnabled(true);
                             hideLayoutLoading();
                             Log.e(TAG, "Failed to claim device", e);
                             // NOT_FOUND/ALREADY_EXISTS carry an already user-safe,
@@ -308,24 +310,27 @@ public class DeviceFragment extends Fragment {
 
         dbHelper.getMyDevices()
                 .addOnSuccessListener(queryDocumentSnapshots -> {
-                    if (!isAdded()) return;
+                    if (!isAdded() || deviceAdapter == null) return;
                     if (tvLoadingDevices != null) tvLoadingDevices.setVisibility(View.GONE);
-                    
+
                     deviceList.clear();
                     for (QueryDocumentSnapshot doc : queryDocumentSnapshots) {
                         Device device = doc.toObject(Device.class);
+                        // toObject() can return null; the adapter binds every
+                        // entry, so a null one would crash on bind.
+                        if (device == null) continue;
                         // The document ID is the authoritative identifier - a device's
                         // in-body `deviceId` field is provisioned outside this app and
                         // isn't guaranteed to match its own document ID. toObject() would
                         // otherwise silently use that field (or leave it null), so every
                         // downstream cycle/RTDB path keyed off getDeviceId() must be
                         // pinned to doc.getId() here.
-                        if (device != null) device.setDeviceId(doc.getId());
+                        device.setDeviceId(doc.getId());
                         deviceList.add(device);
                     }
                     deviceAdapter.notifyDataSetChanged();
-                    
-                    if (recyclerDevices != null) {
+
+                    if (recyclerDevices != null && tvLoadingDevices != null) {
                         if (deviceList.isEmpty()) {
                             tvLoadingDevices.setText("No registered devices");
                             tvLoadingDevices.setVisibility(View.VISIBLE);
@@ -335,7 +340,7 @@ public class DeviceFragment extends Fragment {
                     }
                 })
                 .addOnFailureListener(e -> {
-                    if (!isAdded()) return;
+                    if (!isAdded() || getView() == null) return;
                     if (tvLoadingDevices != null) {
                         tvLoadingDevices.setText("Error loading devices");
                     }
@@ -392,16 +397,18 @@ public class DeviceFragment extends Fragment {
 
         dbHelper.unclaimDevice(device.getDeviceId())
                 .addOnSuccessListener(aVoid -> {
-                    if (!isAdded()) return;
+                    // Reset first: this flag outlives the view, so it must
+                    // clear even when the fragment is no longer attached.
                     deviceMutationInProgress = false;
+                    if (!isAdded() || getView() == null) return;
                     hideLayoutLoading();
                     clearSelectedDeviceIfUnclaimed(device.getDeviceId());
                     NotificationHelper.showSuccess(requireContext(), "Device unclaimed successfully!");
                     loadDevices(); // Refresh listahan
                 })
                 .addOnFailureListener(e -> {
-                    if (!isAdded()) return;
                     deviceMutationInProgress = false;
+                    if (!isAdded() || getView() == null) return;
                     hideLayoutLoading();
                     Log.e(TAG, "Failed to unclaim device", e);
                     // Same fix as claimDevice() above: surface unclaimDevice()'s
@@ -418,6 +425,25 @@ public class DeviceFragment extends Fragment {
                     }
                     NotificationHelper.showError(requireContext(), message);
                 });
+    }
+
+    @Override
+    public void onDestroyView() {
+        // Detaching the adapter stops every row's live status listener and
+        // refresh loop (see DeviceAdapter.onDetachedFromRecyclerView).
+        // deviceMutationInProgress / unclaimCheckInProgress are deliberately
+        // NOT reset: an in-flight claim/unclaim still owns them and clears
+        // them itself when it completes.
+        if (recyclerDevices != null) recyclerDevices.setAdapter(null);
+        deviceAdapter = null;
+        recyclerDevices = null;
+        etClaimToken = null;
+        btnClaimDevice = null;
+        cardClaimDevice = null;
+        layoutLoading = null;
+        tvLoadingTitle = null;
+        tvLoadingDevices = null;
+        super.onDestroyView();
     }
 
     /** Hides the claim/unclaim loading overlay, never sooner than the minimum visible duration. */

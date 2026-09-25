@@ -202,8 +202,21 @@ public class NotificationHelper {
         private void hideNow() {
             if (finished) return;
             finished = true;
-            if (dialog.isShowing()) dialog.dismiss();
             Context current = contextRef.get();
+            // If the host Activity has already been destroyed (rotation,
+            // process death recovery, finishing from another callback), its
+            // window is already gone and dismiss() would throw
+            // IllegalArgumentException ("View not attached to window
+            // manager"). A merely finishing Activity still needs the dismiss,
+            // otherwise the dialog window leaks.
+            if (!isHostActivityDestroyed(current)) {
+                try {
+                    if (dialog.isShowing()) dialog.dismiss();
+                } catch (IllegalArgumentException e) {
+                    android.util.Log.w("NotificationHelper",
+                            "Loading dialog window was already gone on dismiss", e);
+                }
+            }
             synchronized (ACTIVE_LOADING) {
                 if (current != null && ACTIVE_LOADING.get(current) == this) ACTIVE_LOADING.remove(current);
             }
@@ -1055,6 +1068,22 @@ public class NotificationHelper {
         if (btnTertiary != null) {
             btnTertiary.setTextColor(color);
         }
+    }
+
+    // True only when the context resolves to an Activity that has already
+    // been destroyed. A null or non-Activity context reports false so the
+    // caller still attempts the (try/catch-protected) dismissal.
+    private static boolean isHostActivityDestroyed(Context context) {
+        Context current = context;
+        while (current instanceof ContextWrapper) {
+            if (current instanceof Activity) {
+                return ((Activity) current).isDestroyed();
+            }
+            Context base = ((ContextWrapper) current).getBaseContext();
+            if (base == current) break;
+            current = base;
+        }
+        return false;
     }
 
     private static boolean isContextUsable(Context context) {

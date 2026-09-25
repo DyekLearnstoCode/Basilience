@@ -246,7 +246,8 @@ public class HarvestLogFragment extends Fragment {
         String uid = FirebaseAuth.getInstance().getUid();
         if (uid != null) {
             dbHelper.getUserProfile(uid).addOnSuccessListener(documentSnapshot -> {
-                if (documentSnapshot.exists()) {
+                if (!isAdded() || getView() == null) return;
+                if (documentSnapshot != null && documentSnapshot.exists()) {
                     userRole = documentSnapshot.getString("role");
                     userName = documentSnapshot.getString("fullName");
                     updateUIForRole();
@@ -256,6 +257,10 @@ public class HarvestLogFragment extends Fragment {
     }
 
     private void updateUIForRole() {
+        // The view is gone (or was never built, e.g. no device selected), so
+        // there is nothing to update and setupRecyclerView() would hit a
+        // null RecyclerView.
+        if (recyclerHarvest == null) return;
         if (adapter == null) {
             setupRecyclerView();
         } else {
@@ -608,6 +613,7 @@ public class HarvestLogFragment extends Fragment {
         if (deviceId != null && cycleId != null) {
             dbHelper.setSelectedDeviceId(deviceId);
             cycleListener = dbHelper.listenToCycleDetails(cycleId, (documentSnapshot, e) -> {
+                if (!isAdded() || getView() == null) return;
                 if (e != null) {
                     Log.e(TAG, "Cycle summary listener error for cycleId=" + cycleId, e);
                     if (!cycleSummaryErrorNotified && isAdded() && getView() != null) {
@@ -629,6 +635,7 @@ public class HarvestLogFragment extends Fragment {
 
     private void updateSummaryUI(Cycle cycle) {
         this.currentCycle = cycle;
+        if (tvStatus == null) return; // view destroyed
         String rawStatus = cycle.getStatus();
         String status = (rawStatus == null || rawStatus.isEmpty()) ? "ACTIVE" : rawStatus.toUpperCase();
         tvStatus.setText(status);
@@ -747,7 +754,7 @@ public class HarvestLogFragment extends Fragment {
     }
 
     private void performPdfGeneration() {
-        btnExportPdf.setEnabled(false);
+        if (btnExportPdf != null) btnExportPdf.setEnabled(false);
         final Context appContext = requireContext().getApplicationContext();
         // getChartBitmap() captures the chart exactly as drawn, so a marker
         // left over from a tap would otherwise be baked into the PDF. The
@@ -775,7 +782,7 @@ public class HarvestLogFragment extends Fragment {
         final androidx.fragment.app.FragmentActivity hostActivity = requireActivity();
         loadingHandle = NotificationHelper.showLoading(requireContext(), "Generating report...", 30_000L, () -> {
             if (!isAdded()) return;
-            btnExportPdf.setEnabled(true);
+            if (btnExportPdf != null) btnExportPdf.setEnabled(true);
             NotificationHelper.showError(requireContext(), "Report generation is taking longer than expected.");
         });
 
@@ -793,7 +800,7 @@ public class HarvestLogFragment extends Fragment {
             hostActivity.runOnUiThread(() -> {
                 if (!isAdded()) return;
                 dismissLoading();
-                btnExportPdf.setEnabled(true);
+                if (btnExportPdf != null) btnExportPdf.setEnabled(true);
                 if (error == null) {
                     showExportSuccessDialog(result);
                 } else {
@@ -926,10 +933,10 @@ public class HarvestLogFragment extends Fragment {
                         + "normal cultivation automation after the device receives the updated "
                         + "cycle status.\n\nNo further harvests can be recorded for this cycle.",
                 "Complete Cycle", () -> {
-                    btnCompleteCycle.setEnabled(false);
+                    if (btnCompleteCycle != null) btnCompleteCycle.setEnabled(false);
                     loadingHandle = NotificationHelper.showLoading(requireContext(), "Completing cycle...", () -> {
                         if (!isAdded()) return;
-                        btnCompleteCycle.setEnabled(true);
+                        if (btnCompleteCycle != null) btnCompleteCycle.setEnabled(true);
                         NotificationHelper.showError(requireContext(), "Request timed out. Please refresh before trying again.");
                     });
                     dbHelper.completeCycle(cycleId).addOnSuccessListener(aVoid -> {
@@ -1071,6 +1078,16 @@ public class HarvestLogFragment extends Fragment {
 
     private void loadHarvestData() {
         if (harvestListener != null) harvestListener.remove();
+        harvestListener = null;
+
+        // A fresh listener always delivers the whole collection as its first
+        // snapshot, so start from an empty list and the "first load" path.
+        // Without this, reopening the screen on a retained fragment instance
+        // replayed every document as an incremental ADDED change on top of
+        // the previous rows.
+        isFirstLoad = true;
+        harvestList.clear();
+        if (adapter != null) adapter.notifyDataSetChanged();
 
         SharedPreferences prefs = requireContext().getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE);
         String deviceId = prefs.getString("selected_device_id", null);
@@ -1079,6 +1096,7 @@ public class HarvestLogFragment extends Fragment {
             dbHelper.setSelectedDeviceId(deviceId);
             // Real-time listener for the RecyclerView list (Newest First)
             harvestListener = dbHelper.listenToHarvestEntries(cycleId, (value, error) -> {
+                if (!isAdded() || adapter == null) return;
                 if (error != null) {
                     Log.e(TAG, "Harvest list listener error for cycleId=" + cycleId, error);
                     if (!harvestListErrorNotified && isAdded() && getView() != null) {
@@ -1140,6 +1158,7 @@ public class HarvestLogFragment extends Fragment {
         if (cycleId == null) return;
         
         dbHelper.getHarvestHistoryForChart(cycleId).addOnSuccessListener(value -> {
+            if (!isAdded() || harvestChart == null) return;
             if (value == null || value.isEmpty()) {
                 currentChartLabels.clear();
                 harvestChart.clear();
@@ -1367,11 +1386,43 @@ public class HarvestLogFragment extends Fragment {
         dismissLoading();
         super.onDestroyView();
         if (harvestListener != null) harvestListener.remove();
+        harvestListener = null;
         if (cycleListener != null) cycleListener.remove();
+        cycleListener = null;
         if (coachMarkTour != null) {
             coachMarkTour.finish();
             coachMarkTour = null;
         }
+
+        // View-scoped state: this fragment instance can be reused from the
+        // back stack with a brand-new view, and a new listener re-delivers
+        // everything, so none of this may carry over.
+        if (recyclerHarvest != null) recyclerHarvest.setAdapter(null);
+        harvestList.clear();
+        currentChartLabels.clear();
+        isFirstLoad = true;
+        isFirstChartLoad = true;
+        harvestListErrorNotified = false;
+        cycleSummaryErrorNotified = false;
+
+        adapter = null;
+        recyclerHarvest = null;
+        harvestChart = null;
+        fabAddHarvest = null;
+        btnExportPdf = null;
+        btnCompleteCycle = null;
+        btnEditFrequency = null;
+        tvCycleLabel = null;
+        tvStatus = null;
+        tvTotalWeight = null;
+        tvHarvestCount = null;
+        tvExpectedDate = null;
+        tvFrequency = null;
+        tvNextHarvestLabel = null;
+        tvCycleRange = null;
+        tvHarvestInterpretation = null;
+        tvEmptyHistory = null;
+        tvEmptyChart = null;
     }
 
     private void dismissLoading() {

@@ -334,7 +334,13 @@ public class FoggingReportsFragment extends Fragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        // Invalidate every in-flight report and Water Outlook request so
+        // their callbacks cannot render into the destroyed view.
+        ++reportRequestGeneration;
+        ++waterOutlookRequestGeneration;
         if (cyclesListener != null) cyclesListener.remove();
+        cyclesListener = null;
+        if (rvRecentActivity != null) rvRecentActivity.setAdapter(null);
         if (coachMarkTour != null) {
             coachMarkTour.finish();
             coachMarkTour = null;

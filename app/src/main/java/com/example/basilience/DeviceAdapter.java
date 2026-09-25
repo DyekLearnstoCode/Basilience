@@ -18,13 +18,19 @@ import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceViewHolder> {
 
     private final List<Device> deviceList;
     private final OnItemClickListener clickListener;
     private final OnItemLongClickListener longClickListener;
+    // Rows that currently hold a live status listener and refresh loop, so
+    // they can all be stopped when the adapter leaves its RecyclerView.
+    private final Set<DeviceViewHolder> listeningHolders = new HashSet<>();
 
     public interface OnItemClickListener {
         void onItemClick(Device device);
@@ -59,19 +65,50 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
         return deviceList != null ? deviceList.size() : 0;
     }
 
+    // Live status listening follows the row's on-screen lifetime: it starts
+    // when the row is attached and stops when it is detached, so a row that
+    // is scrolled off and back on keeps working without being rebound.
+    @Override
+    public void onViewAttachedToWindow(@NonNull DeviceViewHolder holder) {
+        super.onViewAttachedToWindow(holder);
+        holder.onAttached();
+    }
+
+    @Override
+    public void onViewDetachedFromWindow(@NonNull DeviceViewHolder holder) {
+        super.onViewDetachedFromWindow(holder);
+        holder.onDetached();
+    }
+
     @Override
     public void onViewRecycled(@NonNull DeviceViewHolder holder) {
         super.onViewRecycled(holder);
         holder.cleanup();
     }
 
-    static class DeviceViewHolder extends RecyclerView.ViewHolder {
+    // Runs when the adapter is removed from its RecyclerView (for example
+    // setAdapter(null) in DeviceFragment.onDestroyView). Rows still bound,
+    // or held in the RecyclerView's cache, are not guaranteed a detach or
+    // recycle callback at that point, so every row still listening is
+    // stopped explicitly.
+    @Override
+    public void onDetachedFromRecyclerView(@NonNull RecyclerView recyclerView) {
+        super.onDetachedFromRecyclerView(recyclerView);
+        for (DeviceViewHolder holder : new ArrayList<>(listeningHolders)) {
+            holder.cleanup();
+        }
+        listeningHolders.clear();
+    }
+
+    class DeviceViewHolder extends RecyclerView.ViewHolder {
         private final TextView tvDeviceAvatar;
         private final TextView tvDeviceName;
         private final TextView tvDeviceStatus;
         private final View vStatusDot;
         private ValueEventListener statusListener;
         private DatabaseReference statusRef;
+        private Device boundDevice;
+        private boolean attached;
         private Boolean backendOnline;
         private Long lastServerSeen;
         private boolean provisioning;
@@ -94,6 +131,12 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
         }
 
         public void bind(final Device device, final OnItemClickListener clickListener, final OnItemLongClickListener longClickListener) {
+            // A rebind means this row may now show a different device, so
+            // whatever it was listening to is dropped and, if the row is
+            // already on screen, listening restarts below.
+            stopListening();
+            boundDevice = device;
+
             String name = device.getDeviceName();
             tvDeviceName.setText(name != null ? name : "Device");
 
@@ -104,53 +147,11 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
                 tvDeviceAvatar.setText("D");
             }
 
-            // Remove existing listener if recycled
-            if (statusRef != null && statusListener != null) {
-                statusRef.removeEventListener(statusListener);
-            }
-
             backendOnline = null;
             lastServerSeen = null;
             provisioning = false;
             accessRevoked = false;
             applyStatus(DeviceConnectivityState.RECONNECTING);
-
-            // Realtime listener for live status updates
-            if (device.getDeviceId() != null) {
-                String rtdbUrl = "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app";
-                statusRef = FirebaseDatabase.getInstance(rtdbUrl)
-                        .getReference("devices/" + device.getDeviceId() + "/status");
-
-                statusListener = new ValueEventListener() {
-                    @Override
-                    public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        backendOnline = snapshot.child("online").getValue(Boolean.class);
-                        lastServerSeen = DeviceConnectionManager.readLongValue(snapshot.child("lastServerSeen"));
-                        provisioning = Boolean.TRUE.equals(
-                                snapshot.child("provisioning").getValue(Boolean.class));
-                        applyResolvedStatus();
-                    }
-
-                    @Override
-                    public void onCancelled(@NonNull DatabaseError error) {
-                        Log.w("DeviceAdapter", "status listener cancelled for "
-                                + device.getDeviceId() + ": " + error.getMessage());
-                        if (error.getCode() == DatabaseError.PERMISSION_DENIED) {
-                            // Same reasoning as DeviceConnectionManager's onCancelled:
-                            // a permission-denied listener is never retried, so
-                            // without this the row would show "Reconnecting..."
-                            // forever with no further update ever arriving.
-                            accessRevoked = true;
-                            statusHandler.removeCallbacks(refreshStatus);
-                            applyStatus(DeviceConnectivityState.ACCESS_REVOKED);
-                        }
-                    }
-                };
-
-                statusRef.addValueEventListener(statusListener);
-                statusHandler.removeCallbacks(refreshStatus);
-                statusHandler.post(refreshStatus);
-            }
 
             itemView.setOnClickListener(v -> {
                 if (clickListener != null) {
@@ -164,15 +165,77 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
                 }
                 return true;
             });
+
+            if (attached) startListening();
+        }
+
+        void onAttached() {
+            attached = true;
+            startListening();
+        }
+
+        void onDetached() {
+            attached = false;
+            stopListening();
+        }
+
+        // Registers the realtime status listener and the 2s refresh loop.
+        // The last known status values are kept across a stop/start so a row
+        // scrolled back on screen does not flash "Reconnecting".
+        private void startListening() {
+            stopListening();
+            if (boundDevice == null || boundDevice.getDeviceId() == null) return;
+            final Device device = boundDevice;
+
+            String rtdbUrl = "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app";
+            statusRef = FirebaseDatabase.getInstance(rtdbUrl)
+                    .getReference("devices/" + device.getDeviceId() + "/status");
+
+            statusListener = new ValueEventListener() {
+                @Override
+                public void onDataChange(@NonNull DataSnapshot snapshot) {
+                    backendOnline = snapshot.child("online").getValue(Boolean.class);
+                    lastServerSeen = DeviceConnectionManager.readLongValue(snapshot.child("lastServerSeen"));
+                    provisioning = Boolean.TRUE.equals(
+                            snapshot.child("provisioning").getValue(Boolean.class));
+                    applyResolvedStatus();
+                }
+
+                @Override
+                public void onCancelled(@NonNull DatabaseError error) {
+                    Log.w("DeviceAdapter", "status listener cancelled for "
+                            + device.getDeviceId() + ": " + error.getMessage());
+                    if (error.getCode() == DatabaseError.PERMISSION_DENIED) {
+                        // Same reasoning as DeviceConnectionManager's onCancelled:
+                        // a permission-denied listener is never retried, so
+                        // without this the row would show "Reconnecting..."
+                        // forever with no further update ever arriving.
+                        accessRevoked = true;
+                        statusHandler.removeCallbacks(refreshStatus);
+                        applyStatus(DeviceConnectivityState.ACCESS_REVOKED);
+                    }
+                }
+            };
+
+            statusRef.addValueEventListener(statusListener);
+            statusHandler.removeCallbacks(refreshStatus);
+            statusHandler.post(refreshStatus);
+            listeningHolders.add(this);
+        }
+
+        private void stopListening() {
+            if (statusRef != null && statusListener != null) {
+                statusRef.removeEventListener(statusListener);
+            }
+            statusRef = null;
+            statusListener = null;
+            statusHandler.removeCallbacks(refreshStatus);
+            listeningHolders.remove(this);
         }
 
         public void cleanup() {
-            if (statusRef != null && statusListener != null) {
-                statusRef.removeEventListener(statusListener);
-                statusRef = null;
-                statusListener = null;
-            }
-            statusHandler.removeCallbacks(refreshStatus);
+            attached = false;
+            stopListening();
             backendOnline = null;
             lastServerSeen = null;
             provisioning = false;
