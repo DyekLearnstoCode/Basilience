@@ -49,6 +49,7 @@ import java.util.TreeMap;
 public class ExcelReportGenerator {
 
     private final Context context;
+    private final ControlChartRenderer.Provider chartProvider;
 
     // Excel sheet names cannot exceed 31 characters or contain \/?*[]: -
     // none of our parameter display names do, but this stays defensive.
@@ -64,6 +65,12 @@ public class ExcelReportGenerator {
 
     public ExcelReportGenerator(Context context) {
         this.context = context;
+        this.chartProvider = ControlChartRenderer.direct(context);
+    }
+
+    public ExcelReportGenerator(Context context, ControlChartRenderer.Provider chartProvider) {
+        this.context = context;
+        this.chartProvider = chartProvider;
     }
 
     public File generateSensorReportXlsx(ParameterReportFilter filter, List<ParameterExportBundle> bundles,
@@ -238,7 +245,7 @@ public class ExcelReportGenerator {
         if (!buckets.isEmpty()) {
             int chartTopRow = rowIndex;
             int chartBottomRow = chartTopRow + CHART_ANCHOR_ROWS;
-            Bitmap chartBitmap = ControlChartRenderer.render(context, bundle, buckets, 1500, 620, topExcursion);
+            Bitmap chartBitmap = chartProvider.chartFor(bundle, buckets, 1500, 620, topExcursion);
             if (chartBitmap != null) {
                 embedPicture(workbook, sheet, chartBitmap, 0, chartTopRow, NUM_COLS, chartBottomRow);
                 chartBitmap.recycle();

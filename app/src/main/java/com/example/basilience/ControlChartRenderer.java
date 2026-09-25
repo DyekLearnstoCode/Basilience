@@ -77,6 +77,24 @@ public final class ControlChartRenderer {
     }
 
     /**
+     * Supplies the chart bitmap for one parameter. render() builds an
+     * Android chart View, so it belongs on the main thread; an export that
+     * writes its file on a worker passes a provider that hands just this
+     * step to the main thread and returns the finished Bitmap.
+     */
+    public interface Provider {
+        @Nullable
+        Bitmap chartFor(ParameterExportBundle bundle, List<ChartAggregation.Bucket> buckets,
+                        int widthPx, int heightPx, @Nullable ChartAggregation.Excursion topExcursion);
+    }
+
+    /** Renders directly on the calling thread, which must be the main thread. */
+    public static Provider direct(Context context) {
+        return (bundle, buckets, widthPx, heightPx, topExcursion) ->
+                render(context, bundle, buckets, widthPx, heightPx, topExcursion);
+    }
+
+    /**
      * Off-screen render of an aggregated trend chart with threshold zone
      * bands, dashed limit lines, an adaptively-spaced marker overlay, and an
      * optional worst-excursion callout, at the given pixel size. Returns

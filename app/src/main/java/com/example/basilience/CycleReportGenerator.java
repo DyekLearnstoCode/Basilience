@@ -32,6 +32,7 @@ import java.util.Locale;
 public class CycleReportGenerator {
 
     private final Context context;
+    private final ControlChartRenderer.Provider chartProvider;
     private static final int PAGE_WIDTH = 595; // A4 width in points
     private static final int PAGE_HEIGHT = 842; // A4 height in points
     private static final int MARGIN = 50;
@@ -74,6 +75,12 @@ public class CycleReportGenerator {
 
     public CycleReportGenerator(Context context) {
         this.context = context;
+        this.chartProvider = ControlChartRenderer.direct(context);
+    }
+
+    public CycleReportGenerator(Context context, ControlChartRenderer.Provider chartProvider) {
+        this.context = context;
+        this.chartProvider = chartProvider;
     }
 
     public File generateCycleSummaryPdf(String deviceId, Cycle cycle, Bitmap chartBitmap, List<Harvest> harvestHistory, String userName) throws IOException {
@@ -388,7 +395,7 @@ public class CycleReportGenerator {
         y += PDF_GAP_AFTER_HEADING;
 
         ChartAggregation.Excursion topExcursion = excursions.isEmpty() ? null : excursions.get(0);
-        Bitmap chartBitmap = ControlChartRenderer.render(context, bundle, buckets, contentWidth * 2, PARAMETER_CHART_HEIGHT * 2, topExcursion);
+        Bitmap chartBitmap = chartProvider.chartFor(bundle, buckets, contentWidth * 2, PARAMETER_CHART_HEIGHT * 2, topExcursion);
         if (chartBitmap != null) {
             Rect destRect = new Rect(x, y, x + contentWidth, y + PARAMETER_CHART_HEIGHT);
             canvas.drawBitmap(chartBitmap, null, destRect, paint);

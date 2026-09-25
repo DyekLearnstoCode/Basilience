@@ -61,9 +61,9 @@ import com.google.firebase.firestore.QueryDocumentSnapshot;
 import com.google.firebase.firestore.QuerySnapshot;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -120,11 +120,16 @@ public class SystemReportsFragment extends Fragment {
     // the same document snapshot populateReadingsTable() already iterates -
     // export's source of truth for stats/charts/Raw Data, independent of
     // which single parameter is currently charted above.
-    private final Map<String, List<ChartAggregation.Sample>> currentParameterSamples = new HashMap<>();
+    // Replaced wholesale by each finished report, never mutated afterwards, so
+    // an export can hold this reference as an immutable snapshot.
+    private Map<String, List<ChartAggregation.Sample>> currentParameterSamples = Collections.emptyMap();
     private CoachMarkTour coachMarkTour;
     private String selectedDeviceId;
     private String userRole = RoleConstants.ROLE_FARMER;
-    private long reportRequestGeneration = 0L;
+    // Written only on the main thread; volatile so a worker can notice it has
+    // been superseded and skip its remaining work.
+    private volatile long reportRequestGeneration = 0L;
+    private boolean exportInProgress;
     private long layoutLoadingShownAt;
     // One settings mapping, read once in loadDeviceThresholds() from the
     // device's actual RTDB settings node, and used consistently everywhere
@@ -446,7 +451,7 @@ public class SystemReportsFragment extends Fragment {
         hideLayoutLoading();
         currentFilter = null;
         currentReadings = new ArrayList<>();
-        currentParameterSamples.clear();
+        currentParameterSamples = Collections.emptyMap();
     }
 
     /** Shows the report loading overlay. Shared by loadReportData() and the export actions below. */
@@ -804,7 +809,7 @@ public class SystemReportsFragment extends Fragment {
         if (filter == null) {
             currentFilter = null;
             currentReadings = new ArrayList<>();
-            currentParameterSamples.clear();
+            currentParameterSamples = Collections.emptyMap();
             readingsTableRows.clear();
             if (readingsTableAdapter != null) readingsTableAdapter.notifyDataSetChanged();
             if (recyclerReadingsTable != null) recyclerReadingsTable.setVisibility(View.GONE);
@@ -828,19 +833,43 @@ public class SystemReportsFragment extends Fragment {
         dbHelper.getParameterLogs(filter.effectiveStartMs, filter.effectiveEndMs)
                 .addOnSuccessListener(queryDocumentSnapshots -> {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
-                    hideLayoutLoading();
-                    renderReport(filter, queryDocumentSnapshots);
-                    maybeShowCoachMarkTour();
+                    // Everything the worker needs is read here, on the main
+                    // thread, and handed over as immutable values; the worker
+                    // never touches this fragment or its views.
+                    final Map<String, RangeRule> rules = captureRangeRules();
+                    ReportWorker.run(() -> {
+                        if (requestGeneration != reportRequestGeneration) return;
+                        final ParameterReportResult result;
+                        try {
+                            result = buildParameterReport(queryDocumentSnapshots, filter, rules);
+                        } catch (Exception e) {
+                            ReportWorker.postToMain(() -> {
+                                if (!isAdded() || getView() == null || requestGeneration != reportRequestGeneration) return;
+                                showReportLoadFailure(e);
+                            });
+                            return;
+                        }
+                        ReportWorker.postToMain(() -> {
+                            if (!isAdded() || getView() == null || requestGeneration != reportRequestGeneration) return;
+                            hideLayoutLoading();
+                            renderParameterReport(result);
+                            maybeShowCoachMarkTour();
+                        });
+                    });
                 })
                 .addOnFailureListener(e -> {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
-                    hideLayoutLoading();
-                    Log.e("CHART_FETCH_ERROR", "Failed to fetch logs", e);
-                    currentFilter = null;
-                    currentReadings = new ArrayList<>();
-                    showEmptyReportState("Unable to load report data.");
-                    NotificationHelper.showError(getContext(), "Unable to load report data. Please try again.");
+                    showReportLoadFailure(e);
                 });
+    }
+
+    private void showReportLoadFailure(Exception e) {
+        hideLayoutLoading();
+        Log.e("CHART_FETCH_ERROR", "Failed to fetch logs", e);
+        currentFilter = null;
+        currentReadings = new ArrayList<>();
+        showEmptyReportState("Unable to load report data.");
+        NotificationHelper.showError(getContext(), "Unable to load report data. Please try again.");
     }
 
     // ------------------------------------------------------------------
@@ -888,13 +917,84 @@ public class SystemReportsFragment extends Fragment {
         xAxis.setLabelCount(adaptiveXFormatter.suggestedLabelCount(), false);
     }
 
-    private void renderReport(ParameterReportFilter filter, QuerySnapshot queryDocumentSnapshots) {
+    /**
+     * One parameter's reporting range and its two target-range texts, read
+     * from this fragment's settings on the main thread so the worker can
+     * classify readings without touching any mutable fragment state.
+     */
+    private static final class RangeRule {
+        final Float min;
+        final Float max;
+        final String screenTargetText;
+        final String exportTargetText;
+
+        RangeRule(Float min, Float max, String screenTargetText, String exportTargetText) {
+            this.min = min;
+            this.max = max;
+            this.screenTargetText = screenTargetText;
+            this.exportTargetText = exportTargetText;
+        }
+    }
+
+    private Map<String, RangeRule> captureRangeRules() {
+        Map<String, RangeRule> rules = new HashMap<>();
+        for (String key : EXPORTABLE_PARAMETERS) {
+            Float min = configuredRangeMin(key);
+            Float max = configuredRangeMax(key);
+            rules.put(key, new RangeRule(min, max, getTargetRangeText(key),
+                    coreTargetRangeText(min, max, getUnitForParameter(key), markerDecimalsForParameter(key))));
+        }
+        return Collections.unmodifiableMap(rules);
+    }
+
+    /** Everything renderParameterReport() needs, fully computed off the main thread and never mutated afterwards. */
+    private static final class ParameterReportResult {
+        final ParameterReportFilter filter;
+        final List<ParameterReading> readings;
+        final int entryCount;
+        final List<Entry> plottedEntries;
+        final List<ChartRangeSegmenter.Segment> segments;
+        final Float rangeMin;
+        final Float rangeMax;
+        final float avg;
+        final float high;
+        final float low;
+        final ParameterInsight insight;
+        final List<ParameterTableRow> tableRows;
+        final Map<String, List<ChartAggregation.Sample>> samples;
+
+        ParameterReportResult(ParameterReportFilter filter, List<ParameterReading> readings, int entryCount,
+                              List<Entry> plottedEntries, List<ChartRangeSegmenter.Segment> segments,
+                              Float rangeMin, Float rangeMax, float avg, float high, float low,
+                              ParameterInsight insight, List<ParameterTableRow> tableRows,
+                              Map<String, List<ChartAggregation.Sample>> samples) {
+            this.filter = filter;
+            this.readings = readings;
+            this.entryCount = entryCount;
+            this.plottedEntries = plottedEntries;
+            this.segments = segments;
+            this.rangeMin = rangeMin;
+            this.rangeMax = rangeMax;
+            this.avg = avg;
+            this.high = high;
+            this.low = low;
+            this.insight = insight;
+            this.tableRows = tableRows;
+            this.samples = samples;
+        }
+    }
+
+    /**
+     * The heavy, view-free half of the old renderReport()/populateReadingsTable():
+     * document parsing, statistics, chart series preparation, insight and the
+     * readings table rows. Same loops, same formulas, same order as before; it
+     * only reads its arguments, so it is safe to run on a worker thread.
+     */
+    private static ParameterReportResult buildParameterReport(QuerySnapshot queryDocumentSnapshots,
+                                                              ParameterReportFilter filter,
+                                                              Map<String, RangeRule> rules) {
         String canonicalParameter = filter.canonicalParameter;
         String dbFieldName = getFieldNameFromParameter(canonicalParameter);
-
-        // Chart surface title reuses the same display label already shown
-        // elsewhere (e.g. CSV headers) - no new data, just a UI label.
-        if (tvChartTitle != null) tvChartTitle.setText(filter.displayParameter + " Trend");
 
         List<Entry> entries = new ArrayList<>();
         List<Float> values = new ArrayList<>();
@@ -919,29 +1019,24 @@ public class SystemReportsFragment extends Fragment {
             }
         }
 
-        currentFilter = filter;
-        currentReadings = readings;
-
         // Combined readings table: every parameter, not just the one
         // currently charted - independent of canonicalParameter/dbFieldName
         // above, built straight from the same document snapshots.
-        populateReadingsTable(queryDocumentSnapshots);
+        List<ParameterTableRow> tableRows = new ArrayList<>();
+        Map<String, List<ChartAggregation.Sample>> samples = buildReadingsTable(queryDocumentSnapshots, rules, tableRows);
 
         if (entries.isEmpty()) {
-            currentInsight = null;
-            showEmptyReportState("No parameter records were available for this period.");
-            return;
+            return new ParameterReportResult(filter, readings, 0, null, null, null, null,
+                    0f, 0f, 0f, null, tableRows, samples);
         }
-
-        int primaryColor = getResources().getColor(R.color.primary);
-        int outOfRangeColor = ContextCompat.getColor(requireContext(), R.color.state_critical);
 
         // Only the stretches outside the configured range are red; everything
         // else keeps the normal series colour. The series is cut into
         // contiguous runs because MPAndroidChart cannot colour part of one
         // dataset - see ChartRangeSegmenter for the crossing interpolation.
-        Float rangeMin = configuredRangeMin(canonicalParameter);
-        Float rangeMax = configuredRangeMax(canonicalParameter);
+        RangeRule rule = rules.get(canonicalParameter);
+        Float rangeMin = rule != null ? rule.min : null;
+        Float rangeMax = rule != null ? rule.max : null;
         // entries.size() can be checked here, not after: it's still the raw,
         // full-resolution count at this point, before this is applied. The
         // earlier sum/high/low/values/readings above are unaffected - built
@@ -951,6 +1046,41 @@ public class SystemReportsFragment extends Fragment {
                 : entries;
         List<ChartRangeSegmenter.Segment> segments =
                 ChartRangeSegmenter.segment(plottedEntries, rangeMin, rangeMax);
+
+        float avg = sum / entries.size();
+        ParameterInsight insight = computeInsight(canonicalParameter, values, rule);
+        return new ParameterReportResult(filter, readings, entries.size(), plottedEntries, segments,
+                rangeMin, rangeMax, avg, high, low, insight, tableRows, samples);
+    }
+
+    private void renderParameterReport(ParameterReportResult result) {
+        final ParameterReportFilter filter = result.filter;
+        final String canonicalParameter = filter.canonicalParameter;
+
+        // Chart surface title reuses the same display label already shown
+        // elsewhere (e.g. CSV headers) - no new data, just a UI label.
+        if (tvChartTitle != null) tvChartTitle.setText(filter.displayParameter + " Trend");
+
+        currentFilter = filter;
+        currentReadings = result.readings;
+        currentParameterSamples = result.samples;
+        applyReadingsTable(result.tableRows);
+
+        if (result.entryCount == 0) {
+            currentInsight = null;
+            showEmptyReportState("No parameter records were available for this period.");
+            return;
+        }
+
+        int primaryColor = getResources().getColor(R.color.primary);
+        int outOfRangeColor = ContextCompat.getColor(requireContext(), R.color.state_critical);
+
+        final Float rangeMin = result.rangeMin;
+        final Float rangeMax = result.rangeMax;
+        final float high = result.high;
+        final float low = result.low;
+        final List<Entry> plottedEntries = result.plottedEntries;
+        final List<ChartRangeSegmenter.Segment> segments = result.segments;
 
         List<ILineDataSet> dataSets = new ArrayList<>(segments.size());
         boolean anyOutOfRange = false;
@@ -1108,7 +1238,7 @@ public class SystemReportsFragment extends Fragment {
         lineChart.fitScreen();
         lineChart.invalidate();
 
-        float avg = sum / entries.size();
+        float avg = result.avg;
         tvAverage.setText(formatMetric(avg, unit));
         tvHigh.setText(formatMetric(high, unit));
         tvLow.setText(formatMetric(low, unit));
@@ -1117,9 +1247,8 @@ public class SystemReportsFragment extends Fragment {
         currentHigh = high;
         currentLow = low;
 
-        ParameterInsight insight = computeInsight(canonicalParameter, values);
-        currentInsight = insight;
-        renderInsight(insight);
+        currentInsight = result.insight;
+        renderInsight(result.insight);
     }
 
     /**
@@ -1348,11 +1477,11 @@ public class SystemReportsFragment extends Fragment {
         }
     }
 
-    private ParameterInsight computeInsight(String canonicalParameter, List<Float> values) {
+    private static ParameterInsight computeInsight(String canonicalParameter, List<Float> values, RangeRule rule) {
         int within = 0;
         int outside = 0;
         for (float v : values) {
-            Boolean ok = isWithinTarget(canonicalParameter, v);
+            Boolean ok = isWithinTarget(rule, v);
             if (ok == null) continue;
             if (ok) within++; else outside++;
         }
@@ -1367,7 +1496,7 @@ public class SystemReportsFragment extends Fragment {
             status = percentWithinTarget >= (STABLE_WITHIN_TARGET_RATIO * 100) ? "STABLE" : "NEEDS ATTENTION";
         }
 
-        String targetRangeText = getTargetRangeText(canonicalParameter);
+        String targetRangeText = rule != null ? rule.screenTargetText : "";
         String evidenceText = buildEvidenceText(values.size(), percentWithinTarget);
         String interpretation = buildInterpretation(canonicalParameter, status);
 
@@ -1414,7 +1543,7 @@ public class SystemReportsFragment extends Fragment {
         tvInterpretation.setTextColor(ContextCompat.getColor(tvInterpretation.getContext(), R.color.nav_inactive));
     }
 
-    private String buildEvidenceText(int readingCount, Double percentWithinTarget) {
+    private static String buildEvidenceText(int readingCount, Double percentWithinTarget) {
         String base = readingCount + (readingCount == 1 ? " reading" : " readings");
         if (percentWithinTarget == null) return base;
         return base + " • " + Math.round(percentWithinTarget) + "% within target";
@@ -1429,9 +1558,9 @@ public class SystemReportsFragment extends Fragment {
     // humidityRelease, coolerOffTemp, refillStartLevelCm/refillStopLevelCm),
     // which describe when automation kicks in/out, not what counts as an
     // acceptable reading for this report.
-    private Boolean isWithinTarget(String canonicalParameter, float value) {
-        Float min = configuredRangeMin(canonicalParameter);
-        Float max = configuredRangeMax(canonicalParameter);
+    private static Boolean isWithinTarget(RangeRule rule, float value) {
+        Float min = rule != null ? rule.min : null;
+        Float max = rule != null ? rule.max : null;
 
         // Nothing configured on either side means compliance cannot be judged.
         if (min == null && max == null) return null;
@@ -1455,7 +1584,7 @@ public class SystemReportsFragment extends Fragment {
      * noise in a printed report's metadata, which only needs the actual
      * reporting range.
      */
-    private String coreTargetRangeText(Float min, Float max, String unit, int decimals) {
+    private static String coreTargetRangeText(Float min, Float max, String unit, int decimals) {
         if (min == null && max == null) {
             return "No configured target range for this parameter.";
         }
@@ -1524,7 +1653,7 @@ public class SystemReportsFragment extends Fragment {
     // one-sided parameters (air temperature, humidity, water temperature,
     // water level) describe staying on the correct side of the set limit,
     // which is genuinely all the underlying STABLE check establishes.
-    private String buildInterpretation(String canonicalParameter, String status) {
+    private static String buildInterpretation(String canonicalParameter, String status) {
         if (canonicalParameter.equalsIgnoreCase("pH")) {
             switch (status) {
                 case "STABLE": return "The water's pH stayed in the recommended range most of the time, which helps the basil take in nutrients properly and supports steady growth.";
@@ -1639,10 +1768,12 @@ public class SystemReportsFragment extends Fragment {
      * "INSUFFICIENT DATA") rather than being silently dropped, since the
      * farmer explicitly chose to include it.
      */
-    private List<ParameterExportBundle> buildExportBundles(List<String> canonicalParameters) {
+    private static List<ParameterExportBundle> buildExportBundles(List<String> canonicalParameters,
+                                                                  Map<String, List<ChartAggregation.Sample>> parameterSamples,
+                                                                  Map<String, RangeRule> rules) {
         List<ParameterExportBundle> bundles = new ArrayList<>();
         for (String canonical : canonicalParameters) {
-            List<ChartAggregation.Sample> samples = currentParameterSamples.get(canonical);
+            List<ChartAggregation.Sample> samples = parameterSamples.get(canonical);
             if (samples == null) samples = new ArrayList<>();
 
             List<Float> values = new ArrayList<>(samples.size());
@@ -1661,11 +1792,11 @@ public class SystemReportsFragment extends Fragment {
                 low = 0f;
             }
 
-            Float rangeMin = configuredRangeMin(canonical);
-            Float rangeMax = configuredRangeMax(canonical);
-            ParameterInsight insight = computeInsight(canonical, values);
-            String exportTargetRangeText = coreTargetRangeText(rangeMin, rangeMax,
-                    getUnitForParameter(canonical), markerDecimalsForParameter(canonical));
+            RangeRule rule = rules.get(canonical);
+            Float rangeMin = rule != null ? rule.min : null;
+            Float rangeMax = rule != null ? rule.max : null;
+            ParameterInsight insight = computeInsight(canonical, values, rule);
+            String exportTargetRangeText = rule != null ? rule.exportTargetText : "";
 
             bundles.add(new ParameterExportBundle(canonical, canonical, getUnitForParameter(canonical),
                     markerDecimalsForParameter(canonical), rangeMin, rangeMax, exportTargetRangeText,
@@ -1681,62 +1812,106 @@ public class SystemReportsFragment extends Fragment {
             return;
         }
 
-        final ParameterReportFilter filter = currentFilter;
-
-        // Same one-frame-deferred pattern the old export used: showing the
-        // overlay and immediately doing the (now heavier, multi-parameter)
-        // generation work in the same call never actually lets it paint
-        // first.
-        showLayoutLoading();
-        View root = getView();
-        if (root == null) {
-            hideLayoutLoading();
+        if (exportInProgress) {
+            Toast.makeText(getContext(), "An export is already in progress.", Toast.LENGTH_SHORT).show();
             return;
         }
-        root.post(() -> {
-            if (!isAdded() || getContext() == null) {
-                hideLayoutLoading();
-                return;
-            }
+        exportInProgress = true;
+        if (btnShare != null) btnShare.setEnabled(false);
+        showLayoutLoading();
+
+        // Immutable snapshot taken here, on the main thread. The worker below
+        // reads only these values: not the fragment, its views, or the live
+        // report state (which a newer load may replace while it runs).
+        final ParameterReportFilter filter = currentFilter;
+        final Map<String, List<ChartAggregation.Sample>> parameterSamples = currentParameterSamples;
+        final Map<String, RangeRule> rules = captureRangeRules();
+        final List<String> parameters = new ArrayList<>(selectedParameters);
+        final android.content.Context appContext = requireContext().getApplicationContext();
+
+        ReportWorker.run(() -> {
+            final long startedAt = SystemClock.elapsedRealtime();
+            // Charts are the only step that needs an Android View, so each
+            // one is rendered to a Bitmap on the main thread and the finished
+            // Bitmap is handed back to this worker for writing the file.
+            final java.util.concurrent.atomic.AtomicLong mainRenderMs = new java.util.concurrent.atomic.AtomicLong();
+            final ControlChartRenderer.Provider charts = (bundle, buckets, widthPx, heightPx, topExcursion) ->
+                    ReportWorker.callOnMain(() -> {
+                        long renderStart = SystemClock.elapsedRealtime();
+                        android.graphics.Bitmap chart = ControlChartRenderer.render(appContext, bundle, buckets,
+                                widthPx, heightPx, topExcursion);
+                        mainRenderMs.addAndGet(SystemClock.elapsedRealtime() - renderStart);
+                        return chart;
+                    });
+            final File file;
+            final Uri contentUri;
+            final String mimeType;
             try {
-                List<ParameterExportBundle> bundles = buildExportBundles(selectedParameters);
+                List<ParameterExportBundle> bundles = buildExportBundles(parameters, parameterSamples, rules);
                 if (bundles.isEmpty()) {
-                    NotificationHelper.showError(getContext(), "No data available to export.");
+                    ReportWorker.postToMain(() -> finishExport(filter, null, null, null, "No data available to export."));
                     return;
                 }
 
                 String userName = "Basilience User";
-                File file;
-                String mimeType;
                 if (isPdf) {
-                    CycleReportGenerator generator = new CycleReportGenerator(requireContext());
+                    CycleReportGenerator generator = new CycleReportGenerator(appContext, charts);
                     file = generator.generateMultiParameterSensorReportPdf(filter, bundles, userName);
                     mimeType = "application/pdf";
                 } else {
-                    ExcelReportGenerator generator = new ExcelReportGenerator(requireContext());
+                    ExcelReportGenerator generator = new ExcelReportGenerator(appContext, charts);
                     file = generator.generateSensorReportXlsx(filter, bundles, userName);
                     mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
                 }
-
-                Uri contentUri = FileProvider.getUriForFile(requireContext(), requireContext().getPackageName() + ".fileprovider", file);
-                // ACTION_SEND, not ACTION_VIEW - a "share sheet" is meant to
-                // hand the file to another app (Drive, email, Messenger,
-                // etc.), not just open it in a viewer.
-                Intent intent = new Intent(Intent.ACTION_SEND);
-                intent.setType(mimeType);
-                intent.putExtra(Intent.EXTRA_SUBJECT, "Basilience Parameter Report - " + filter.cycleLabel);
-                intent.putExtra(Intent.EXTRA_TEXT, "Attached is the parameter report for "
-                        + filter.cycleLabel + " (" + filter.periodLabel + ").");
-                intent.putExtra(Intent.EXTRA_STREAM, contentUri);
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                startActivity(Intent.createChooser(intent, "Export Report via:"));
-            } catch (IOException e) {
+                contentUri = FileProvider.getUriForFile(appContext, appContext.getPackageName() + ".fileprovider", file);
+            } catch (Exception e) {
                 Log.e("EXPORT_ERROR", "Error generating report", e);
-                NotificationHelper.showError(getContext(), "We couldn't generate the report. Please try again.");
-            } finally {
-                hideLayoutLoading();
+                ReportWorker.postToMain(() -> finishExport(filter, null, null, null,
+                        "We couldn't generate the report. Please try again."));
+                return;
             }
+            Log.i("ReportPerf", (isPdf ? "Parameter PDF" : "Parameter XLSX") + " export of " + parameters.size()
+                    + " parameter(s) took " + (SystemClock.elapsedRealtime() - startedAt) + " ms total, of which "
+                    + mainRenderMs.get() + " ms was chart rendering on the main thread");
+            ReportWorker.postToMain(() -> finishExport(filter, file, contentUri, mimeType, null));
         });
+    }
+
+    /**
+     * Single completion point for an export, always on the main thread. The
+     * in-progress flag is reset unconditionally; the UI and the share sheet
+     * are only touched if this screen is still showing, so a finished export
+     * never reaches into a destroyed view or pops a chooser over another screen.
+     */
+    private void finishExport(ParameterReportFilter filter, File file, Uri contentUri, String mimeType,
+                              String errorMessage) {
+        exportInProgress = false;
+        if (!isAdded() || getView() == null) {
+            if (file != null) Log.i("EXPORT", "Export finished after leaving the screen; saved as " + file.getName());
+            return;
+        }
+        if (btnShare != null) btnShare.setEnabled(true);
+        hideLayoutLoading();
+        if (errorMessage != null) {
+            NotificationHelper.showError(getContext(), errorMessage);
+            return;
+        }
+        try {
+            // ACTION_SEND, not ACTION_VIEW - a "share sheet" is meant to
+            // hand the file to another app (Drive, email, Messenger,
+            // etc.), not just open it in a viewer.
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.setType(mimeType);
+            intent.putExtra(Intent.EXTRA_SUBJECT, "Basilience Parameter Report - " + filter.cycleLabel);
+            intent.putExtra(Intent.EXTRA_TEXT, "Attached is the parameter report for "
+                    + filter.cycleLabel + " (" + filter.periodLabel + ").");
+            intent.putExtra(Intent.EXTRA_STREAM, contentUri);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(intent, "Export Report via:"));
+        } catch (Exception e) {
+            Log.e("EXPORT_ERROR", "Error opening share sheet", e);
+            NotificationHelper.showError(getContext(), "We couldn't generate the report. Please try again.");
+        }
     }
 
     // ------------------------------------------------------------------
@@ -1761,7 +1936,7 @@ public class SystemReportsFragment extends Fragment {
         return null;
     }
 
-    private String getFieldNameFromParameter(String canonicalParameter) {
+    private static String getFieldNameFromParameter(String canonicalParameter) {
         if (canonicalParameter.equalsIgnoreCase("Air Temperature")) return "air_temp";
         if (canonicalParameter.equalsIgnoreCase("Humidity")) return "humidity";
         if (canonicalParameter.equalsIgnoreCase("Water Temperature")) return "water_temp";
@@ -1771,7 +1946,7 @@ public class SystemReportsFragment extends Fragment {
         return null;
     }
 
-    private boolean isValidParameterValue(String parameter, Double value) {
+    private static boolean isValidParameterValue(String parameter, Double value) {
         if (value == null || value.isNaN() || value.isInfinite()) return false;
         if (parameter.equalsIgnoreCase("pH")) return value >= 0 && value <= 14;
         if (parameter.equalsIgnoreCase("EC")) return value >= 0;
@@ -1793,19 +1968,18 @@ public class SystemReportsFragment extends Fragment {
      * and CSV/PDF exports already use, so a cell's value and status can
      * never disagree with the chart above it.
      */
-    private void populateReadingsTable(QuerySnapshot snapshot) {
-        if (readingsTableAdapter == null) return;
+    private static Map<String, List<ChartAggregation.Sample>> buildReadingsTable(
+            QuerySnapshot snapshot, Map<String, RangeRule> rules, List<ParameterTableRow> tableRows) {
+        Float phMin = rules.get("pH").min, phMax = rules.get("pH").max;
+        Float ecMin = rules.get("EC").min, ecMax = rules.get("EC").max;
+        Float airMin = rules.get("Air Temperature").min, airMax = rules.get("Air Temperature").max;
+        Float humMin = rules.get("Humidity").min, humMax = rules.get("Humidity").max;
+        Float waterTempMin = rules.get("Water Temperature").min, waterTempMax = rules.get("Water Temperature").max;
+        Float waterLevelMin = rules.get("Water Level").min, waterLevelMax = rules.get("Water Level").max;
 
-        Float phMin = configuredRangeMin("pH"), phMax = configuredRangeMax("pH");
-        Float ecMin = configuredRangeMin("EC"), ecMax = configuredRangeMax("EC");
-        Float airMin = configuredRangeMin("Air Temperature"), airMax = configuredRangeMax("Air Temperature");
-        Float humMin = configuredRangeMin("Humidity"), humMax = configuredRangeMax("Humidity");
-        Float waterTempMin = configuredRangeMin("Water Temperature"), waterTempMax = configuredRangeMax("Water Temperature");
-        Float waterLevelMin = configuredRangeMin("Water Level"), waterLevelMax = configuredRangeMax("Water Level");
-
-        readingsTableRows.clear();
+        Map<String, List<ChartAggregation.Sample>> parameterSamples = new HashMap<>();
         for (String key : EXPORTABLE_PARAMETERS) {
-            currentParameterSamples.put(key, new ArrayList<>());
+            parameterSamples.put(key, new ArrayList<>());
         }
         for (QueryDocumentSnapshot doc : snapshot) {
             // A record without a usable timestamp is skipped; a malformed value
@@ -1820,14 +1994,14 @@ public class SystemReportsFragment extends Fragment {
             Double waterTemp = FirebaseSafeRead.fsDouble(doc, "water_temp");
             Double waterLevel = FirebaseSafeRead.fsDouble(doc, "water_level");
 
-            addSampleIfValid("pH", timestamp, ph);
-            addSampleIfValid("EC", timestamp, ec);
-            addSampleIfValid("Air Temperature", timestamp, airTemp);
-            addSampleIfValid("Humidity", timestamp, humidity);
-            addSampleIfValid("Water Temperature", timestamp, waterTemp);
-            addSampleIfValid("Water Level", timestamp, waterLevel);
+            addSampleIfValid(parameterSamples, "pH", timestamp, ph);
+            addSampleIfValid(parameterSamples, "EC", timestamp, ec);
+            addSampleIfValid(parameterSamples, "Air Temperature", timestamp, airTemp);
+            addSampleIfValid(parameterSamples, "Humidity", timestamp, humidity);
+            addSampleIfValid(parameterSamples, "Water Temperature", timestamp, waterTemp);
+            addSampleIfValid(parameterSamples, "Water Level", timestamp, waterLevel);
 
-            readingsTableRows.add(new ParameterTableRow(
+            tableRows.add(new ParameterTableRow(
                     DateUtils.formatDateTimeCompact(timestamp),
                     formatTableCell(ph, "pH"), cellOutOfRange(ph, "pH", phMin, phMax),
                     formatTableCell(ec, "EC"), cellOutOfRange(ec, "EC", ecMin, ecMax),
@@ -1836,6 +2010,19 @@ public class SystemReportsFragment extends Fragment {
                     formatTableCell(waterTemp, "Water Temperature"), cellOutOfRange(waterTemp, "Water Temperature", waterTempMin, waterTempMax),
                     formatTableCell(waterLevel, "Water Level"), cellOutOfRange(waterLevel, "Water Level", waterLevelMin, waterLevelMax)));
         }
+
+        // Nothing mutates these lists once they leave the worker, so they can
+        // be shared with an export as-is.
+        for (Map.Entry<String, List<ChartAggregation.Sample>> entry : parameterSamples.entrySet()) {
+            entry.setValue(Collections.unmodifiableList(entry.getValue()));
+        }
+        return Collections.unmodifiableMap(parameterSamples);
+    }
+
+    private void applyReadingsTable(List<ParameterTableRow> rows) {
+        if (readingsTableAdapter == null) return;
+        readingsTableRows.clear();
+        readingsTableRows.addAll(rows);
         readingsTableAdapter.notifyDataSetChanged();
 
         if (recyclerReadingsTable != null) {
@@ -1846,24 +2033,25 @@ public class SystemReportsFragment extends Fragment {
         }
     }
 
-    private void addSampleIfValid(String canonicalParameter, long timestamp, Double value) {
+    private static void addSampleIfValid(Map<String, List<ChartAggregation.Sample>> parameterSamples,
+                                         String canonicalParameter, long timestamp, Double value) {
         if (!isValidParameterValue(canonicalParameter, value)) return;
-        List<ChartAggregation.Sample> list = currentParameterSamples.get(canonicalParameter);
+        List<ChartAggregation.Sample> list = parameterSamples.get(canonicalParameter);
         if (list != null) list.add(new ChartAggregation.Sample(timestamp, value.floatValue()));
     }
 
-    private String formatTableCell(Double value, String canonicalParameter) {
+    private static String formatTableCell(Double value, String canonicalParameter) {
         if (!isValidParameterValue(canonicalParameter, value)) return "--";
         int decimals = markerDecimalsForParameter(canonicalParameter);
         return String.format(Locale.getDefault(), "%." + decimals + "f%s", value, markerUnitForParameter(canonicalParameter));
     }
 
-    private boolean cellOutOfRange(Double value, String canonicalParameter, Float min, Float max) {
+    private static boolean cellOutOfRange(Double value, String canonicalParameter, Float min, Float max) {
         if (!isValidParameterValue(canonicalParameter, value)) return false;
         return (min != null && value < min) || (max != null && value > max);
     }
 
-    private String getUnitForParameter(String parameter) {
+    private static String getUnitForParameter(String parameter) {
         if (parameter.contains("Temperature")) return "°C";
         if (parameter.equalsIgnoreCase("Humidity") || parameter.equalsIgnoreCase("Water Level")) return "%";
         if (parameter.equalsIgnoreCase("EC")) return " mS/cm";
@@ -1889,13 +2077,13 @@ public class SystemReportsFragment extends Fragment {
     // reach the CSV/PDF exports and the metric strip stay exactly as they
     // were - the marker just needs a readable standalone label ("6.10 pH"
     // rather than a bare "6.10") and pH/EC's finer precision.
-    private String markerUnitForParameter(String canonicalParameter) {
+    private static String markerUnitForParameter(String canonicalParameter) {
         String unit = getUnitForParameter(canonicalParameter);
         if (unit.isEmpty() && canonicalParameter.equalsIgnoreCase("pH")) return " pH";
         return unit;
     }
 
-    private int markerDecimalsForParameter(String canonicalParameter) {
+    private static int markerDecimalsForParameter(String canonicalParameter) {
         return (canonicalParameter.equalsIgnoreCase("pH") || canonicalParameter.equalsIgnoreCase("EC"))
                 ? 2 : 1;
     }

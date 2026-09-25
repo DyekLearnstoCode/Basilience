@@ -54,9 +54,9 @@ import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.google.firebase.firestore.Query;
+import com.google.firebase.firestore.QuerySnapshot;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -199,14 +199,15 @@ public class FoggingReportsFragment extends Fragment {
     // in-flight one) - completely separate from reportRequestGeneration-style
     // guarding on the historical report, since Water Outlook is never
     // re-triggered by filter/cycle changes.
-    private long waterOutlookRequestGeneration = 0L;
+    private volatile long waterOutlookRequestGeneration = 0L;
 
     // Guards the historical report's own async chain (fetchFoggingLogs ->
     // fetchBoundaryEventAndProcess -> resolveRunningStateAndRender ->
     // renderReport) so that a slow/old request whose callback resolves after
     // a newer cycle/period selection already started loading (or already
     // rendered) can never overwrite that newer state.
-    private long reportRequestGeneration = 0L;
+    private volatile long reportRequestGeneration = 0L;
+    private boolean exportInProgress;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -728,7 +729,7 @@ public class FoggingReportsFragment extends Fragment {
         return cal.getTimeInMillis();
     }
 
-    private boolean isSameManilaDay(long startMs, long endMs) {
+    private static boolean isSameManilaDay(long startMs, long endMs) {
         Calendar a = Calendar.getInstance(TimeZone.getTimeZone(TIMEZONE_ID));
         a.setTimeInMillis(startMs);
         Calendar b = Calendar.getInstance(TimeZone.getTimeZone(TIMEZONE_ID));
@@ -877,6 +878,26 @@ public class FoggingReportsFragment extends Fragment {
         fetchFoggingLogs(filter, requestGeneration);
     }
 
+    private static List<FoggingEvent> parseFoggingEvents(QuerySnapshot snapshots, String skippedSuffix) {
+        List<FoggingEvent> events = new ArrayList<>();
+        int skipped = 0;
+        for (DocumentSnapshot doc : snapshots) {
+            // A malformed log is skipped (and logged with its path by
+            // FirebaseSafeRead); no replacement event is invented.
+            FoggingEvent event = FirebaseSafeRead.toObject(doc, FoggingEvent.class);
+            if (event != null) {
+                event.id = doc.getId();
+                events.add(event);
+            } else {
+                skipped++;
+            }
+        }
+        if (skipped > 0) {
+            Log.w("FoggingReports", skipped + " malformed fogging log(s) " + skippedSuffix);
+        }
+        return events;
+    }
+
     private void fetchFoggingLogs(FoggingReportFilter filter, long requestGeneration) {
         // Bounded to [effectiveStartMs, effectiveEndMs] via Database_Helper's
         // shared query - previously only the lower bound was enforced here,
@@ -888,23 +909,29 @@ public class FoggingReportsFragment extends Fragment {
         dbHelper.getFoggingLogs(filter.effectiveStartMs, filter.effectiveEndMs)
                 .addOnSuccessListener(queryDocumentSnapshots -> {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
-                    List<FoggingEvent> events = new ArrayList<>();
-                    int skipped = 0;
-                    for (DocumentSnapshot doc : queryDocumentSnapshots) {
-                        // A malformed log is skipped (and logged with its path by
-                        // FirebaseSafeRead); no replacement event is invented.
-                        FoggingEvent event = FirebaseSafeRead.toObject(doc, FoggingEvent.class);
-                        if (event != null) {
-                            event.id = doc.getId();
-                            events.add(event);
-                        } else {
-                            skipped++;
+                    // Converting every log document is done off the main
+                    // thread; the finished list is handed back and only the
+                    // main thread touches it from there on.
+                    ReportWorker.run(() -> {
+                        if (requestGeneration != reportRequestGeneration) return;
+                        final List<FoggingEvent> events;
+                        try {
+                            events = parseFoggingEvents(queryDocumentSnapshots, "left out of this report");
+                        } catch (Exception e) {
+                            ReportWorker.postToMain(() -> {
+                                if (!isAdded() || getView() == null || requestGeneration != reportRequestGeneration) return;
+                                Log.e("FoggingReports", "Error reading fogging logs", e);
+                                hideLayoutLoading();
+                                showReportUnavailable();
+                                NotificationHelper.showError(getContext(), "Unable to load the fogging report. Check your connection and try again.");
+                            });
+                            return;
                         }
-                    }
-                    if (skipped > 0) {
-                        Log.w("FoggingReports", skipped + " malformed fogging log(s) left out of this report");
-                    }
-                    fetchBoundaryEventAndProcess(filter, events, requestGeneration);
+                        ReportWorker.postToMain(() -> {
+                            if (!isAdded() || getView() == null || requestGeneration != reportRequestGeneration) return;
+                            fetchBoundaryEventAndProcess(filter, events, requestGeneration);
+                        });
+                    });
                 })
                 .addOnFailureListener(e -> {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
@@ -1031,7 +1058,7 @@ public class FoggingReportsFragment extends Fragment {
                         // still says, there is no trustworthy live running
                         // session. The unmatched ON becomes an incomplete
                         // record inside the processor.
-                        renderReport(filter, events, false);
+                        renderReport(filter, events, false, requestGeneration);
                         return;
                     }
                     resolveActuatorRunningAndRender(filter, events, requestGeneration);
@@ -1044,7 +1071,7 @@ public class FoggingReportsFragment extends Fragment {
                     // session as running.
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
                     Log.w("FoggingReports", "Unable to read device presence; not treating any session as running", error.toException());
-                    renderReport(filter, events, false);
+                    renderReport(filter, events, false, requestGeneration);
                 }
             });
     }
@@ -1059,7 +1086,7 @@ public class FoggingReportsFragment extends Fragment {
                     // A malformed value reads as null, which fails closed: nothing
                     // is presented as running unless the flag is a real true.
                     boolean isRunning = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot));
-                    renderReport(filter, events, isRunning);
+                    renderReport(filter, events, isRunning, requestGeneration);
                 }
 
                 @Override
@@ -1067,7 +1094,7 @@ public class FoggingReportsFragment extends Fragment {
                     // Best-effort only; proceed with isRunning=false rather
                     // than failing the whole report over this RTDB read.
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
-                    renderReport(filter, events, false);
+                    renderReport(filter, events, false, requestGeneration);
                 }
             });
     }
@@ -1076,38 +1103,63 @@ public class FoggingReportsFragment extends Fragment {
     // Rendering
     // ------------------------------------------------------------------
 
-    private void renderReport(FoggingReportFilter filter, List<FoggingEvent> events, boolean isRunning) {
-        if (!isAdded()) return;
+    /**
+     * Everything the report screen renders, computed off the main thread from
+     * the raw events. Built once, never mutated afterwards.
+     */
+    private static final class FoggingReportModel {
+        final FoggingReportFilter filter;
+        final FoggingReportSummary summary;
+        final int totalSessionCount;
+        final int autoCount;
+        final int manualCount;
+        final FoggingReportTotals totals;
+        final String status;
+        final String interpretation;
+        final List<FoggingSession> recentList;
+        final List<BarEntry> barEntries;
+        final boolean hourlyBuckets;
 
+        FoggingReportModel(FoggingReportFilter filter, FoggingReportSummary summary, int totalSessionCount,
+                           int autoCount, int manualCount, FoggingReportTotals totals, String status,
+                           String interpretation, List<FoggingSession> recentList, List<BarEntry> barEntries,
+                           boolean hourlyBuckets) {
+            this.filter = filter;
+            this.summary = summary;
+            this.totalSessionCount = totalSessionCount;
+            this.autoCount = autoCount;
+            this.manualCount = manualCount;
+            this.totals = totals;
+            this.status = status;
+            this.interpretation = interpretation;
+            this.recentList = recentList;
+            this.barEntries = barEntries;
+            this.hourlyBuckets = hourlyBuckets;
+        }
+    }
+
+    private static FoggingReportModel buildFoggingReportModel(FoggingReportFilter filter, List<FoggingEvent> events,
+                                                              boolean isRunning) {
         long bucketSizeMs = "Today".equals(filter.periodLabel) ? (1000L * 60 * 60) : (1000L * 60 * 60 * 24);
         FoggingReportSummary summary = FoggingReportProcessor.process(events, filter.effectiveStartMs, filter.effectiveEndMs, bucketSizeMs, isRunning);
 
-        currentFilter = filter;
-        currentSummary = summary;
-        processedSessions = summary.getCompletedSessions();
-
         int totalSessionCount = summary.getCompletedSessions().size() + (summary.getCurrentlyRunningSession() != null ? 1 : 0);
         int[] autoManual = countAutoManualSessions(summary);
-        currentAutoCount = autoManual[0];
-        currentManualCount = autoManual[1];
 
         // One frozen set of aggregate totals, taken straight from the
-        // processed summary. Everything below renders from this object, and
-        // the PDF export is handed this same object - so the exported
-        // summary can never be computed a second, different way.
-        currentTotals = FoggingReportTotals.from(summary, totalSessionCount,
-                currentAutoCount, currentManualCount);
+        // processed summary. Everything the screen renders comes from this
+        // object, and the PDF export is handed this same object - so the
+        // exported summary can never be computed a second, different way.
+        FoggingReportTotals totals = FoggingReportTotals.from(summary, totalSessionCount,
+                autoManual[0], autoManual[1]);
 
         String status = computeFoggingStatus(summary, filter, totalSessionCount);
-        currentStatus = status;
-        currentInterpretation = buildFoggingInterpretation(status, currentAutoCount, currentManualCount);
+        String interpretation = buildFoggingInterpretation(status, autoManual[0], autoManual[1]);
 
+        boolean hourlyBuckets = "Today".equals(filter.periodLabel);
         if (totalSessionCount == 0) {
-            // Water Outlook loads independently (see loadWaterOutlook()) and
-            // is not re-derived from this historical summary, so an empty
-            // result for the selected report period does not touch it.
-            showFoggingEmptyState(status, currentInterpretation);
-            return;
+            return new FoggingReportModel(filter, summary, 0, autoManual[0], autoManual[1], totals, status,
+                    interpretation, null, null, hourlyBuckets);
         }
 
         // Fogging Sessions table - every session in the selected period,
@@ -1122,6 +1174,84 @@ public class FoggingReportsFragment extends Fragment {
         for (int i = summary.getCompletedSessions().size() - 1; i >= 0; i--) {
             recentList.add(summary.getCompletedSessions().get(i));
         }
+
+        // Bucket Generation - daily fogging runtime in minutes (hourly buckets
+        // for "Today"). Bucket boundaries/values are unchanged from before;
+        // only the X coordinate changed, from a bucket index to minutes
+        // elapsed since the report's effective start - the same continuous-
+        // time model Parameter Report uses - so the axis can adapt its label
+        // precision to the currently visible span instead of being fixed to
+        // the full-filter granularity.
+        final long chartBaseMs = filter.effectiveStartMs;
+        Map<Long, Long> buckets = summary.getBucketAggregations();
+        List<Long> bucketKeys = new ArrayList<>(buckets.keySet());
+        Collections.sort(bucketKeys);
+
+        List<BarEntry> barEntries = new ArrayList<>();
+        for (long bTime : bucketKeys) {
+            float xMinutes = (bTime - chartBaseMs) / 60000f;
+            float mins = buckets.get(bTime) / 60000f;
+            barEntries.add(new BarEntry(xMinutes, mins));
+        }
+
+        return new FoggingReportModel(filter, summary, totalSessionCount, autoManual[0], autoManual[1], totals,
+                status, interpretation, recentList, barEntries, hourlyBuckets);
+    }
+
+    private void renderReport(FoggingReportFilter filter, List<FoggingEvent> events, boolean isRunning,
+                              long requestGeneration) {
+        if (!isAdded()) return;
+        // `events` is complete at this point and is not touched again by the
+        // main thread; the worker owns it from here.
+        ReportWorker.run(() -> {
+            if (requestGeneration != reportRequestGeneration) return;
+            final long startedAt = SystemClock.elapsedRealtime();
+            final FoggingReportModel model;
+            try {
+                model = buildFoggingReportModel(filter, events, isRunning);
+            } catch (Exception e) {
+                ReportWorker.postToMain(() -> {
+                    if (!isAdded() || getView() == null || requestGeneration != reportRequestGeneration) return;
+                    Log.e("FoggingReports", "Error processing fogging report", e);
+                    hideLayoutLoading();
+                    showReportUnavailable();
+                    NotificationHelper.showError(getContext(), "Unable to load the fogging report. Check your connection and try again.");
+                });
+                return;
+            }
+            Log.i("ReportPerf", "Fogging report processing of " + events.size() + " event(s) took "
+                    + (SystemClock.elapsedRealtime() - startedAt) + " ms off the main thread");
+            ReportWorker.postToMain(() -> {
+                if (!isAdded() || getView() == null || requestGeneration != reportRequestGeneration) return;
+                applyFoggingReport(model);
+            });
+        });
+    }
+
+    private void applyFoggingReport(FoggingReportModel model) {
+        final FoggingReportFilter filter = model.filter;
+        final FoggingReportSummary summary = model.summary;
+        final int totalSessionCount = model.totalSessionCount;
+        final String status = model.status;
+
+        currentFilter = filter;
+        currentSummary = summary;
+        processedSessions = summary.getCompletedSessions();
+        currentAutoCount = model.autoCount;
+        currentManualCount = model.manualCount;
+        currentTotals = model.totals;
+        currentStatus = status;
+        currentInterpretation = model.interpretation;
+
+        if (totalSessionCount == 0) {
+            // Water Outlook loads independently (see loadWaterOutlook()) and
+            // is not re-derived from this historical summary, so an empty
+            // result for the selected report period does not touch it.
+            showFoggingEmptyState(status, currentInterpretation);
+            return;
+        }
+
+        List<FoggingSession> recentList = model.recentList;
         adapter.updateData(recentList);
 
         if (recentList.isEmpty()) {
@@ -1153,29 +1283,11 @@ public class FoggingReportsFragment extends Fragment {
         tvBreakdownManual.setText(DurationFormatter.formatRuntime(currentTotals.manualRuntimeMs));
         renderStrategyBreakdown(currentTotals);
 
-        // Bucket Generation - daily fogging runtime in minutes (hourly buckets
-        // for "Today"). Bucket boundaries/values are unchanged from before;
-        // only the X coordinate changed, from a bucket index to minutes
-        // elapsed since the report's effective start - the same continuous-
-        // time model Parameter Report uses - so the axis can adapt its label
-        // precision to the currently visible span instead of being fixed to
-        // the full-filter granularity.
-        boolean hourlyBuckets = "Today".equals(filter.periodLabel);
+        boolean hourlyBuckets = model.hourlyBuckets;
         long bucketSpacingMs = hourlyBuckets ? (1000L * 60 * 60) : (1000L * 60 * 60 * 24);
         final long chartBaseMs = filter.effectiveStartMs;
 
-        Map<Long, Long> buckets = summary.getBucketAggregations();
-        List<Long> bucketKeys = new ArrayList<>(buckets.keySet());
-        Collections.sort(bucketKeys);
-
-        List<BarEntry> barEntries = new ArrayList<>();
-        for (long bTime : bucketKeys) {
-            float xMinutes = (bTime - chartBaseMs) / 60000f;
-            float mins = buckets.get(bTime) / 60000f;
-            barEntries.add(new BarEntry(xMinutes, mins));
-        }
-
-        BarDataSet ds = new BarDataSet(barEntries, "Fogging Runtime (mins)");
+        BarDataSet ds = new BarDataSet(model.barEntries, "Fogging Runtime (mins)");
         ds.setColor(ContextCompat.getColor(requireContext(), R.color.primary));
         // Values appear on tap via the marker rather than being printed
         // permanently over every bar.
@@ -1327,7 +1439,7 @@ public class FoggingReportsFragment extends Fragment {
     // Farmer-readable status & interpretation (Part 7-8)
     // ------------------------------------------------------------------
 
-    private int[] countAutoManualSessions(FoggingReportSummary summary) {
+    private static int[] countAutoManualSessions(FoggingReportSummary summary) {
         int auto = 0;
         int manual = 0;
         for (FoggingSession s : summary.getCompletedSessions()) {
@@ -1343,7 +1455,7 @@ public class FoggingReportsFragment extends Fragment {
     // Status describes RECORDED OPERATION only - never plant health, and
     // never a specific number of sessions "required", since the history
     // does not contain a defined expected schedule to compare against.
-    private String computeFoggingStatus(FoggingReportSummary summary, FoggingReportFilter filter, int totalSessionCount) {
+    private static String computeFoggingStatus(FoggingReportSummary summary, FoggingReportFilter filter, int totalSessionCount) {
         if (totalSessionCount == 0) return "NO FOGGING RECORDS";
         if (filter.effectiveEndMs <= filter.effectiveStartMs) return "INSUFFICIENT DATA";
         if (isSameManilaDay(filter.effectiveStartMs, filter.effectiveEndMs)) return "NORMAL ACTIVITY";
@@ -1374,7 +1486,7 @@ public class FoggingReportsFragment extends Fragment {
     //
     // The auto/manual and status branches below are unchanged in criteria;
     // only the sentences they return are rewritten.
-    private String buildFoggingInterpretation(String status, int autoCount, int manualCount) {
+    private static String buildFoggingInterpretation(String status, int autoCount, int manualCount) {
         switch (status) {
             case "NO FOGGING RECORDS":
                 return "No fogging sessions were recorded for this growth cycle in the selected period. This is not necessarily a problem - fogging does not run while a cycle is paused, and it pauses when the reservoir is low or the system is holding for safety.";
@@ -1481,15 +1593,24 @@ public class FoggingReportsFragment extends Fragment {
                 .get()
                 .addOnSuccessListener(queryDocumentSnapshots -> {
                     if (!isAdded() || requestGeneration != waterOutlookRequestGeneration) return;
-                    List<FoggingEvent> events = new ArrayList<>();
-                    for (DocumentSnapshot doc : queryDocumentSnapshots) {
-                        FoggingEvent event = FirebaseSafeRead.toObject(doc, FoggingEvent.class);
-                        if (event != null) {
-                            event.id = doc.getId();
-                            events.add(event);
+                    ReportWorker.run(() -> {
+                        if (requestGeneration != waterOutlookRequestGeneration) return;
+                        final List<FoggingEvent> events;
+                        try {
+                            events = parseFoggingEvents(queryDocumentSnapshots, "left out of Water Outlook");
+                        } catch (Exception e) {
+                            ReportWorker.postToMain(() -> {
+                                if (!isAdded() || getView() == null || requestGeneration != waterOutlookRequestGeneration) return;
+                                Log.e("FoggingReports", "Error reading recent fogging activity for Water Outlook", e);
+                                showWaterOutlookUnavailable();
+                            });
+                            return;
                         }
-                    }
-                    fetchWaterOutlookBoundaryEvent(requestGeneration, events, lookbackStartMs, nowMs);
+                        ReportWorker.postToMain(() -> {
+                            if (!isAdded() || getView() == null || requestGeneration != waterOutlookRequestGeneration) return;
+                            fetchWaterOutlookBoundaryEvent(requestGeneration, events, lookbackStartMs, nowMs);
+                        });
+                    });
                 })
                 .addOnFailureListener(e -> {
                     if (!isAdded() || requestGeneration != waterOutlookRequestGeneration) return;
@@ -1595,14 +1716,36 @@ public class FoggingReportsFragment extends Fragment {
     }
 
     private void computeWaterOutlookUsage(long requestGeneration, List<FoggingEvent> events, long lookbackStartMs, long nowMs, boolean isRunning) {
-        // Bucket size is irrelevant here (Water Outlook renders no chart);
-        // FoggingReportProcessor is reused purely for its session
-        // reconstruction, boundary-clipping and anomaly exclusion - never
-        // for its getObservedDays(), which anchors to the earliest event
-        // found inside the window and so is unsuitable here (see
-        // observationDays below).
-        FoggingReportSummary summary = FoggingReportProcessor.process(events, lookbackStartMs, nowMs, 24L * 60 * 60 * 1000, isRunning);
-        long recentTotalFoggingDurationMs = summary.getTotalDurationMs();
+        // Session reconstruction runs on a worker; only the resulting total
+        // comes back to the main thread to continue the chain.
+        ReportWorker.run(() -> {
+            if (requestGeneration != waterOutlookRequestGeneration) return;
+            final long total;
+            try {
+                // Bucket size is irrelevant here (Water Outlook renders no chart);
+                // FoggingReportProcessor is reused purely for its session
+                // reconstruction, boundary-clipping and anomaly exclusion - never
+                // for its getObservedDays(), which anchors to the earliest event
+                // found inside the window and so is unsuitable here (see
+                // observationDays below).
+                total = FoggingReportProcessor.process(events, lookbackStartMs, nowMs, 24L * 60 * 60 * 1000, isRunning)
+                        .getTotalDurationMs();
+            } catch (Exception e) {
+                ReportWorker.postToMain(() -> {
+                    if (!isAdded() || getView() == null || requestGeneration != waterOutlookRequestGeneration) return;
+                    Log.e("FoggingReports", "Error processing recent fogging activity for Water Outlook", e);
+                    showWaterOutlookUnavailable();
+                });
+                return;
+            }
+            ReportWorker.postToMain(() -> {
+                if (!isAdded() || getView() == null || requestGeneration != waterOutlookRequestGeneration) return;
+                continueWaterOutlook(requestGeneration, total);
+            });
+        });
+    }
+
+    private void continueWaterOutlook(long requestGeneration, long recentTotalFoggingDurationMs) {
 
         // observationDays = the full fixed lookback window (7 days), not the
         // elapsed time since the earliest fogging event found inside it. A
@@ -1847,9 +1990,16 @@ public class FoggingReportsFragment extends Fragment {
             return;
         }
 
+        if (exportInProgress) {
+            Toast.makeText(getContext(), "An export is already in progress.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        exportInProgress = true;
+        if (btnShare != null) btnShare.setEnabled(false);
+
         // Full-screen, touch-intercepting overlay (same as loadData()'s own
         // use of it) rather than the old transient Toast - PDF generation
-        // runs on a real background Thread below, so without this the button
+        // runs on a background worker below, so without this the button
         // stayed tappable for the whole generation window and a second tap
         // could start a second concurrent generation/share sheet.
         layoutLoadingShownAt = SystemClock.elapsedRealtime();
@@ -1891,12 +2041,12 @@ public class FoggingReportsFragment extends Fragment {
         // chart-capture-then-generate shape.
         View root = getView();
         if (root == null) {
-            hideLayoutLoading();
+            finishExport(null, null, null);
             return;
         }
         root.post(() -> {
             if (!isAdded() || getContext() == null) {
-                hideLayoutLoading();
+                finishExport(null, null, null);
                 return;
             }
             barChart.highlightValue(null);
@@ -1923,54 +2073,65 @@ public class FoggingReportsFragment extends Fragment {
             final String userName = requireContext()
                     .getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE)
                     .getString("user_name", "User");
-            final androidx.fragment.app.FragmentActivity hostActivity = requireActivity();
 
-            new Thread(() -> {
-                File pdfFile = null;
-                Exception failure = null;
+            ReportWorker.run(() -> {
+                final long startedAt = SystemClock.elapsedRealtime();
+                final File result;
+                final Uri contentUri;
                 try {
                     CycleReportGenerator generator = new CycleReportGenerator(appContext);
-                    pdfFile = generator.generateFoggingReportPdf(filter, chartBitmap, sessions, status,
+                    result = generator.generateFoggingReportPdf(filter, chartBitmap, sessions, status,
                             totals, interpretation, userName);
-                } catch (IOException e) {
-                    failure = e;
+                    contentUri = FileProvider.getUriForFile(appContext, packageName + ".fileprovider", result);
+                } catch (Exception e) {
+                    Log.e("FoggingReports", "Error generating PDF", e);
+                    ReportWorker.postToMain(() -> finishExport(filter, null, null));
+                    return;
+                } finally {
+                    if (chartBitmap != null) chartBitmap.recycle();
                 }
-
-                final File result = pdfFile;
-                final Exception error = failure;
-                hostActivity.runOnUiThread(() -> {
-                    if (!isAdded()) {
-                        hideLayoutLoading();
-                        return;
-                    }
-                    if (error != null || result == null) {
-                        hideLayoutLoading();
-                        Log.e("FoggingReports", "Error generating PDF", error);
-                        NotificationHelper.showError(getContext(), "We couldn't generate the PDF report. Please try again.");
-                        return;
-                    }
-                    try {
-                        Uri contentUri = FileProvider.getUriForFile(appContext, packageName + ".fileprovider", result);
-                        // ACTION_SEND, not ACTION_VIEW - a "share sheet" hands the
-                        // file to another app (Drive, email, Messenger, etc.), which
-                        // ACTION_VIEW + createChooser does not do, it only offers a
-                        // viewer. Matches SystemReportsFragment's PDF/CSV export.
-                        Intent intent = new Intent(Intent.ACTION_SEND);
-                        intent.setType("application/pdf");
-                        intent.putExtra(Intent.EXTRA_SUBJECT, "Basilience Fogging Report");
-                        intent.putExtra(Intent.EXTRA_TEXT, "Attached is the fogging report for " + filter.periodLabel + ".");
-                        intent.putExtra(Intent.EXTRA_STREAM, contentUri);
-                        intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                        startActivity(Intent.createChooser(intent, "Export Report via:"));
-                    } catch (Exception e) {
-                        Log.e("FoggingReports", "Error opening PDF", e);
-                        NotificationHelper.showError(getContext(), "We couldn't open the PDF report.");
-                    } finally {
-                        hideLayoutLoading();
-                    }
-                });
-            }).start();
+                Log.i("ReportPerf", "Fogging PDF export took " + (SystemClock.elapsedRealtime() - startedAt)
+                        + " ms off the main thread");
+                ReportWorker.postToMain(() -> finishExport(filter, result, contentUri));
+            });
         });
+    }
+
+    /**
+     * Single completion point for the PDF export, always on the main thread.
+     * The in-progress flag is reset unconditionally; the UI and the share
+     * sheet are only touched if this screen is still showing. A null file
+     * means the export failed.
+     */
+    private void finishExport(FoggingReportFilter filter, File result, Uri contentUri) {
+        exportInProgress = false;
+        if (!isAdded() || getView() == null) {
+            if (result != null) Log.i("FoggingReports", "PDF finished after leaving the screen; saved as " + result.getName());
+            return;
+        }
+        if (btnShare != null) btnShare.setEnabled(true);
+        hideLayoutLoading();
+        if (filter == null) return;
+        if (result == null) {
+            NotificationHelper.showError(getContext(), "We couldn't generate the PDF report. Please try again.");
+            return;
+        }
+        try {
+            // ACTION_SEND, not ACTION_VIEW - a "share sheet" hands the
+            // file to another app (Drive, email, Messenger, etc.), which
+            // ACTION_VIEW + createChooser does not do, it only offers a
+            // viewer. Matches SystemReportsFragment's PDF/CSV export.
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.setType("application/pdf");
+            intent.putExtra(Intent.EXTRA_SUBJECT, "Basilience Fogging Report");
+            intent.putExtra(Intent.EXTRA_TEXT, "Attached is the fogging report for " + filter.periodLabel + ".");
+            intent.putExtra(Intent.EXTRA_STREAM, contentUri);
+            intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(intent, "Export Report via:"));
+        } catch (Exception e) {
+            Log.e("FoggingReports", "Error opening PDF", e);
+            NotificationHelper.showError(getContext(), "We couldn't open the PDF report.");
+        }
     }
 
     private void showInfoDialog() {
