@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -62,6 +63,7 @@ public class Auth_Login_Activity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
         super.onCreate(savedInstanceState);
+        SystemBarInsets.enable(this);
 
         // First-install walkthrough gate: checked before any of the existing
         // splash-overlay/session-restore logic below runs, so that logic stays
@@ -105,6 +107,8 @@ public class Auth_Login_Activity extends AppCompatActivity {
         String currentUid = helper.getCurrentUid();
 
         setContentView(R.layout.auth_login);
+        View loginContent = findViewById(android.R.id.content);
+        SystemBarInsets.fit(loginContent, null, loginContent, true);
         keepSplash[0] = false;
 
         startSplashOverlay();

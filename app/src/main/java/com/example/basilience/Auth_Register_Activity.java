@@ -34,7 +34,10 @@ public class Auth_Register_Activity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        SystemBarInsets.enable(this);
         setContentView(R.layout.auth_register);
+        View registerContent = findViewById(android.R.id.content);
+        SystemBarInsets.fit(registerContent, null, registerContent, true);
 
         if (getSupportActionBar() != null) getSupportActionBar().hide();
 

@@ -20,7 +20,10 @@ public class Auth_ForgotPass_Activity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) { // Fixed syntax error here
         super.onCreate(savedInstanceState);
+        SystemBarInsets.enable(this);
         setContentView(R.layout.activity_forgot_password);
+        View forgotContent = findViewById(android.R.id.content);
+        SystemBarInsets.fit(forgotContent, null, forgotContent, true);
 
         // 1. Initialize Views
         etForgotEmail = findViewById(R.id.etForgotEmail);

@@ -31,6 +31,7 @@
         app:itemTextColor="@color/nav_item_color"
         app:menu="@menu/bottom_nav_menu"
         app:labelVisibilityMode="labeled"
+        app:paddingBottomSystemWindowInsets="true"
         app:elevation="8dp" />
 
     </LinearLayout>

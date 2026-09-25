@@ -12,9 +12,14 @@
         <package android:name="com.android.vending" />
     </queries>
 
+    <!-- allowBackup is off on purpose: local data is only a signed-in session
+         (role, developer flags, selected device), Firebase Auth/FCM state and
+         caches, and restoring that on another phone would revive privileges that
+         no longer match the real sign-in. The two rule files below exclude
+         everything and stay as defense-in-depth in case backup is ever re-enabled. -->
     <application
         android:name=".MyApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -27,6 +32,7 @@
         <!-- Launcher Activity -->
         <activity
             android:name=".Auth_Login_Activity"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true"
             android:theme="@style/Theme.App.Starting">
             <intent-filter>
@@ -39,11 +45,13 @@
         <!-- Signup Activity -->
         <activity
             android:name=".Auth_Register_Activity"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Basilience" />
 
         <!-- Signup Activity -->
         <activity
             android:name=".Auth_ForgotPass_Activity"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Basilience" />
         <activity
             android:name=".MainActivity"

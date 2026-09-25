@@ -14,9 +14,9 @@ import androidx.fragment.app.FragmentManager;
 import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.navigation.ui.NavigationUI;
-import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.google.android.material.badge.BadgeDrawable;
+import androidx.core.view.ViewCompat;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.card.MaterialCardView;
 import com.google.firebase.database.DataSnapshot;
@@ -128,12 +128,15 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         
         retrieveAndSaveFCMToken();
-        // Ensure status bar icons are dark (for light background)
-        WindowInsetsControllerCompat windowInsetsController =
-                new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
-        windowInsetsController.setAppearanceLightStatusBars(true);
+        // Edge-to-edge with dark status/navigation icons (light background).
+        SystemBarInsets.enable(this);
 
         setContentView(R.layout.activity_main);
+        // The status bar and cutout pad the content; the navigation bar pads
+        // the BottomNavigationView itself so its white background reaches the
+        // screen edge. The keyboard is left out: this Activity pans (adjustPan).
+        SystemBarInsets.fit(findViewById(android.R.id.content), findViewById(R.id.bottom_navigation),
+                findViewById(R.id.nav_host_fragment), false);
 
         // 1. Initialize Banner and HIDE it immediately
         activeAlertBanner = findViewById(R.id.activeAlertBanner);
@@ -248,6 +251,7 @@ public class MainActivity extends AppCompatActivity {
 
                 if (isManagementScreen) {
                     bottomNav.setVisibility(View.VISIBLE);
+                    ViewCompat.requestApplyInsets(findViewById(android.R.id.content));
                     if (bottomNav.getMenu().findItem(R.id.DeviceManagementFragment) == null) {
                         bottomNav.getMenu().clear();
                         bottomNav.inflateMenu(R.menu.management_bottom_nav_menu);
@@ -284,6 +288,7 @@ public class MainActivity extends AppCompatActivity {
                             || id == R.id.cycleDetailsFragment || id == R.id.cycleaddFragment
                             || id == R.id.harvestLogFragment) {
                         bottomNav.setVisibility(View.VISIBLE);
+                        ViewCompat.requestApplyInsets(findViewById(android.R.id.content));
                         if (bottomNav.getMenu().findItem(R.id.home) == null) {
                             bottomNav.getMenu().clear();
                             bottomNav.inflateMenu(R.menu.bottom_nav_menu);
@@ -309,6 +314,7 @@ public class MainActivity extends AppCompatActivity {
                         }
                     } else {
                         bottomNav.setVisibility(View.GONE);
+                        ViewCompat.requestApplyInsets(findViewById(android.R.id.content));
                     }
                 }
 
