@@ -909,39 +909,44 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
                 // Reuse firmware-published alert truth for presentation only.
                 // No Android-side threshold or warning range is introduced.
-                overrideFlags.phLow = isAlertActive(snapshot, "phLow");
-                overrideFlags.phHigh = isAlertActive(snapshot, "phHigh");
-                overrideFlags.ecLow = isAlertActive(snapshot, "ecLow");
-                overrideFlags.lowWater = isAlertActive(snapshot, "lowWater");
+                // A flag that is present but the wrong type is unknown, not
+                // "inactive": it keeps the last shown state so a malformed value
+                // can never make an alert look recovered. A missing flag still
+                // means not active, as before.
+                overrideFlags.phLow = isAlertActive(snapshot, "phLow", overrideFlags.phLow);
+                overrideFlags.phHigh = isAlertActive(snapshot, "phHigh", overrideFlags.phHigh);
+                overrideFlags.ecLow = isAlertActive(snapshot, "ecLow", overrideFlags.ecLow);
+                overrideFlags.lowWater = isAlertActive(snapshot, "lowWater", overrideFlags.lowWater);
                 alertsLoaded = true;
 
                 // Direction is kept, not collapsed, so each reading can say
                 // Below Range / Normal / Above Range rather than just "Warning".
-                phBelowRange = isAlertActive(snapshot, "phLow");
-                phAboveRange = isAlertActive(snapshot, "phHigh");
+                phBelowRange = isAlertActive(snapshot, "phLow", phBelowRange);
+                phAboveRange = isAlertActive(snapshot, "phHigh", phAboveRange);
+                Boolean phOutOfRange = alertFlag(snapshot, "phOutOfRange");
                 phAlertActive = phBelowRange || phAboveRange
-                        || isAlertActive(snapshot, "phOutOfRange");
+                        || (phOutOfRange != null ? phOutOfRange : phAlertActive);
 
-                ecBelowRange = isAlertActive(snapshot, "ecLow");
-                ecAboveRange = isAlertActive(snapshot, "ecHigh");
+                ecBelowRange = isAlertActive(snapshot, "ecLow", ecBelowRange);
+                ecAboveRange = isAlertActive(snapshot, "ecHigh", ecAboveRange);
                 ecAlertActive = ecBelowRange || ecAboveRange;
 
-                airTempBelowRange = isAlertActive(snapshot, "lowAirTemperature");
-                airTempAboveRange = isAlertActive(snapshot, "highTemperature");
+                airTempBelowRange = isAlertActive(snapshot, "lowAirTemperature", airTempBelowRange);
+                airTempAboveRange = isAlertActive(snapshot, "highTemperature", airTempAboveRange);
                 airTemperatureAlertActive = airTempBelowRange || airTempAboveRange;
 
-                humidityBelowRange = isAlertActive(snapshot, "humidityLow");
-                humidityAboveRange = isAlertActive(snapshot, "humidityHigh");
+                humidityBelowRange = isAlertActive(snapshot, "humidityLow", humidityBelowRange);
+                humidityAboveRange = isAlertActive(snapshot, "humidityHigh", humidityAboveRange);
                 humidityAlertActive = humidityBelowRange || humidityAboveRange;
 
-                waterTempBelowRange = isAlertActive(snapshot, "waterTempLow");
-                waterTempAboveRange = isAlertActive(snapshot, "waterTempOutOfRange");
+                waterTempBelowRange = isAlertActive(snapshot, "waterTempLow", waterTempBelowRange);
+                waterTempAboveRange = isAlertActive(snapshot, "waterTempOutOfRange", waterTempAboveRange);
                 waterTemperatureAlertActive = waterTempBelowRange || waterTempAboveRange;
 
                 // Target-range classification for display. lowWater stays the
                 // separate refill CONTROL signal and is not shown as a range.
-                waterLevelBelowRange = isAlertActive(snapshot, "waterLevelLow");
-                waterLevelAboveRange = isAlertActive(snapshot, "waterLevelHigh");
+                waterLevelBelowRange = isAlertActive(snapshot, "waterLevelLow", waterLevelBelowRange);
+                waterLevelAboveRange = isAlertActive(snapshot, "waterLevelHigh", waterLevelAboveRange);
                 waterLevelAlertActive = waterLevelBelowRange || waterLevelAboveRange;
                 updateSensorUI();
             }
@@ -960,13 +965,13 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 if (!isAdded()) return;
 
                 // Sync status: reservoirLocked & safetyLock
-                Boolean reservoirLocked = snapshot.child("reservoirLocked").getValue(Boolean.class);
+                Boolean reservoirLocked = FirebaseSafeRead.bool(snapshot.child("reservoirLocked"));
                 if (reservoirLocked != null) {
                     isReservoirLocked = reservoirLocked;
                     operationContext.reservoirLocked = reservoirLocked;
                 }
 
-                Boolean safetyLock = snapshot.child("safetyLock").getValue(Boolean.class);
+                Boolean safetyLock = FirebaseSafeRead.bool(snapshot.child("safetyLock"));
                 if (safetyLock != null) {
                     isSafetyLock = safetyLock;
                     operationContext.safetyLock = safetyLock;
@@ -977,24 +982,24 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 // reads the rest of this same node - none of these are a new
                 // RTDB path, just fields on /status this listener wasn't
                 // pulling out before.
-                Integer currentMode = snapshot.child("currentMode").getValue(Integer.class);
+                Integer currentMode = FirebaseSafeRead.integer(snapshot.child("currentMode"));
                 operationContext.currentMode = currentMode != null ? currentMode : -1;
-                operationContext.phDirection = snapshot.child("phDirection").getValue(String.class);
-                operationContext.ecDirection = snapshot.child("ecDirection").getValue(String.class);
-                operationContext.phSubsystemLocked = Boolean.TRUE.equals(snapshot.child("phSubsystemLocked").getValue(Boolean.class));
-                operationContext.ecSubsystemLocked = Boolean.TRUE.equals(snapshot.child("ecSubsystemLocked").getValue(Boolean.class));
-                operationContext.refillSubsystemLocked = Boolean.TRUE.equals(snapshot.child("refillSubsystemLocked").getValue(Boolean.class));
-                operationContext.coolingSubsystemLocked = Boolean.TRUE.equals(snapshot.child("coolingSubsystemLocked").getValue(Boolean.class));
+                operationContext.phDirection = FirebaseSafeRead.str(snapshot.child("phDirection"));
+                operationContext.ecDirection = FirebaseSafeRead.str(snapshot.child("ecDirection"));
+                operationContext.phSubsystemLocked = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot.child("phSubsystemLocked")));
+                operationContext.ecSubsystemLocked = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot.child("ecSubsystemLocked")));
+                operationContext.refillSubsystemLocked = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot.child("refillSubsystemLocked")));
+                operationContext.coolingSubsystemLocked = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot.child("coolingSubsystemLocked")));
 
                 // Stabilizing-loader state - see StabilizeLoader's own
                 // comment. Same /status node, just fields this listener
                 // wasn't pulling out before.
                 int mode = operationContext.currentMode;
-                boolean phWatchPhaseActive = Boolean.TRUE.equals(snapshot.child("phWatchPhaseActive").getValue(Boolean.class));
-                boolean ecWatchPhaseActive = Boolean.TRUE.equals(snapshot.child("ecWatchPhaseActive").getValue(Boolean.class));
-                Long phSecs = snapshot.child("phStabilizeSecondsRemaining").getValue(Long.class);
-                Long ecSecs = snapshot.child("ecStabilizeSecondsRemaining").getValue(Long.class);
-                Long refillSecs = snapshot.child("refillSecondsRemaining").getValue(Long.class);
+                boolean phWatchPhaseActive = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot.child("phWatchPhaseActive")));
+                boolean ecWatchPhaseActive = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot.child("ecWatchPhaseActive")));
+                Long phSecs = FirebaseSafeRead.lng(snapshot.child("phStabilizeSecondsRemaining"));
+                Long ecSecs = FirebaseSafeRead.lng(snapshot.child("ecStabilizeSecondsRemaining"));
+                Long refillSecs = FirebaseSafeRead.lng(snapshot.child("refillSecondsRemaining"));
 
                 boolean phUnstable = mode == MODE_DOSING_PH
                         || (mode == MODE_STABILIZING_PH && !phWatchPhaseActive);
@@ -1021,7 +1026,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 if (!isAdded()) return;
 
                 // Sync Manual Mode from RTDB
-                Boolean manualMode = snapshot.getValue(Boolean.class);
+                Boolean manualMode = FirebaseSafeRead.bool(snapshot);
                 if (manualMode != null) {
                     isManualMode = manualMode;
                     SwitchMaterial modeSwitch = getView() != null ? getView().findViewById(R.id.switchMode) : null;
@@ -1161,7 +1166,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                     java.util.Set<String> stillPending = new java.util.HashSet<>();
                     for (DataSnapshot child : snapshot.getChildren()) {
                         String uid = child.getKey();
-                        String status = child.child("status").getValue(String.class);
+                        String status = FirebaseSafeRead.str(child.child("status"));
                         if (uid == null || !"PENDING".equals(status)) continue;
                         stillPending.add(uid);
                         if (grantDialogShownForUid.add(uid)) {
@@ -1173,9 +1178,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                     String myUid = dbHelper.getCurrentUid();
                     DataSnapshot mine = myUid != null ? snapshot.child(myUid) : null;
                     String previousStatus = myGrantStatus;
-                    String newStatus = mine != null ? mine.child("status").getValue(String.class) : null;
+                    String newStatus = mine != null ? FirebaseSafeRead.str(mine.child("status")) : null;
                     myGrantStatus = newStatus != null ? newStatus : "";
-                    Long resolvedAt = mine != null ? mine.child("resolvedAt").getValue(Long.class) : null;
+                    Long resolvedAt = mine != null ? FirebaseSafeRead.lng(mine.child("resolvedAt")) : null;
                     myGrantResolvedAt = resolvedAt != null ? resolvedAt : 0L;
 
                     if (manualControlGrantsFirstLoadDone && !myGrantStatus.equals(previousStatus)) {
@@ -1211,8 +1216,15 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (!isAdded()) return;
-                Long value = snapshot.getValue(Long.class);
-                manualModeEnabledAt = value != null ? value : 0L;
+                Long value = FirebaseSafeRead.lng(snapshot);
+                // Absent means no known session start (0), as before. A present
+                // but malformed value keeps the last known one: treating it as
+                // 0 would read as "no session start, any grant counts".
+                if (value != null) {
+                    manualModeEnabledAt = value;
+                } else if (!snapshot.exists()) {
+                    manualModeEnabledAt = 0L;
+                }
                 updateActuatorControls();
             }
 
@@ -1263,12 +1275,12 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         Boolean running = null;
         String source = "";
         if (stateSnap.getValue() instanceof Boolean) {
-            running = stateSnap.getValue(Boolean.class);
+            running = FirebaseSafeRead.bool(stateSnap);
             state = Boolean.TRUE.equals(running) ? 5 : 0;
         } else if (stateSnap.hasChild("state")) {
-            state = stateSnap.child("state").getValue(Integer.class);
-            running = stateSnap.child("running").getValue(Boolean.class);
-            String reportedSource = stateSnap.child("source").getValue(String.class);
+            state = FirebaseSafeRead.integer(stateSnap.child("state"));
+            running = FirebaseSafeRead.bool(stateSnap.child("running"));
+            String reportedSource = FirebaseSafeRead.str(stateSnap.child("source"));
             if (reportedSource != null) source = reportedSource;
         }
 
@@ -1277,15 +1289,22 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             actuator.physicalRunning = running != null ? running : state == 5;
             actuator.physicalSource = source;
             actuator.strategy = stateSnap.hasChild("strategy")
-                    ? stateSnap.child("strategy").getValue(String.class)
+                    ? FirebaseSafeRead.str(stateSnap.child("strategy"))
                     : "";
             actuator.reason = stateSnap.hasChild("reason")
-                    ? stateSnap.child("reason").getValue(String.class)
+                    ? FirebaseSafeRead.str(stateSnap.child("reason"))
                     : null;
             actuator.overrideActive = Boolean.TRUE.equals(
-                    stateSnap.child("overrideActive").getValue(Boolean.class));
-            Integer speed = stateSnap.child("speed").getValue(Integer.class);
-            actuator.speed = speed != null ? speed : 100;
+                    FirebaseSafeRead.bool(stateSnap.child("overrideActive")));
+            DataSnapshot speedSnap = stateSnap.child("speed");
+            Integer speed = FirebaseSafeRead.integer(speedSnap);
+            // Absent speed means full speed, as before. A present but malformed
+            // value keeps the last shown speed instead of showing a made-up 100.
+            if (speed != null) {
+                actuator.speed = speed;
+            } else if (!speedSnap.exists()) {
+                actuator.speed = 100;
+            }
             updateActuatorUI(card, actuator);
         }
     }
@@ -1301,8 +1320,15 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private void syncNutrientsState(DataSnapshot growSnap, DataSnapshot bloomSnap) {
         if (actNutrients == null) return;
 
-        int growState  = getSnapState(growSnap);
-        int bloomState = getSnapState(bloomSnap);
+        Integer growStateOrNull = getSnapState(growSnap);
+        Integer bloomStateOrNull = getSnapState(bloomSnap);
+        if (growStateOrNull == null || bloomStateOrNull == null) {
+            // A malformed state must not be shown as OFF; keep what is on screen.
+            Log.w("ParametersMonitoring", "Nutrient pump state is malformed; leaving the card unchanged");
+            return;
+        }
+        int growState  = growStateOrNull;
+        int bloomState = bloomStateOrNull;
 
         int combinedState;
         String combinedReason = null;
@@ -1311,9 +1337,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             // Either pump rejected — show REJECTED and surface the reason
             combinedState = 3;
             if (growState == 3 && growSnap.hasChild("reason"))
-                combinedReason = growSnap.child("reason").getValue(String.class);
+                combinedReason = FirebaseSafeRead.str(growSnap.child("reason"));
             else if (bloomState == 3 && bloomSnap.hasChild("reason"))
-                combinedReason = bloomSnap.child("reason").getValue(String.class);
+                combinedReason = FirebaseSafeRead.str(bloomSnap.child("reason"));
         } else if (growState == 5 && bloomState == 5) {
             combinedState = 5; // Both fully RUNNING
         } else if (growState == 0 && bloomState == 0) {
@@ -1324,33 +1350,39 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
 
         nutrients.state  = combinedState;
-        Boolean growRunning = growSnap.child("running").getValue(Boolean.class);
-        Boolean bloomRunning = bloomSnap.child("running").getValue(Boolean.class);
+        Boolean growRunning = FirebaseSafeRead.bool(growSnap.child("running"));
+        Boolean bloomRunning = FirebaseSafeRead.bool(bloomSnap.child("running"));
         nutrients.physicalRunning = growRunning != null || bloomRunning != null
                 ? Boolean.TRUE.equals(growRunning) || Boolean.TRUE.equals(bloomRunning)
                 : combinedState == 5;
-        String growSource = growSnap.child("source").getValue(String.class);
-        String bloomSource = bloomSnap.child("source").getValue(String.class);
+        String growSource = FirebaseSafeRead.str(growSnap.child("source"));
+        String bloomSource = FirebaseSafeRead.str(bloomSnap.child("source"));
         nutrients.physicalSource = "manual".equalsIgnoreCase(growSource) || "manual".equalsIgnoreCase(bloomSource)
                 ? "manual"
                 : ("automatic".equalsIgnoreCase(growSource) || "automatic".equalsIgnoreCase(bloomSource)
                     ? "automatic" : "");
         nutrients.reason = combinedReason;
-        nutrients.overrideActive = Boolean.TRUE.equals(growSnap.child("overrideActive").getValue(Boolean.class))
-                || Boolean.TRUE.equals(bloomSnap.child("overrideActive").getValue(Boolean.class));
+        nutrients.overrideActive = Boolean.TRUE.equals(FirebaseSafeRead.bool(growSnap.child("overrideActive")))
+                || Boolean.TRUE.equals(FirebaseSafeRead.bool(bloomSnap.child("overrideActive")));
         updateActuatorUI(actNutrients, nutrients);
     }
 
-    /** Reads the integer state from an actuatorStatus snapshot node. Returns 0 (OFF) if absent. */
-    private int getSnapState(DataSnapshot snap) {
+    /**
+     * Reads the integer state from an actuatorStatus snapshot node. Returns 0 (OFF) if the
+     * node is absent, and null if a value is present but malformed (so the caller can keep
+     * the last shown state instead of showing OFF).
+     */
+    private Integer getSnapState(DataSnapshot snap) {
         if (snap == null || !snap.exists()) return 0;
-        if (snap.getValue() instanceof Boolean)
-            return Boolean.TRUE.equals(snap.getValue(Boolean.class)) ? 5 : 0;
+        Object raw = snap.getValue();
+        if (raw instanceof Boolean)
+            return Boolean.TRUE.equals(FirebaseSafeRead.bool(snap)) ? 5 : 0;
         if (snap.hasChild("state")) {
-            Integer v = snap.child("state").getValue(Integer.class);
-            return v != null ? v : 0;
+            return FirebaseSafeRead.integer(snap.child("state"));
         }
-        return 0;
+        // A node with children but no state field reads as OFF, as before;
+        // any other bare value (a string, a number) is malformed.
+        return snap.hasChildren() ? Integer.valueOf(0) : null;
     }
 
     /**
@@ -1898,8 +1930,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 }
 
                 DataSnapshot snap = task.getResult();
-                Integer currentReqId = snap.child("requestId").getValue(Integer.class);
-                String state = snap.child("state").getValue(String.class);
+                Integer currentReqId = FirebaseSafeRead.integer(snap.child("requestId"));
+                String state = FirebaseSafeRead.str(snap.child("state"));
                 
                 // If the operation ID doesn't match yet, keep waiting
                 if (currentReqId == null || currentReqId != requestId) {
@@ -1925,7 +1957,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                     }, 1500);
                     return;
                 } else if ("FAILED".equals(state) || "REJECTED".equals(state)) {
-                    String reason = snap.child("reason").getValue(String.class);
+                    String reason = FirebaseSafeRead.str(snap.child("reason"));
                     showActuatorLoading("Error", reason != null && !reason.isEmpty() ? reason : "Operation failed.");
         mainHandler.postDelayed(() -> {
                         hideActuatorLoading();
@@ -2283,8 +2315,20 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         maybeShowCoachMarkTour();
     }
 
-    private boolean isAlertActive(DataSnapshot alerts, String key) {
-        return Boolean.TRUE.equals(alerts.child(key).getValue(Boolean.class));
+    /**
+     * TRUE/FALSE for a real boolean flag, FALSE when the flag is missing (the firmware's
+     * "not active"), and null when the flag is present but the wrong type (unknown).
+     */
+    private Boolean alertFlag(DataSnapshot alerts, String key) {
+        DataSnapshot flag = alerts.child(key);
+        if (!flag.exists()) return Boolean.FALSE;
+        return FirebaseSafeRead.bool(flag);
+    }
+
+    /** Same, collapsed to a boolean: an unknown (malformed) flag keeps lastKnown instead of reading as inactive. */
+    private boolean isAlertActive(DataSnapshot alerts, String key, boolean lastKnown) {
+        Boolean active = alertFlag(alerts, key);
+        return active != null ? active : lastKnown;
     }
 
     /** Applies the same Normal/Warning/No Data state to both the value's color and a text status label. */

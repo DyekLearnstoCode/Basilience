@@ -255,7 +255,7 @@ public class Database_Helper {
 
         return getUserProfile(uid).onSuccessTask(doc -> {
             if (doc.exists()) {
-                cachedRole = doc.getString("role");
+                cachedRole = FirebaseSafeRead.fsString(doc, "role");
                 if (RoleConstants.ROLE_ADMIN.equalsIgnoreCase(cachedRole)) {
                     return Tasks.forResult(null);
                 }
@@ -541,7 +541,8 @@ public class Database_Helper {
                     if (!task.isSuccessful() || task.getResult() == null || !task.getResult().exists()) {
                         return null;
                     }
-                    return task.getResult().getString("harvestScaleId");
+                    // A malformed value reads as null, i.e. "no scale paired".
+                    return FirebaseSafeRead.fsString(task.getResult(), "harvestScaleId");
                 });
     }
 
@@ -651,7 +652,9 @@ public class Database_Helper {
                         boolean newestEntryUnverifiedCaptureTime = false;
 
                         for (DataSnapshot child : children) {
-                            Double grams = child.child("grams").getValue(Double.class);
+                            // A malformed weight reads as null and the entry is skipped
+                            // (logged with its path); a weight is never guessed.
+                            Double grams = FirebaseSafeRead.dbl(child.child("grams"));
                             if (grams == null || child.getKey() == null) continue;
 
                             // Read as Double, not Long: the firmware writes
@@ -662,8 +665,8 @@ public class Database_Helper {
                             // getValue(Long.class) coercion isn't guaranteed
                             // to accept. Double.class accepts any JSON
                             // number regardless of shape.
-                            Double capturedAtRaw = child.child("capturedAt").getValue(Double.class);
-                            Double syncedAtRaw = child.child("syncedAt").getValue(Double.class);
+                            Double capturedAtRaw = FirebaseSafeRead.dbl(child.child("capturedAt"));
+                            Double syncedAtRaw = FirebaseSafeRead.dbl(child.child("syncedAt"));
                             long capturedAtSec = capturedAtRaw != null ? Math.round(capturedAtRaw) : 0L;
                             long syncedAtSec = syncedAtRaw != null ? Math.round(syncedAtRaw) : 0L;
 
@@ -799,7 +802,9 @@ public class Database_Helper {
                     return rtdb.getReference("devices").child(deviceIdAtCallTime).child("commands").child("manualMode").get();
                 })
                 .onSuccessTask(snapshot -> {
-                    Boolean isManual = snapshot.getValue(Boolean.class);
+                    // A malformed manualMode reads as null, which is treated as
+                    // "not in manual mode" (the command is refused).
+                    Boolean isManual = FirebaseSafeRead.bool(snapshot);
                     Log.d(TAG, "[MANUAL-APP] manualMode=" + isManual + " actuator=" + actuatorName
                             + " deviceId=" + deviceIdAtCallTime);
                     if (isManual != null && isManual) {
@@ -821,9 +826,9 @@ public class Database_Helper {
                                     // success/failure result returned to the caller.
                                     commandRef.get()
                                             .addOnSuccessListener(readBack -> Log.d(TAG,
-                                                    "[MANUAL-APP] Stored state=" + readBack.child("state").getValue(Boolean.class)
-                                                            + " source=" + readBack.child("source").getValue(String.class)
-                                                            + " timestamp=" + readBack.child("timestamp").getValue(Long.class)
+                                                    "[MANUAL-APP] Stored state=" + readBack.child("state").getValue()
+                                                            + " source=" + readBack.child("source").getValue()
+                                                            + " timestamp=" + readBack.child("timestamp").getValue()
                                                             + " actuator=" + actuatorName))
                                             .addOnFailureListener(e -> Log.w(TAG,
                                                     "[MANUAL-APP] Read-back failed (write already succeeded) actuator=" + actuatorName, e));
@@ -937,7 +942,7 @@ public class Database_Helper {
             }
 
             return deviceRef.child("commands").child("manualMode").get().onSuccessTask(snapshot -> {
-                boolean alreadyOn = Boolean.TRUE.equals(snapshot.getValue(Boolean.class));
+                boolean alreadyOn = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot));
                 Map<String, Object> updates = new HashMap<>();
                 updates.put("manualControlGrants/" + farmerUid + "/status", "APPROVED");
                 updates.put("manualControlGrants/" + farmerUid + "/resolvedByUid", adminUid);
@@ -977,8 +982,10 @@ public class Database_Helper {
                             "You do not have manual control access. Request access first."));
                 }
                 DataSnapshot grant = grantTask.getResult();
-                String grantStatus = grant.child("status").getValue(String.class);
-                Long resolvedAt = grant.child("resolvedAt").getValue(Long.class);
+                // Malformed values read as null, and a null status or resolvedAt
+                // is rejected below (fails closed).
+                String grantStatus = FirebaseSafeRead.str(grant.child("status"));
+                Long resolvedAt = FirebaseSafeRead.lng(grant.child("resolvedAt"));
                 Log.d(TAG, "[GRANT-CHECK] uid=" + uid + " grantStatus=" + grantStatus + " resolvedAt=" + resolvedAt);
                 if (!"APPROVED".equals(grantStatus) || resolvedAt == null) {
                     Log.e(TAG, "[GRANT-CHECK] rejected: not APPROVED or no resolvedAt");
@@ -992,7 +999,15 @@ public class Database_Helper {
                                 "Your manual control access has expired. Please request again."));
                     }
                     DataSnapshot sessionSnapshot = sessionTask.getResult();
-                    Long sessionStart = sessionSnapshot != null ? sessionSnapshot.getValue(Long.class) : null;
+                    Long sessionStart = sessionSnapshot != null ? FirebaseSafeRead.lng(sessionSnapshot) : null;
+                    if (sessionSnapshot != null && sessionSnapshot.exists() && sessionStart == null) {
+                        // Present but not a number: the session start is unknown
+                        // because the value is bad, not because it was never
+                        // stamped, so do not fall through to "any grant counts".
+                        Log.e(TAG, "[GRANT-CHECK] rejected: manualModeEnabledAt is malformed");
+                        return Tasks.forException(new IllegalStateException(
+                                "Your manual control access has expired. Please request again."));
+                    }
                     Log.d(TAG, "[GRANT-CHECK] manualModeEnabledAt=" + sessionStart + " (exists="
                             + (sessionSnapshot != null && sessionSnapshot.exists()) + ") resolvedAt=" + resolvedAt);
                     // A missing manualModeEnabledAt means Manual Mode has
@@ -1121,7 +1136,7 @@ public class Database_Helper {
 
         return getUserProfile(uid).onSuccessTask(doc -> {
             if (doc.exists()) {
-                cachedRole = doc.getString("role");
+                cachedRole = FirebaseSafeRead.fsString(doc, "role");
                 if (RoleConstants.ROLE_ADMIN.equalsIgnoreCase(cachedRole)) {
                     return Tasks.forResult(null);
                 }
@@ -1885,7 +1900,12 @@ public class Database_Helper {
 
                     List<String> deviceIds = new ArrayList<>();
                     for (DocumentSnapshot doc : assignmentTask.getResult()) {
-                        deviceIds.add(doc.getString("deviceId"));
+                        // A malformed or missing deviceId skips just that assignment.
+                        String assignedDeviceId = FirebaseSafeRead.fsString(doc, "deviceId");
+                        if (assignedDeviceId != null) deviceIds.add(assignedDeviceId);
+                    }
+                    if (deviceIds.isEmpty()) {
+                        return db.collection("devices").whereEqualTo("deviceId", "NONE").get();
                     }
 
                     return db.collection("devices").whereIn(FieldPath.documentId(), deviceIds).get();

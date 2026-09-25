@@ -109,6 +109,12 @@ public class MainActivity extends AppCompatActivity {
     private BottomNavigationView bottomNav;
     private ListenerRegistration notificationCounterListener;
 
+    private static final String[] CURRENT_PARAMETER_ALERT_KEYS = {
+            "lowWater", "criticalLowWater", "ecLow", "ecHigh", "phLow", "phHigh",
+            "lowAirTemperature", "highTemperature", "waterTempOutOfRange", "waterTempLow",
+            "humidityLow", "humidityHigh", "waterLevelLow", "waterLevelHigh"
+    };
+
     private SharedPreferences basiliencePrefs;
     private SharedPreferences.OnSharedPreferenceChangeListener selectedDevicePrefListener;
 
@@ -809,34 +815,18 @@ public class MainActivity extends AppCompatActivity {
         currentParameterAlertListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
-                currentParameterAlertStates.put("lowWater",
-                        Boolean.TRUE.equals(snapshot.child("lowWater").getValue(Boolean.class)));
-                currentParameterAlertStates.put("criticalLowWater",
-                        Boolean.TRUE.equals(snapshot.child("criticalLowWater").getValue(Boolean.class)));
-                currentParameterAlertStates.put("ecLow",
-                        Boolean.TRUE.equals(snapshot.child("ecLow").getValue(Boolean.class)));
-                currentParameterAlertStates.put("ecHigh",
-                        Boolean.TRUE.equals(snapshot.child("ecHigh").getValue(Boolean.class)));
-                currentParameterAlertStates.put("phLow",
-                        Boolean.TRUE.equals(snapshot.child("phLow").getValue(Boolean.class)));
-                currentParameterAlertStates.put("phHigh",
-                        Boolean.TRUE.equals(snapshot.child("phHigh").getValue(Boolean.class)));
-                currentParameterAlertStates.put("lowAirTemperature",
-                        Boolean.TRUE.equals(snapshot.child("lowAirTemperature").getValue(Boolean.class)));
-                currentParameterAlertStates.put("highTemperature",
-                        Boolean.TRUE.equals(snapshot.child("highTemperature").getValue(Boolean.class)));
-                currentParameterAlertStates.put("waterTempOutOfRange",
-                        Boolean.TRUE.equals(snapshot.child("waterTempOutOfRange").getValue(Boolean.class)));
-                currentParameterAlertStates.put("waterTempLow",
-                        Boolean.TRUE.equals(snapshot.child("waterTempLow").getValue(Boolean.class)));
-                currentParameterAlertStates.put("humidityLow",
-                        Boolean.TRUE.equals(snapshot.child("humidityLow").getValue(Boolean.class)));
-                currentParameterAlertStates.put("humidityHigh",
-                        Boolean.TRUE.equals(snapshot.child("humidityHigh").getValue(Boolean.class)));
-                currentParameterAlertStates.put("waterLevelLow",
-                        Boolean.TRUE.equals(snapshot.child("waterLevelLow").getValue(Boolean.class)));
-                currentParameterAlertStates.put("waterLevelHigh",
-                        Boolean.TRUE.equals(snapshot.child("waterLevelHigh").getValue(Boolean.class)));
+                for (String key : CURRENT_PARAMETER_ALERT_KEYS) {
+                    DataSnapshot flag = snapshot.child(key);
+                    if (!flag.exists()) {
+                        currentParameterAlertStates.put(key, false); // absent = not active, as before
+                        continue;
+                    }
+                    Boolean active = FirebaseSafeRead.bool(flag);
+                    // A malformed flag keeps the last known state for that alert
+                    // (logged by FirebaseSafeRead) instead of flipping it to "not
+                    // active", which would look like the alert had recovered.
+                    if (active != null) currentParameterAlertStates.put(key, active);
+                }
                 reconcileCurrentParameterAlerts();
             }
 
@@ -1044,7 +1034,12 @@ public class MainActivity extends AppCompatActivity {
                     }
                     long total = 0;
                     if (snapshot != null && snapshot.exists()) {
-                        Long value = snapshot.getLong("total");
+                        Long value = FirebaseSafeRead.fsLong(snapshot, "total");
+                        if (value == null && snapshot.contains("total")) {
+                            // Present but not a number: leave the badge as it is
+                            // rather than showing a made-up count.
+                            return;
+                        }
                         if (value != null) total = value;
                     }
                     updateNotificationBadge(total);

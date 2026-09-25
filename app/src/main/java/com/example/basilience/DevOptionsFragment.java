@@ -591,8 +591,8 @@ public class DevOptionsFragment extends Fragment {
                             }
                             return;
                         }
-                        boolean enabled = Boolean.TRUE.equals(snapshot.child("enabled").getValue(Boolean.class));
-                        String subsystem = snapshot.child("subsystem").getValue(String.class);
+                        boolean enabled = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot.child("enabled")));
+                        String subsystem = FirebaseSafeRead.str(snapshot.child("subsystem"));
                         confirmedAutomationTestMode = enabled && automationTestModeIndex(subsystem) > 0
                                 ? subsystem.toUpperCase(Locale.US) : "OFF";
                         automationTestModeStatusLoaded = true;
@@ -644,8 +644,8 @@ public class DevOptionsFragment extends Fragment {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (!isAdded()) return;
-                Boolean enabled = snapshot.child("mockGrowLightTimeEnabled").getValue(Boolean.class);
-                Long minutes = snapshot.child("mockGrowLightMinutes").getValue(Long.class);
+                Boolean enabled = FirebaseSafeRead.bool(snapshot.child("mockGrowLightTimeEnabled"));
+                Long minutes = FirebaseSafeRead.lng(snapshot.child("mockGrowLightMinutes"));
                 if (minutes != null) {
                     mockGrowLightMinutes = (int) Math.max(0, Math.min(1439, minutes));
                 }
@@ -790,7 +790,7 @@ public class DevOptionsFragment extends Fragment {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (!isAdded()) return;
-                Boolean active = snapshot.getValue(Boolean.class);
+                Boolean active = FirebaseSafeRead.bool(snapshot);
                 sensorTestActive = Boolean.TRUE.equals(active);
                 sensorTestRequested = sensorTestActive;
                 hideLoading();
@@ -859,7 +859,7 @@ public class DevOptionsFragment extends Fragment {
         ignoreWaterLevelStatusListener = ignoreWaterLevelStatusRef.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
-                Boolean enabled = snapshot.getValue(Boolean.class);
+                Boolean enabled = FirebaseSafeRead.bool(snapshot);
                 loadingIgnoreWaterLevelState = false;
                 hideLoading();
                 if (switchIgnoreWaterLevel == null) return;
@@ -918,7 +918,7 @@ public class DevOptionsFragment extends Fragment {
         // FoggingReportsFragment's resolveRunningStateAndRender): rtc/* is
         // last-known data that stays in RTDB after the device drops offline,
         // so it must not be shown as current until presence is confirmed.
-        Boolean backendOnline = statusSnapshot.child("online").getValue(Boolean.class);
+        Boolean backendOnline = FirebaseSafeRead.bool(statusSnapshot.child("online"));
         Long lastServerSeen = DeviceConnectionManager.readLongValue(statusSnapshot.child("lastServerSeen"));
         boolean deviceLive = DeviceConnectionManager.resolveState(
                 backendOnline, lastServerSeen, System.currentTimeMillis())
@@ -931,9 +931,9 @@ public class DevOptionsFragment extends Fragment {
             return;
         }
 
-        boolean connected = Boolean.TRUE.equals(snapshot.child("connected").getValue(Boolean.class));
-        boolean valid = Boolean.TRUE.equals(snapshot.child("valid").getValue(Boolean.class));
-        String syncSource = snapshot.child("syncSource").getValue(String.class);
+        boolean connected = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot.child("connected")));
+        boolean valid = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot.child("valid")));
+        String syncSource = FirebaseSafeRead.str(snapshot.child("syncSource"));
 
         tvRtcConnected.setText((connected ? "Connected: Yes" : "Connected: No") + lastKnownSuffix);
         tvRtcConnected.setTextColor(ContextCompat.getColor(requireContext(),
@@ -953,12 +953,12 @@ public class DevOptionsFragment extends Fragment {
             tvRtcBanner.setTextColor(ContextCompat.getColor(requireContext(), R.color.state_warning));
         }
 
-        Long year = snapshot.child("year").getValue(Long.class);
-        Long month = snapshot.child("month").getValue(Long.class);
-        Long day = snapshot.child("day").getValue(Long.class);
-        Long hour = snapshot.child("hour").getValue(Long.class);
-        Long minute = snapshot.child("minute").getValue(Long.class);
-        Long second = snapshot.child("second").getValue(Long.class);
+        Long year = FirebaseSafeRead.lng(snapshot.child("year"));
+        Long month = FirebaseSafeRead.lng(snapshot.child("month"));
+        Long day = FirebaseSafeRead.lng(snapshot.child("day"));
+        Long hour = FirebaseSafeRead.lng(snapshot.child("hour"));
+        Long minute = FirebaseSafeRead.lng(snapshot.child("minute"));
+        Long second = FirebaseSafeRead.lng(snapshot.child("second"));
         if (valid && year != null && month != null && day != null
                 && hour != null && minute != null && second != null) {
             // Local Asia/Manila calendar fields, matching RTCManager's own
@@ -1047,31 +1047,31 @@ public class DevOptionsFragment extends Fragment {
                     // out from under this callback (see the comment above
                     // switchMockEnable's listener for the bug this caused).
                     suppressMockSwitchCallback = true;
-                    Boolean enabled = snapshot.child("enabled").getValue(Boolean.class);
+                    Boolean enabled = FirebaseSafeRead.bool(snapshot.child("enabled"));
                     if (enabled != null) switchMockEnable.setChecked(enabled);
-                    Boolean dynamic = snapshot.child("dynamic").getValue(Boolean.class);
+                    Boolean dynamic = FirebaseSafeRead.bool(snapshot.child("dynamic"));
                     switchDynamicMock.setChecked(Boolean.TRUE.equals(dynamic));
                     suppressMockSwitchCallback = false;
                     
-                    Double ph = snapshot.child("ph").getValue(Double.class);
+                    Double ph = FirebaseSafeRead.dbl(snapshot.child("ph"));
                     if (ph != null) etPh.setText(String.valueOf(ph));
 
-                    Double ec = snapshot.child("ec").getValue(Double.class);
+                    Double ec = FirebaseSafeRead.dbl(snapshot.child("ec"));
                     if (ec != null) etEc.setText(String.valueOf(ec));
 
-                    Double temp = snapshot.child("airTemperature").getValue(Double.class);
+                    Double temp = FirebaseSafeRead.dbl(snapshot.child("airTemperature"));
                     if (temp != null) etTemp.setText(String.valueOf(temp));
 
-                    Double humidity = snapshot.child("humidity").getValue(Double.class);
+                    Double humidity = FirebaseSafeRead.dbl(snapshot.child("humidity"));
                     if (humidity != null) etHumidity.setText(String.valueOf(humidity));
 
-                    Double waterTemperature = snapshot.child("waterTemperature").getValue(Double.class);
+                    Double waterTemperature = FirebaseSafeRead.dbl(snapshot.child("waterTemperature"));
                     if (waterTemperature != null) etWaterTemperature.setText(String.valueOf(waterTemperature));
 
-                    Double waterLevel = snapshot.child("waterLevel").getValue(Double.class);
+                    Double waterLevel = FirebaseSafeRead.dbl(snapshot.child("waterLevel"));
                     if (waterLevel != null) etWaterLevel.setText(String.valueOf(waterLevel));
 
-                    Double waterLevelCm = snapshot.child("waterLevelCm").getValue(Double.class);
+                    Double waterLevelCm = FirebaseSafeRead.dbl(snapshot.child("waterLevelCm"));
                     if (waterLevelCm != null) etWaterLevelCm.setText(String.valueOf(waterLevelCm));
                 }
                 loadingMockState = false;
@@ -1104,10 +1104,19 @@ public class DevOptionsFragment extends Fragment {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (!isAdded()) return;
-                Double start = snapshot.child("refillStartLevelCm").getValue(Double.class);
-                Double stop = snapshot.child("refillStopLevelCm").getValue(Double.class);
+                Double start = FirebaseSafeRead.dbl(snapshot.child("refillStartLevelCm"));
+                Double stop = FirebaseSafeRead.dbl(snapshot.child("refillStopLevelCm"));
                 if (start != null) loadedRefillStart = start.floatValue();
                 if (stop != null) loadedRefillStop = stop.floatValue();
+                boolean unreadable = (start == null && snapshot.child("refillStartLevelCm").exists())
+                        || (stop == null && snapshot.child("refillStopLevelCm").exists());
+                if (unreadable && isAdded()) {
+                    // A saved value is present but not a usable number: the fields
+                    // below show defaults, so say so rather than present them as saved.
+                    Toast.makeText(getContext(),
+                            "A saved refill threshold could not be read. Showing defaults.",
+                            Toast.LENGTH_LONG).show();
+                }
                 if (etRefillStart != null) etRefillStart.setText(String.format(Locale.US, "%.1f", loadedRefillStart));
                 if (etRefillStop != null) etRefillStop.setText(String.format(Locale.US, "%.1f", loadedRefillStop));
             }
@@ -1286,8 +1295,8 @@ public class DevOptionsFragment extends Fragment {
         listenerHolder[0] = mockAckListener = ackRef.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
-                Boolean acknowledged = snapshot.child("mockData").getValue(Boolean.class);
-                Boolean dynamicAcknowledged = snapshot.child("mockDataDynamic").getValue(Boolean.class);
+                Boolean acknowledged = FirebaseSafeRead.bool(snapshot.child("mockData"));
+                Boolean dynamicAcknowledged = FirebaseSafeRead.bool(snapshot.child("mockDataDynamic"));
                 if (acknowledged == null || acknowledged != expectedEnabled) return;
                 if (expectedEnabled
                         && Boolean.TRUE.equals(dynamicAcknowledged) != expectedDynamic) return;

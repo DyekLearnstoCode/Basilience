@@ -74,6 +74,7 @@ public class HarvestLogFragment extends Fragment {
     private ListenerRegistration harvestListener;
     private ListenerRegistration cycleListener; // To listen to cycle summary updates
     private boolean isFirstLoad = true;
+    private boolean harvestListHasSkippedDocs = false;
     private boolean isFirstChartLoad = true;
     
     private String userRole = RoleConstants.ROLE_FARMER;
@@ -248,8 +249,9 @@ public class HarvestLogFragment extends Fragment {
             dbHelper.getUserProfile(uid).addOnSuccessListener(documentSnapshot -> {
                 if (!isAdded() || getView() == null) return;
                 if (documentSnapshot != null && documentSnapshot.exists()) {
-                    userRole = documentSnapshot.getString("role");
-                    userName = documentSnapshot.getString("fullName");
+                    userRole = FirebaseSafeRead.fsString(documentSnapshot, "role");
+                    String fullName = FirebaseSafeRead.fsString(documentSnapshot, "fullName");
+                    if (fullName != null) userName = fullName;
                     updateUIForRole();
                 }
             });
@@ -625,7 +627,8 @@ public class HarvestLogFragment extends Fragment {
                 cycleSummaryErrorNotified = false;
                 if (documentSnapshot == null || !documentSnapshot.exists()) return;
 
-                Cycle cycle = documentSnapshot.toObject(Cycle.class);
+                // A malformed cycle document leaves the summary showing its last valid state.
+                Cycle cycle = FirebaseSafeRead.toObject(documentSnapshot, Cycle.class);
                 if (cycle != null) {
                     updateSummaryUI(cycle);
                 }
@@ -1086,6 +1089,7 @@ public class HarvestLogFragment extends Fragment {
         // replayed every document as an incremental ADDED change on top of
         // the previous rows.
         isFirstLoad = true;
+        harvestListHasSkippedDocs = false;
         harvestList.clear();
         if (adapter != null) adapter.notifyDataSetChanged();
 
@@ -1108,20 +1112,48 @@ public class HarvestLogFragment extends Fragment {
                 if (value == null) return;
                 harvestListErrorNotified = false;
 
-                if (isFirstLoad) {
+                // The incremental path below applies changes at snapshot
+                // indexes, which only line up with harvestList while every
+                // document maps. Once a malformed document has been skipped
+                // (or one shows up in these changes), rebuild the whole list
+                // from the snapshot instead, skipping the bad documents.
+                boolean fullRebuild = isFirstLoad || harvestListHasSkippedDocs;
+                if (!fullRebuild) {
+                    for (com.google.firebase.firestore.DocumentChange dc : value.getDocumentChanges()) {
+                        if (dc.getType() != com.google.firebase.firestore.DocumentChange.Type.REMOVED
+                                && FirebaseSafeRead.toObject(dc.getDocument(), Harvest.class) == null) {
+                            fullRebuild = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (fullRebuild) {
                     harvestList.clear();
+                    int skipped = 0;
                     for (com.google.firebase.firestore.QueryDocumentSnapshot doc : value) {
-                        Harvest entry = doc.toObject(Harvest.class);
+                        // A malformed harvest is skipped and logged with its path;
+                        // no replacement entry (or weight) is invented.
+                        Harvest entry = FirebaseSafeRead.toObject(doc, Harvest.class);
+                        if (entry == null) {
+                            skipped++;
+                            continue;
+                        }
                         entry.setId(doc.getId());
                         harvestList.add(entry);
+                    }
+                    harvestListHasSkippedDocs = skipped > 0;
+                    if (skipped > 0) {
+                        Log.w(TAG, skipped + " malformed harvest entr" + (skipped == 1 ? "y" : "ies")
+                                + " left out of the list for cycleId=" + cycleId);
                     }
                     adapter.notifyDataSetChanged();
                     isFirstLoad = false;
                     updateHistoryEmptyState();
                 } else {
                     for (com.google.firebase.firestore.DocumentChange dc : value.getDocumentChanges()) {
-                        Harvest entry = dc.getDocument().toObject(Harvest.class);
-                        entry.setId(dc.getDocument().getId());
+                        Harvest entry = FirebaseSafeRead.toObject(dc.getDocument(), Harvest.class);
+                        if (entry != null) entry.setId(dc.getDocument().getId());
 
                         int oldIndex = dc.getOldIndex();
                         int newIndex = dc.getNewIndex();
@@ -1176,7 +1208,10 @@ public class HarvestLogFragment extends Fragment {
             int i = 0;
             double cumulativeWeight = 0;
             for (com.google.firebase.firestore.QueryDocumentSnapshot doc : value) {
-                Harvest entry = doc.toObject(Harvest.class);
+                // A malformed harvest is left out of the chart (logged with its
+                // path); its weight is not guessed.
+                Harvest entry = FirebaseSafeRead.toObject(doc, Harvest.class);
+                if (entry == null) continue;
                 cumulativeWeight += entry.getWeight();
                 chartEntries.add(new Entry(i++, (float) cumulativeWeight));
                 dateLabels.add(DateUtils.formatShortDate(entry.getHarvestDate()));
@@ -1401,6 +1436,7 @@ public class HarvestLogFragment extends Fragment {
         harvestList.clear();
         currentChartLabels.clear();
         isFirstLoad = true;
+        harvestListHasSkippedDocs = false;
         isFirstChartLoad = true;
         harvestListErrorNotified = false;
         cycleSummaryErrorNotified = false;

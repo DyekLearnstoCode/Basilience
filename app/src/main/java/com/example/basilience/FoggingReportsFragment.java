@@ -466,7 +466,7 @@ public class FoggingReportsFragment extends Fragment {
             cycles.clear();
             if (snapshot != null) {
                 for (DocumentSnapshot doc : snapshot.getDocuments()) {
-                    Cycle cycle = doc.toObject(Cycle.class);
+                    Cycle cycle = FirebaseSafeRead.toObject(doc, Cycle.class);
                     if (cycle != null) {
                         if (cycle.getCycleId() == null) cycle.setCycleId(doc.getId());
                         cycles.add(cycle);
@@ -808,14 +808,24 @@ public class FoggingReportsFragment extends Fragment {
                 @Override
                 public void onDataChange(@NonNull DataSnapshot snapshot) {
                     if (!isAdded()) return;
+                    boolean unreadable = false;
                     if (snapshot.exists()) {
-                        Double val = snapshot.getValue(Double.class);
-                        if (val != null) refillStartLevelCm = val;
+                        Double val = FirebaseSafeRead.dbl(snapshot);
+                        if (val != null) {
+                            refillStartLevelCm = val;
+                        } else {
+                            // Present but not a usable number: use the same
+                            // firmware default as a missing value, and say so
+                            // on screen rather than showing it as the saved value.
+                            refillStartLevelCm = 2.0;
+                            unreadable = true;
+                        }
                     } else {
                         refillStartLevelCm = 2.0; // Fallback - matches firmware Config.h's REFILL_START_CM
                     }
                     tvRefillThreshold.setText(String.format(Locale.getDefault(),
-                            "Refill threshold: %.1f cm", refillStartLevelCm));
+                            unreadable ? "Refill threshold: %.1f cm (default, saved value unreadable)"
+                                    : "Refill threshold: %.1f cm", refillStartLevelCm));
                     loadWaterOutlook();
                 }
 
@@ -879,12 +889,20 @@ public class FoggingReportsFragment extends Fragment {
                 .addOnSuccessListener(queryDocumentSnapshots -> {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
                     List<FoggingEvent> events = new ArrayList<>();
+                    int skipped = 0;
                     for (DocumentSnapshot doc : queryDocumentSnapshots) {
-                        FoggingEvent event = doc.toObject(FoggingEvent.class);
+                        // A malformed log is skipped (and logged with its path by
+                        // FirebaseSafeRead); no replacement event is invented.
+                        FoggingEvent event = FirebaseSafeRead.toObject(doc, FoggingEvent.class);
                         if (event != null) {
                             event.id = doc.getId();
                             events.add(event);
+                        } else {
+                            skipped++;
                         }
+                    }
+                    if (skipped > 0) {
+                        Log.w("FoggingReports", skipped + " malformed fogging log(s) left out of this report");
                     }
                     fetchBoundaryEventAndProcess(filter, events, requestGeneration);
                 })
@@ -915,7 +933,7 @@ public class FoggingReportsFragment extends Fragment {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
                     if (!boundarySnapshots.isEmpty()) {
                         DocumentSnapshot doc = boundarySnapshots.getDocuments().get(0);
-                        FoggingEvent boundaryEvent = doc.toObject(FoggingEvent.class);
+                        FoggingEvent boundaryEvent = FirebaseSafeRead.toObject(doc, FoggingEvent.class);
                         // Only a session whose OFF lands inside the window
                         // belongs to it. If the window has no events, or its
                         // first event is another ON, the earlier ON ended
@@ -969,7 +987,7 @@ public class FoggingReportsFragment extends Fragment {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
                     if (!trailingSnapshots.isEmpty()) {
                         DocumentSnapshot doc = trailingSnapshots.getDocuments().get(0);
-                        FoggingEvent trailingEvent = doc.toObject(FoggingEvent.class);
+                        FoggingEvent trailingEvent = FirebaseSafeRead.toObject(doc, FoggingEvent.class);
                         if (trailingEvent != null && "OFF".equalsIgnoreCase(trailingEvent.event)) {
                             trailingEvent.id = doc.getId();
                             events.add(trailingEvent);
@@ -999,7 +1017,7 @@ public class FoggingReportsFragment extends Fragment {
                 public void onDataChange(@NonNull DataSnapshot snapshot) {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
 
-                    Boolean backendOnline = snapshot.child("online").getValue(Boolean.class);
+                    Boolean backendOnline = FirebaseSafeRead.bool(snapshot.child("online"));
                     Long lastServerSeen = DeviceConnectionManager.readLongValue(snapshot.child("lastServerSeen"));
                     // Reuses DeviceConnectionManager's authoritative presence
                     // rule so Fogging Reports can never disagree with the rest
@@ -1038,10 +1056,9 @@ public class FoggingReportsFragment extends Fragment {
                 @Override
                 public void onDataChange(@NonNull DataSnapshot snapshot) {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
-                    boolean isRunning = false;
-                    if (snapshot.exists() && snapshot.getValue(Boolean.class) != null) {
-                        isRunning = snapshot.getValue(Boolean.class);
-                    }
+                    // A malformed value reads as null, which fails closed: nothing
+                    // is presented as running unless the flag is a real true.
+                    boolean isRunning = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot));
                     renderReport(filter, events, isRunning);
                 }
 
@@ -1466,7 +1483,7 @@ public class FoggingReportsFragment extends Fragment {
                     if (!isAdded() || requestGeneration != waterOutlookRequestGeneration) return;
                     List<FoggingEvent> events = new ArrayList<>();
                     for (DocumentSnapshot doc : queryDocumentSnapshots) {
-                        FoggingEvent event = doc.toObject(FoggingEvent.class);
+                        FoggingEvent event = FirebaseSafeRead.toObject(doc, FoggingEvent.class);
                         if (event != null) {
                             event.id = doc.getId();
                             events.add(event);
@@ -1496,7 +1513,7 @@ public class FoggingReportsFragment extends Fragment {
                     if (!isAdded() || requestGeneration != waterOutlookRequestGeneration) return;
                     if (!boundarySnapshots.isEmpty()) {
                         DocumentSnapshot doc = boundarySnapshots.getDocuments().get(0);
-                        FoggingEvent boundaryEvent = doc.toObject(FoggingEvent.class);
+                        FoggingEvent boundaryEvent = FirebaseSafeRead.toObject(doc, FoggingEvent.class);
                         if (boundaryEvent != null && "ON".equalsIgnoreCase(boundaryEvent.event)) {
                             boundaryEvent.id = doc.getId();
                             events.add(boundaryEvent);
@@ -1532,7 +1549,7 @@ public class FoggingReportsFragment extends Fragment {
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         if (!isAdded() || requestGeneration != waterOutlookRequestGeneration) return;
 
-                        Boolean backendOnline = snapshot.child("online").getValue(Boolean.class);
+                        Boolean backendOnline = FirebaseSafeRead.bool(snapshot.child("online"));
                         Long lastServerSeen = DeviceConnectionManager.readLongValue(snapshot.child("lastServerSeen"));
                         // Reuses the project's single authoritative presence
                         // rule - no second freshness threshold is defined.
@@ -1565,7 +1582,7 @@ public class FoggingReportsFragment extends Fragment {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         if (!isAdded() || requestGeneration != waterOutlookRequestGeneration) return;
-                        boolean isRunning = snapshot.exists() && Boolean.TRUE.equals(snapshot.getValue(Boolean.class));
+                        boolean isRunning = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot));
                         computeWaterOutlookUsage(requestGeneration, events, lookbackStartMs, nowMs, isRunning);
                     }
 
@@ -1626,16 +1643,18 @@ public class FoggingReportsFragment extends Fragment {
                     Long latestTimestampMs = null;
                     if (!snapshots.isEmpty()) {
                         DocumentSnapshot latest = snapshots.getDocuments().get(0);
-                        waterLevelPct = latest.getDouble("water_level");
+                        // Malformed fields read as null, which renderWaterOutlook()
+                        // already presents as unavailable - never as 0.
+                        waterLevelPct = FirebaseSafeRead.fsDouble(latest, "water_level");
                         if (waterLevelPct == null) {
-                            waterLevelPct = latest.getDouble("waterLevel");
+                            waterLevelPct = FirebaseSafeRead.fsDouble(latest, "waterLevel");
                         }
                         // Water-depth model (see firmware Config.h's "Water
                         // Reservoir Geometry") - absent on records written
                         // before the firmware update; never fabricated from
                         // the legacy percentage (see renderWaterOutlook()).
-                        waterLevelCm = latest.getDouble("water_level_cm");
-                        latestTimestampMs = latest.getLong("timestamp");
+                        waterLevelCm = FirebaseSafeRead.fsDouble(latest, "water_level_cm");
+                        latestTimestampMs = FirebaseSafeRead.fsLong(latest, "timestamp");
                     }
                     renderWaterOutlook(waterLevelPct, waterLevelCm, latestTimestampMs, recentTotalFoggingDurationMs, observationDays);
                 })

@@ -315,9 +315,10 @@ public class DeviceFragment extends Fragment {
 
                     deviceList.clear();
                     for (QueryDocumentSnapshot doc : queryDocumentSnapshots) {
-                        Device device = doc.toObject(Device.class);
-                        // toObject() can return null; the adapter binds every
-                        // entry, so a null one would crash on bind.
+                        // A malformed device document is skipped and logged with its
+                        // path; the adapter binds every entry, so a null one would
+                        // crash on bind.
+                        Device device = FirebaseSafeRead.toObject(doc, Device.class);
                         if (device == null) continue;
                         // The document ID is the authoritative identifier - a device's
                         // in-body `deviceId` field is provisioned outside this app and

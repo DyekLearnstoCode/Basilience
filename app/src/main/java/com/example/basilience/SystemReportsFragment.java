@@ -353,7 +353,7 @@ public class SystemReportsFragment extends Fragment {
             cycles.clear();
             if (snapshot != null) {
                 for (DocumentSnapshot doc : snapshot.getDocuments()) {
-                    Cycle cycle = doc.toObject(Cycle.class);
+                    Cycle cycle = FirebaseSafeRead.toObject(doc, Cycle.class);
                     if (cycle != null) {
                         if (cycle.getCycleId() == null) cycle.setCycleId(doc.getId());
                         cycles.add(cycle);
@@ -904,8 +904,10 @@ public class SystemReportsFragment extends Fragment {
         float low = Float.POSITIVE_INFINITY;
 
         for (QueryDocumentSnapshot doc : queryDocumentSnapshots) {
-            Double value = doc.getDouble(dbFieldName);
-            Long timestamp = doc.getLong("timestamp");
+            // A malformed field reads as null (logged with its document path),
+            // so that reading is left out rather than replaced by a made-up value.
+            Double value = FirebaseSafeRead.fsDouble(doc, dbFieldName);
+            Long timestamp = FirebaseSafeRead.fsLong(doc, "timestamp");
             if (timestamp != null && isValidParameterValue(canonicalParameter, value)) {
                 float val = value.floatValue();
                 entries.add(new Entry((timestamp - filter.effectiveStartMs) / 60000f, val));
@@ -1806,15 +1808,17 @@ public class SystemReportsFragment extends Fragment {
             currentParameterSamples.put(key, new ArrayList<>());
         }
         for (QueryDocumentSnapshot doc : snapshot) {
-            Long timestamp = doc.getLong("timestamp");
+            // A record without a usable timestamp is skipped; a malformed value
+            // in one parameter leaves only that cell empty ("--"), never a made-up number.
+            Long timestamp = FirebaseSafeRead.fsLong(doc, "timestamp");
             if (timestamp == null) continue;
 
-            Double ph = doc.getDouble("ph");
-            Double ec = doc.getDouble("ec");
-            Double airTemp = doc.getDouble("air_temp");
-            Double humidity = doc.getDouble("humidity");
-            Double waterTemp = doc.getDouble("water_temp");
-            Double waterLevel = doc.getDouble("water_level");
+            Double ph = FirebaseSafeRead.fsDouble(doc, "ph");
+            Double ec = FirebaseSafeRead.fsDouble(doc, "ec");
+            Double airTemp = FirebaseSafeRead.fsDouble(doc, "air_temp");
+            Double humidity = FirebaseSafeRead.fsDouble(doc, "humidity");
+            Double waterTemp = FirebaseSafeRead.fsDouble(doc, "water_temp");
+            Double waterLevel = FirebaseSafeRead.fsDouble(doc, "water_level");
 
             addSampleIfValid("pH", timestamp, ph);
             addSampleIfValid("EC", timestamp, ec);
@@ -1905,7 +1909,7 @@ public class SystemReportsFragment extends Fragment {
         if (uid != null) {
             dbHelper.getUserProfile(uid).addOnSuccessListener(documentSnapshot -> {
                 if (documentSnapshot.exists()) {
-                    userRole = documentSnapshot.getString("role");
+                    userRole = FirebaseSafeRead.fsString(documentSnapshot, "role");
                     updateUIForRole();
                 }
             });
