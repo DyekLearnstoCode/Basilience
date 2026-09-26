@@ -400,16 +400,11 @@ public class MainActivity extends AppCompatActivity {
                 String token = task.getResult();
                 Log.d("FCM", "FCM token retrieved for current user");
                 
-                String uid = FirebaseAuth.getInstance().getUid();
-                if (uid != null) {
-                    Map<String, Object> update = new HashMap<>();
-                    update.put("fcmToken", token);
-                    FirebaseFirestore.getInstance().collection("users")
-                            .document(uid)
-                            .set(update, com.google.firebase.firestore.SetOptions.merge())
-                            .addOnSuccessListener(aVoid -> Log.d("FCM", "FCM Token saved to Firestore."))
-                            .addOnFailureListener(e -> Log.e("FCM", "Failed to save FCM token", e));
-                }
+                // This installation's own record only; another phone signed in
+                // as the same user keeps its own.
+                FcmTokenRegistry.registerCurrentInstallation(getApplicationContext(), token)
+                        .addOnSuccessListener(aVoid -> Log.d("FCM", "FCM token registered for this installation."))
+                        .addOnFailureListener(e -> Log.e("FCM", "Failed to register FCM token", e));
             });
     }
 

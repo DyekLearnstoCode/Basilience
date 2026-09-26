@@ -8,6 +8,7 @@ const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const {getFunctions} = require("firebase-admin/functions");
 const crypto = require("crypto");
+const {getDeviceUserTokens, removeInvalidToken} = require("./fcmTokens");
 
 admin.initializeApp({
     databaseURL: "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app",
@@ -162,18 +163,10 @@ async function cleanupInvalidFcmTokens(db, tokens, response, context) {
     });
 
     for (const token of invalidTokens) {
-        const users = await db.collection("users").where("fcmToken", "==", token).get();
-        for (const userDoc of users.docs) {
-            await db.runTransaction(async transaction => {
-                const current = await transaction.get(userDoc.ref);
-                if (current.exists && current.get("fcmToken") === token) {
-                    transaction.update(userDoc.ref, {
-                        fcmToken: admin.firestore.FieldValue.delete()
-                    });
-                }
-            });
-        }
-        logger.info("Removed invalid FCM token", {context, matchingUsers: users.size});
+        // Removes only the installation record(s) holding this exact token (plus the
+        // legacy single-token field when it matches); other phones' records are untouched.
+        const removed = await removeInvalidToken(db, token);
+        logger.info("Removed invalid FCM token", {context, ...removed});
     }
 }
 
@@ -310,66 +303,8 @@ exports.removePersonnel = onCall(async (request) => {
     }
 });
 
-async function getDeviceUserTokens(db, deviceId) {
-    const tokensSet = new Set();
-    const recipients = [];
-
-    try {
-        if (deviceId) {
-            const deviceDoc = await db.collection("devices").doc(deviceId).get();
-            let ownerUid = null;
-            if (deviceDoc.exists) {
-                const data = deviceDoc.data();
-                ownerUid = data.ownerUid || data.ownerAdminUid;
-                if (ownerUid) {
-                    const ownerUserDoc = await db.collection("users").doc(ownerUid).get();
-                    if (ownerUserDoc.exists) {
-                        const owner = ownerUserDoc.data();
-                        const hasToken = Boolean(owner.fcmToken);
-                        recipients.push({uid: ownerUid, role: owner.role || "UNKNOWN", assignmentStatus: "owner", tokenCount: hasToken ? 1 : 0});
-                        if (hasToken) tokensSet.add(owner.fcmToken);
-                    }
-                }
-            }
-
-            const assignmentsSnapshot = await db.collection("deviceAssignments")
-                .where("deviceId", "==", deviceId)
-                .get();
-
-            for (const doc of assignmentsSnapshot.docs) {
-                const userUid = doc.data().userUid;
-                if (userUid && userUid !== ownerUid) {
-                    const userDoc = await db.collection("users").doc(userUid).get();
-                    if (userDoc.exists) {
-                        const user = userDoc.data();
-                        // An assignment only grants reminder/alert access while the
-                        // personnel profile remains linked to this device's owner.
-                        if ((user.role === "FARMER" || user.role === "PERSONNEL")
-                                && user.ownerAdminUid === ownerUid && user.fcmToken) {
-                            tokensSet.add(user.fcmToken);
-                        }
-                        recipients.push({
-                            uid: userUid,
-                            role: user.role || "UNKNOWN",
-                            assignmentStatus: user.ownerAdminUid === ownerUid ? "assigned-linked" : "assignment-not-linked",
-                            tokenCount: user.fcmToken ? 1 : 0
-                        });
-                    }
-                }
-            }
-        }
-
-        logger.info("Resolved device notification recipients", {deviceId, recipients});
-
-        if (tokensSet.size === 0) {
-            logger.warn(`No owner or assigned-user FCM tokens found for device ${deviceId}; push skipped.`);
-        }
-    } catch (e) {
-        logger.error(`Error retrieving user tokens for device ${deviceId}:`, e);
-    }
-
-    return Array.from(tokensSet);
-}
+// getDeviceUserTokens() lives in ./fcmTokens.js (one push token per app installation,
+// with the legacy users/{uid}.fcmToken field still read as a fallback).
 
 // Same owner + linked-assignment eligibility as getDeviceUserTokens() above,
 // but returning uids regardless of whether that user currently has an FCM

@@ -199,12 +199,22 @@ public class Database_Helper {
         }
 
         FirebaseMessaging messaging = FirebaseMessaging.getInstance();
+
+        // Removes ONLY this installation's own token record; another phone
+        // signed in as the same user keeps its record and keeps its alerts.
+        Task<Void> installationCleanup = FcmTokenRegistry
+                .unregister(db, uid, InstallationId.get(FirebaseApp.getInstance().getApplicationContext()))
+                .addOnFailureListener(error -> Log.w(TAG,
+                        "Unable to remove this installation's FCM token record during logout", error));
+
         Task<Void> cleanup = messaging.getToken().continueWithTask(tokenTask -> {
-            Task<Void> firestoreCleanup;
+            Task<Void> legacyCleanup;
             if (tokenTask.isSuccessful() && tokenTask.getResult() != null) {
+                // Legacy single-token field (users/{uid}.fcmToken), still read by the
+                // sender during migration: cleared only when it holds THIS phone's own token.
                 String installationToken = tokenTask.getResult();
                 DocumentReference userRef = db.collection("users").document(uid);
-                firestoreCleanup = db.runTransaction(transaction -> {
+                legacyCleanup = db.runTransaction(transaction -> {
                     DocumentSnapshot user = transaction.get(userRef);
                     if (installationToken.equals(user.getString("fcmToken"))) {
                         transaction.update(userRef, "fcmToken", FieldValue.delete());
@@ -213,12 +223,15 @@ public class Database_Helper {
                 });
             } else {
                 Log.w(TAG, "Unable to read installation token during logout", tokenTask.getException());
-                firestoreCleanup = Tasks.forResult(null);
+                legacyCleanup = Tasks.forResult(null);
             }
 
-            return firestoreCleanup
+            return legacyCleanup
                     .addOnFailureListener(error -> Log.w(TAG,
-                            "Unable to clear FCM token during logout", error))
+                            "Unable to clear legacy FCM token during logout", error))
+                    // Wait for this installation's record delete too (success or failure)
+                    // before invalidating the token and signing out.
+                    .continueWithTask(ignored -> installationCleanup.continueWith(done -> (Void) null))
                     .continueWithTask(ignored -> messaging.deleteToken());
         }).addOnFailureListener(error -> Log.w(TAG,
                 "Unable to invalidate FCM token during logout", error));

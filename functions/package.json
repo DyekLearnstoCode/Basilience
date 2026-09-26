@@ -7,7 +7,8 @@
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "test:rules": "firebase emulators:exec --only database \"node --test test/database.rules.test.js\""
+    "test:rules": "firebase emulators:exec --only database \"node --test test/database.rules.test.js\"",
+    "test:fcm": "firebase emulators:exec --only firestore --project demo-basilience \"node --test test/fcmTokens.test.js\""
   },
   "engines": {
     "node": "24"

@@ -2,6 +2,16 @@
   "indexes": [],
   "fieldOverrides": [
     {
+      "collectionGroup": "fcmTokens",
+      "fieldPath": "token",
+      "indexes": [
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "cycles",
       "fieldPath": "status",
       "indexes": [

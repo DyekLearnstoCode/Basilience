@@ -87,6 +87,25 @@ service cloud.firestore {
         allow read: if isSignedIn() && request.auth.uid == uid;
         allow write: if false;
       }
+
+      // Push-token records, one per app installation:
+      //   users/{uid}/fcmTokens/{installationId} = { token, updatedAt, platform }
+      // A user may create, refresh and delete ONLY records under their own uid, so
+      // one phone can never replace or remove another user's (or, because each
+      // installation has its own document, another of their own phones') token.
+      // Clients never read these back: the Cloud Functions read them with the
+      // Admin SDK, which bypasses these rules.
+      match /fcmTokens/{installationId} {
+        allow create, update: if isSignedIn() && request.auth.uid == uid &&
+          installationId.matches('^[0-9a-fA-F-]{36}$') &&
+          request.resource.data.keys().hasOnly(['token', 'updatedAt', 'platform']) &&
+          request.resource.data.keys().hasAll(['token', 'updatedAt', 'platform']) &&
+          request.resource.data.token is string &&
+          request.resource.data.token.size() > 0 && request.resource.data.token.size() <= 4096 &&
+          request.resource.data.platform == 'android' &&
+          request.resource.data.updatedAt == request.time;
+        allow delete: if isSignedIn() && request.auth.uid == uid;
+      }
     }
 
     // DEVICES collection

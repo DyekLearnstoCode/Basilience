@@ -10,10 +10,8 @@ import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
-import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -44,14 +42,9 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
     }
 
     private void sendRegistrationToServer(String token) {
-        String uid = FirebaseAuth.getInstance().getUid();
-        if (uid != null) {
-            Map<String, Object> update = new HashMap<>();
-            update.put("fcmToken", token);
-
-            FirebaseFirestore.getInstance().collection("users")
-                    .document(uid)
-                    .set(update, com.google.firebase.firestore.SetOptions.merge())
+        if (FirebaseAuth.getInstance().getUid() != null) {
+            // Updates only this installation's own record.
+            FcmTokenRegistry.registerCurrentInstallation(getApplicationContext(), token)
                     .addOnSuccessListener(aVoid -> Log.d(TAG, "FCM Token updated successfully."))
                     .addOnFailureListener(e -> Log.e(TAG, "Failed to update FCM token", e));
         } else {
