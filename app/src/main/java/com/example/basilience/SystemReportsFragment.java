@@ -57,8 +57,8 @@ import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.ListenerRegistration;
-import com.google.firebase.firestore.QueryDocumentSnapshot;
-import com.google.firebase.firestore.QuerySnapshot;
+
+import com.google.firebase.firestore.Query;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -106,7 +106,7 @@ public class SystemReportsFragment extends Fragment {
     // layout change carries no behavior difference.
     private MaterialButton btnShare;
     private String currentSelectedFilter = "Entire Cycle";
-    private TextView tvInterpretation, tvInsightStatus, tvTargetRange, tvEvidence, tvEffectiveRange;
+    private TextView tvInterpretation, tvInsightStatus, tvTargetRange, tvEvidence, tvEffectiveRange, tvCacheNotice;
     private TextView tvChartTitle;
     private View dotInsightStatus, heroAccentEdge, cardInsightHero;
     private View reportContentContainer, noCyclesEmptyState;
@@ -129,6 +129,8 @@ public class SystemReportsFragment extends Fragment {
     // Written only on the main thread; volatile so a worker can notice it has
     // been superseded and skip its remaining work.
     private volatile long reportRequestGeneration = 0L;
+    // True when the report on screen was read from the local cache (offline), so it may not cover the whole range.
+    private boolean resultFromCache = false;
     private boolean exportInProgress;
     private long layoutLoadingShownAt;
     // One settings mapping, read once in loadDeviceThresholds() from the
@@ -243,6 +245,7 @@ public class SystemReportsFragment extends Fragment {
         tvTargetRange = view.findViewById(R.id.tvTargetRange);
         tvEvidence = view.findViewById(R.id.tvEvidence);
         tvEffectiveRange = view.findViewById(R.id.tvEffectiveRange);
+        tvCacheNotice = view.findViewById(R.id.tvCacheNotice);
         tvChartTitle = view.findViewById(R.id.tvChartTitle);
         reportContentContainer = view.findViewById(R.id.reportContentContainer);
         noCyclesEmptyState = view.findViewById(R.id.noCyclesEmptyState);
@@ -317,6 +320,7 @@ public class SystemReportsFragment extends Fragment {
         if (btnShare != null) {
             btnShare.setOnClickListener(v -> showExportOptions());
         }
+        applyCacheState();
 
         loadDeviceThresholds();
         startListeningToCycles();
@@ -452,6 +456,8 @@ public class SystemReportsFragment extends Fragment {
         currentFilter = null;
         currentReadings = new ArrayList<>();
         currentParameterSamples = Collections.emptyMap();
+        resultFromCache = false;
+        applyCacheState();
     }
 
     /** Shows the report loading overlay. Shared by loadReportData() and the export actions below. */
@@ -815,6 +821,8 @@ public class SystemReportsFragment extends Fragment {
             if (recyclerReadingsTable != null) recyclerReadingsTable.setVisibility(View.GONE);
             if (tvReadingsTableEmpty != null) tvReadingsTableEmpty.setVisibility(View.VISIBLE);
             showEmptyReportState("Select a cycle and parameter to view a report.");
+            resultFromCache = false;
+            applyCacheState();
             return;
         }
 
@@ -830,37 +838,73 @@ public class SystemReportsFragment extends Fragment {
                     + " to " + DateUtils.formatDate(filter.effectiveEndMs));
         }
 
-        dbHelper.getParameterLogs(filter.effectiveStartMs, filter.effectiveEndMs)
-                .addOnSuccessListener(queryDocumentSnapshots -> {
-                    if (!isAdded() || requestGeneration != reportRequestGeneration) return;
-                    // Everything the worker needs is read here, on the main
-                    // thread, and handed over as immutable values; the worker
-                    // never touches this fragment or its views.
-                    final Map<String, RangeRule> rules = captureRangeRules();
-                    ReportWorker.run(() -> {
+        final Query logsQuery = dbHelper.getParameterLogsQuery(filter.effectiveStartMs, filter.effectiveEndMs);
+        if (logsQuery == null) {
+            showReportLoadFailure(new Exception("No active device selected"));
+            return;
+        }
+
+        // The whole selected range is read in pages of 1,000 and the report is
+        // only built once every page has arrived. A newer request (or leaving
+        // the screen) bumps reportRequestGeneration, which stops the paging
+        // before its next page instead of letting it read the full range.
+        PagedQueryFetcher.fetch(
+                new FirestoreQueryPageSource(logsQuery),
+                PagedQueryFetcher.DEFAULT_PAGE_SIZE,
+                () -> requestGeneration != reportRequestGeneration,
+                documents -> {
+                    List<ParameterLogRecord> page = new ArrayList<>(documents.size());
+                    for (DocumentSnapshot doc : documents) page.add(ParameterLogRecord.from(doc));
+                    return page;
+                },
+                new PagedQueryFetcher.Callback<ParameterLogRecord>() {
+                    @Override
+                    public void onComplete(PagedQueryFetcher.Result<ParameterLogRecord> loaded) {
+                        if (requestGeneration != reportRequestGeneration) return;
+                        // Everything the build needs is read from the fragment
+                        // on the main thread and handed over as immutable
+                        // values; the worker never touches this fragment or its views.
+                        final Map<String, RangeRule> rules;
+                        try {
+                            rules = ReportWorker.callOnMain(SystemReportsFragment.this::captureRangeRules);
+                        } catch (RuntimeException e) {
+                            onError(e);
+                            return;
+                        }
                         if (requestGeneration != reportRequestGeneration) return;
                         final ParameterReportResult result;
                         try {
-                            result = buildParameterReport(queryDocumentSnapshots, filter, rules);
+                            result = buildParameterReport(loaded.items, filter, rules);
                         } catch (Exception e) {
-                            ReportWorker.postToMain(() -> {
-                                if (!isAdded() || getView() == null || requestGeneration != reportRequestGeneration) return;
-                                showReportLoadFailure(e);
-                            });
+                            onError(e);
                             return;
                         }
                         ReportWorker.postToMain(() -> {
                             if (!isAdded() || getView() == null || requestGeneration != reportRequestGeneration) return;
+                            resultFromCache = loaded.fromCache;
+                            if (loaded.fromCache) {
+                                Log.w("ReportPaging", "Parameter report was served from the local cache and may not cover the full range");
+                            }
                             hideLayoutLoading();
                             renderParameterReport(result);
+                            applyCacheState();
                             maybeShowCoachMarkTour();
                         });
-                    });
-                })
-                .addOnFailureListener(e -> {
-                    if (!isAdded() || requestGeneration != reportRequestGeneration) return;
-                    showReportLoadFailure(e);
+                    }
+
+                    @Override
+                    public void onError(Exception e) {
+                        ReportWorker.postToMain(() -> {
+                            if (!isAdded() || getView() == null || requestGeneration != reportRequestGeneration) return;
+                            showReportLoadFailure(e);
+                        });
+                    }
                 });
+    }
+
+    /** Shows or hides the offline notice and dims the export button to match the data now on screen. */
+    private void applyCacheState() {
+        CachedReportNotice.apply(tvCacheNotice, btnShare, resultFromCache);
     }
 
     private void showReportLoadFailure(Exception e) {
@@ -869,6 +913,8 @@ public class SystemReportsFragment extends Fragment {
         currentFilter = null;
         currentReadings = new ArrayList<>();
         showEmptyReportState("Unable to load report data.");
+        resultFromCache = false;
+        applyCacheState();
         NotificationHelper.showError(getContext(), "Unable to load report data. Please try again.");
     }
 
@@ -990,7 +1036,7 @@ public class SystemReportsFragment extends Fragment {
      * readings table rows. Same loops, same formulas, same order as before; it
      * only reads its arguments, so it is safe to run on a worker thread.
      */
-    private static ParameterReportResult buildParameterReport(QuerySnapshot queryDocumentSnapshots,
+    private static ParameterReportResult buildParameterReport(List<ParameterLogRecord> records,
                                                               ParameterReportFilter filter,
                                                               Map<String, RangeRule> rules) {
         String canonicalParameter = filter.canonicalParameter;
@@ -1003,11 +1049,12 @@ public class SystemReportsFragment extends Fragment {
         float high = Float.NEGATIVE_INFINITY;
         float low = Float.POSITIVE_INFINITY;
 
-        for (QueryDocumentSnapshot doc : queryDocumentSnapshots) {
-            // A malformed field reads as null (logged with its document path),
-            // so that reading is left out rather than replaced by a made-up value.
-            Double value = FirebaseSafeRead.fsDouble(doc, dbFieldName);
-            Long timestamp = FirebaseSafeRead.fsLong(doc, "timestamp");
+        for (ParameterLogRecord record : records) {
+            // A malformed field is already null in the record (logged with its
+            // document path when it was read), so that reading is left out
+            // rather than replaced by a made-up value.
+            Double value = record.valueOf(dbFieldName);
+            Long timestamp = record.timestamp;
             if (timestamp != null && isValidParameterValue(canonicalParameter, value)) {
                 float val = value.floatValue();
                 entries.add(new Entry((timestamp - filter.effectiveStartMs) / 60000f, val));
@@ -1023,7 +1070,7 @@ public class SystemReportsFragment extends Fragment {
         // currently charted - independent of canonicalParameter/dbFieldName
         // above, built straight from the same document snapshots.
         List<ParameterTableRow> tableRows = new ArrayList<>();
-        Map<String, List<ChartAggregation.Sample>> samples = buildReadingsTable(queryDocumentSnapshots, rules, tableRows);
+        Map<String, List<ChartAggregation.Sample>> samples = buildReadingsTable(records, rules, tableRows);
 
         if (entries.isEmpty()) {
             return new ParameterReportResult(filter, readings, 0, null, null, null, null,
@@ -1718,6 +1765,10 @@ public class SystemReportsFragment extends Fragment {
             Toast.makeText(getContext(), "Load a report before exporting.", Toast.LENGTH_SHORT).show();
             return;
         }
+        if (resultFromCache) {
+            Toast.makeText(getContext(), CachedReportNotice.EXPORT_BLOCKED, Toast.LENGTH_LONG).show();
+            return;
+        }
         String[] formatOptions = {"PDF (Summary Report)", "Excel (Comprehensive Data)"};
         NotificationHelper.showSelectionDialog(requireContext(), "Export Report", formatOptions, formatIndex -> {
             boolean isPdf = formatIndex == 0;
@@ -1809,6 +1860,10 @@ public class SystemReportsFragment extends Fragment {
         if (!isAdded() || getContext() == null) return;
         if (currentFilter == null) {
             Toast.makeText(getContext(), "Load a report before exporting.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (resultFromCache) {
+            Toast.makeText(getContext(), CachedReportNotice.EXPORT_BLOCKED, Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -1969,7 +2024,7 @@ public class SystemReportsFragment extends Fragment {
      * never disagree with the chart above it.
      */
     private static Map<String, List<ChartAggregation.Sample>> buildReadingsTable(
-            QuerySnapshot snapshot, Map<String, RangeRule> rules, List<ParameterTableRow> tableRows) {
+            List<ParameterLogRecord> records, Map<String, RangeRule> rules, List<ParameterTableRow> tableRows) {
         Float phMin = rules.get("pH").min, phMax = rules.get("pH").max;
         Float ecMin = rules.get("EC").min, ecMax = rules.get("EC").max;
         Float airMin = rules.get("Air Temperature").min, airMax = rules.get("Air Temperature").max;
@@ -1981,18 +2036,18 @@ public class SystemReportsFragment extends Fragment {
         for (String key : EXPORTABLE_PARAMETERS) {
             parameterSamples.put(key, new ArrayList<>());
         }
-        for (QueryDocumentSnapshot doc : snapshot) {
+        for (ParameterLogRecord record : records) {
             // A record without a usable timestamp is skipped; a malformed value
             // in one parameter leaves only that cell empty ("--"), never a made-up number.
-            Long timestamp = FirebaseSafeRead.fsLong(doc, "timestamp");
+            Long timestamp = record.timestamp;
             if (timestamp == null) continue;
 
-            Double ph = FirebaseSafeRead.fsDouble(doc, "ph");
-            Double ec = FirebaseSafeRead.fsDouble(doc, "ec");
-            Double airTemp = FirebaseSafeRead.fsDouble(doc, "air_temp");
-            Double humidity = FirebaseSafeRead.fsDouble(doc, "humidity");
-            Double waterTemp = FirebaseSafeRead.fsDouble(doc, "water_temp");
-            Double waterLevel = FirebaseSafeRead.fsDouble(doc, "water_level");
+            Double ph = record.ph;
+            Double ec = record.ec;
+            Double airTemp = record.airTemp;
+            Double humidity = record.humidity;
+            Double waterTemp = record.waterTemp;
+            Double waterLevel = record.waterLevel;
 
             addSampleIfValid(parameterSamples, "pH", timestamp, ph);
             addSampleIfValid(parameterSamples, "EC", timestamp, ec);

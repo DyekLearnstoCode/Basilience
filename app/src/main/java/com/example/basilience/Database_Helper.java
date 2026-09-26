@@ -1312,32 +1312,42 @@ public class Database_Helper {
         return getDeviceSettings(deviceId).updateChildren(updates);
     }
 
-    public Task<QuerySnapshot> getParameterLogs(long startTime, long endTime) {
-        if (selectedDeviceId == null || selectedDeviceId.isEmpty()) {
-            return Tasks.forException(new Exception("No active device selected"));
-        }
+    /**
+     * The selected device's parameter history between two instants, oldest
+     * first. This is the bounded, ordered base query only: it has no limit, so
+     * callers read it page by page with {@link PagedQueryFetcher} rather than
+     * all at once. Null when no device is selected.
+     */
+    public Query getParameterLogsQuery(long startTime, long endTime) {
+        if (selectedDeviceId == null || selectedDeviceId.isEmpty()) return null;
+        return parameterLogsQuery(db, selectedDeviceId, startTime, endTime);
+    }
 
-        return db.collection("devices")
-                .document(selectedDeviceId)
+    /** Same as {@link #getParameterLogsQuery} for the fogging event history. */
+    public Query getFoggingLogsQuery(long startTime, long endTime) {
+        if (selectedDeviceId == null || selectedDeviceId.isEmpty()) return null;
+        return foggingLogsQuery(db, selectedDeviceId, startTime, endTime);
+    }
+
+    // The order is total: timestamp, then Firestore's implicit document ID
+    // tie-break. That is what makes a startAfter(lastDocument) cursor exact
+    // even when several logs share one timestamp.
+    static Query parameterLogsQuery(FirebaseFirestore firestore, String deviceId, long startTime, long endTime) {
+        return firestore.collection("devices")
+                .document(deviceId)
                 .collection("parameterLogs")
                 .whereGreaterThanOrEqualTo("timestamp", startTime)
                 .whereLessThanOrEqualTo("timestamp", endTime)
-                .orderBy("timestamp", Query.Direction.ASCENDING)
-                .get();
+                .orderBy("timestamp", Query.Direction.ASCENDING);
     }
 
-    public Task<QuerySnapshot> getFoggingLogs(long startTime, long endTime) {
-        if (selectedDeviceId == null || selectedDeviceId.isEmpty()) {
-            return Tasks.forException(new Exception("No active device selected"));
-        }
-
-        return db.collection("devices")
-                .document(selectedDeviceId)
+    static Query foggingLogsQuery(FirebaseFirestore firestore, String deviceId, long startTime, long endTime) {
+        return firestore.collection("devices")
+                .document(deviceId)
                 .collection("foggingLogs")
                 .whereGreaterThanOrEqualTo("timestamp", startTime)
                 .whereLessThanOrEqualTo("timestamp", endTime)
-                .orderBy("timestamp", Query.Direction.ASCENDING)
-                .get();
+                .orderBy("timestamp", Query.Direction.ASCENDING);
     }
 
     // --------------------
@@ -1878,29 +1888,60 @@ public class Database_Helper {
                 });
     }
 
-    public Task<QuerySnapshot> getMyDevices() {
+    // How many device IDs go into one whereIn(documentId) lookup. Firestore
+    // itself allows 30, but the devices read rule checks deviceAssignments with
+    // exists() for every ID, and Security Rules allow only 10 such checks per
+    // query: tested against the real rules in the Firestore emulator, a Farmer's
+    // lookup works with 10 IDs and is denied at 11. 8 stays clear of that limit
+    // with room for the rule's own user-role lookup.
+    static final int DEVICE_LOOKUP_CHUNK_SIZE = 8;
+
+    /**
+     * The device documents the signed-in user is assigned to, sorted by device
+     * ID. Any failure (reading the assignments or any device lookup) fails the
+     * whole call: a partial list is never returned as if it were complete. No
+     * assignments returns an empty list straight away.
+     */
+    public Task<List<DocumentSnapshot>> getMyDevices() {
         String uid = getCurrentUid();
         if (uid == null) return Tasks.forException(new Exception("Not logged in"));
+        return lookupAssignedDevices(db, uid, DEVICE_LOOKUP_CHUNK_SIZE);
+    }
 
-        return db.collection("deviceAssignments").whereEqualTo("userUid", uid).get()
+    static Task<List<DocumentSnapshot>> lookupAssignedDevices(FirebaseFirestore firestore, String uid, int chunkSize) {
+        return firestore.collection("deviceAssignments").whereEqualTo("userUid", uid).get()
                 .continueWithTask(assignmentTask -> {
-                    if (!assignmentTask.isSuccessful() || assignmentTask.getResult().isEmpty()) {
-                        // Return empty query snapshot or failure?
-                        // Using a dummy query that returns nothing to keep types consistent
-                        return db.collection("devices").whereEqualTo("deviceId", "NONE").get();
-                    }
+                    if (!assignmentTask.isSuccessful()) throw assignmentTask.getException();
 
-                    List<String> deviceIds = new ArrayList<>();
+                    // Sorted and de-duplicated. A malformed or missing deviceId skips just that assignment.
+                    java.util.TreeSet<String> deviceIds = new java.util.TreeSet<>();
                     for (DocumentSnapshot doc : assignmentTask.getResult()) {
-                        // A malformed or missing deviceId skips just that assignment.
                         String assignedDeviceId = FirebaseSafeRead.fsString(doc, "deviceId");
                         if (assignedDeviceId != null) deviceIds.add(assignedDeviceId);
                     }
                     if (deviceIds.isEmpty()) {
-                        return db.collection("devices").whereEqualTo("deviceId", "NONE").get();
+                        return Tasks.<List<DocumentSnapshot>>forResult(new ArrayList<>());
                     }
 
-                    return db.collection("devices").whereIn(FieldPath.documentId(), deviceIds).get();
+                    List<String> all = new ArrayList<>(deviceIds);
+                    List<Task<QuerySnapshot>> lookups = new ArrayList<>();
+                    for (int from = 0; from < all.size(); from += chunkSize) {
+                        List<String> chunk = all.subList(from, Math.min(all.size(), from + chunkSize));
+                        lookups.add(firestore.collection("devices")
+                                .whereIn(FieldPath.documentId(), new ArrayList<>(chunk))
+                                .get());
+                    }
+
+                    return Tasks.whenAllSuccess(lookups).<List<DocumentSnapshot>>continueWith(allTask -> {
+                        if (!allTask.isSuccessful()) throw allTask.getException();
+                        java.util.TreeMap<String, DocumentSnapshot> byId = new java.util.TreeMap<>();
+                        for (Object lookup : allTask.getResult()) {
+                            for (DocumentSnapshot device : ((QuerySnapshot) lookup).getDocuments()) {
+                                byId.put(device.getId(), device);
+                            }
+                        }
+                        return new ArrayList<DocumentSnapshot>(byId.values());
+                    });
                 });
     }
 

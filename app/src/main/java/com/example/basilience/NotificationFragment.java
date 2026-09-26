@@ -367,10 +367,10 @@ public class NotificationFragment extends Fragment {
             String uid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
             if (uid != null) {
                 dbHelper.getMyDevices()
-                        .addOnSuccessListener(queryDocumentSnapshots -> {
+                        .addOnSuccessListener(deviceDocuments -> {
                             if (!isAdded()) return;
-                            if (!queryDocumentSnapshots.isEmpty()) {
-                                String fetchedId = queryDocumentSnapshots.getDocuments().get(0).getId();
+                            if (!deviceDocuments.isEmpty()) {
+                                String fetchedId = deviceDocuments.get(0).getId();
                                 dbHelper.setSelectedDeviceId(fetchedId);
                                 startObserving(fetchedId);
                             } else {

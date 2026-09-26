@@ -21,7 +21,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.firebase.firestore.FirebaseFirestoreException;
-import com.google.firebase.firestore.QueryDocumentSnapshot;
+import com.google.firebase.firestore.DocumentSnapshot;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -309,12 +309,12 @@ public class DeviceFragment extends Fragment {
         if (recyclerDevices != null) recyclerDevices.setVisibility(View.GONE);
 
         dbHelper.getMyDevices()
-                .addOnSuccessListener(queryDocumentSnapshots -> {
+                .addOnSuccessListener(deviceDocuments -> {
                     if (!isAdded() || deviceAdapter == null) return;
                     if (tvLoadingDevices != null) tvLoadingDevices.setVisibility(View.GONE);
 
                     deviceList.clear();
-                    for (QueryDocumentSnapshot doc : queryDocumentSnapshots) {
+                    for (DocumentSnapshot doc : deviceDocuments) {
                         // A malformed device document is skipped and logged with its
                         // path; the adapter binds every entry, so a null one would
                         // crash on bind.

@@ -54,7 +54,6 @@ import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.google.firebase.firestore.Query;
-import com.google.firebase.firestore.QuerySnapshot;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -119,7 +118,7 @@ public class FoggingReportsFragment extends Fragment {
     private TextView tvTotalDuration, tvEventCount, tvAvgDuration;
     private TextView tvBreakdownAuto, tvBreakdownAutoDetails, tvBreakdownManual;
     private TextView tvWaterLevel, tvRefillTime, tvRefillThreshold;
-    private TextView tvFoggingStatus, tvSessionBreakdown, tvFoggingInterpretation, tvEffectiveRange;
+    private TextView tvFoggingStatus, tvSessionBreakdown, tvFoggingInterpretation, tvEffectiveRange, tvCacheNotice;
     private TextView tvHeroAutoCount, tvHeroManualCount, tvWaterOutlookMessage;
     private View dotFoggingStatus, heroAccentEdge, heroControlBlock;
     private View waterOutlookValues, waterLevelColumn, refillColumn;
@@ -207,6 +206,10 @@ public class FoggingReportsFragment extends Fragment {
     // a newer cycle/period selection already started loading (or already
     // rendered) can never overwrite that newer state.
     private volatile long reportRequestGeneration = 0L;
+    // True when the report on screen was read from the local cache (offline), so it may not cover the whole window.
+    private boolean resultFromCache = false;
+    // Origin of the newest completed paged load; becomes resultFromCache only when its report is applied.
+    private boolean pendingResultFromCache = false;
     private boolean exportInProgress;
 
     @Override
@@ -254,6 +257,7 @@ public class FoggingReportsFragment extends Fragment {
         tvSessionBreakdown = view.findViewById(R.id.tvSessionBreakdown);
         tvFoggingInterpretation = view.findViewById(R.id.tvFoggingInterpretation);
         tvEffectiveRange = view.findViewById(R.id.tvEffectiveRange);
+        tvCacheNotice = view.findViewById(R.id.tvCacheNotice);
         tvHeroAutoCount = view.findViewById(R.id.tvHeroAutoCount);
         tvHeroManualCount = view.findViewById(R.id.tvHeroManualCount);
         tvWaterOutlookMessage = view.findViewById(R.id.tvWaterOutlookMessage);
@@ -288,6 +292,7 @@ public class FoggingReportsFragment extends Fragment {
         if (btnShare != null) {
             btnShare.setOnClickListener(v -> exportPdf());
         }
+        applyCacheState();
         fetchUserInfo();
 
         spinnerCycle.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
@@ -850,6 +855,8 @@ public class FoggingReportsFragment extends Fragment {
             currentTotals = null;
             processedSessions = new ArrayList<>();
             showFoggingEmptyState("SELECT A CYCLE", "Select a cycle to view a report.");
+            resultFromCache = false;
+            applyCacheState();
             return;
         }
 
@@ -878,7 +885,7 @@ public class FoggingReportsFragment extends Fragment {
         fetchFoggingLogs(filter, requestGeneration);
     }
 
-    private static List<FoggingEvent> parseFoggingEvents(QuerySnapshot snapshots, String skippedSuffix) {
+    private static List<FoggingEvent> parseFoggingEvents(Iterable<? extends DocumentSnapshot> snapshots, String skippedSuffix) {
         List<FoggingEvent> events = new ArrayList<>();
         int skipped = 0;
         for (DocumentSnapshot doc : snapshots) {
@@ -906,40 +913,51 @@ public class FoggingReportsFragment extends Fragment {
         // after the selected period ended, inflating both the session count
         // and the Fogging Sessions table/PDF with sessions the farmer never
         // asked to see.
-        dbHelper.getFoggingLogs(filter.effectiveStartMs, filter.effectiveEndMs)
-                .addOnSuccessListener(queryDocumentSnapshots -> {
-                    if (!isAdded() || requestGeneration != reportRequestGeneration) return;
-                    // Converting every log document is done off the main
-                    // thread; the finished list is handed back and only the
-                    // main thread touches it from there on.
-                    ReportWorker.run(() -> {
-                        if (requestGeneration != reportRequestGeneration) return;
-                        final List<FoggingEvent> events;
-                        try {
-                            events = parseFoggingEvents(queryDocumentSnapshots, "left out of this report");
-                        } catch (Exception e) {
-                            ReportWorker.postToMain(() -> {
-                                if (!isAdded() || getView() == null || requestGeneration != reportRequestGeneration) return;
-                                Log.e("FoggingReports", "Error reading fogging logs", e);
-                                hideLayoutLoading();
-                                showReportUnavailable();
-                                NotificationHelper.showError(getContext(), "Unable to load the fogging report. Check your connection and try again.");
-                            });
-                            return;
-                        }
+        final Query logsQuery = dbHelper.getFoggingLogsQuery(filter.effectiveStartMs, filter.effectiveEndMs);
+        if (logsQuery == null) {
+            reportLoadFailed(new Exception("No active device selected"));
+            return;
+        }
+
+        // The whole window is read in pages of 1,000 (the event order is the
+        // same as one big query: timestamp, then document ID) and the report
+        // only continues once every page has arrived. A newer request or
+        // leaving the screen bumps reportRequestGeneration, which stops the
+        // paging before its next page. Each page is converted to events on the
+        // worker and released.
+        PagedQueryFetcher.fetch(
+                new FirestoreQueryPageSource(logsQuery),
+                PagedQueryFetcher.DEFAULT_PAGE_SIZE,
+                () -> requestGeneration != reportRequestGeneration,
+                documents -> parseFoggingEvents(documents, "left out of this report"),
+                new PagedQueryFetcher.Callback<FoggingEvent>() {
+                    @Override
+                    public void onComplete(PagedQueryFetcher.Result<FoggingEvent> loaded) {
                         ReportWorker.postToMain(() -> {
                             if (!isAdded() || getView() == null || requestGeneration != reportRequestGeneration) return;
-                            fetchBoundaryEventAndProcess(filter, events, requestGeneration);
+                            pendingResultFromCache = loaded.fromCache;
+                            if (loaded.fromCache) {
+                                Log.w("ReportPaging", "Fogging report was served from the local cache and may not cover the full window");
+                            }
+                            fetchBoundaryEventAndProcess(filter, loaded.items, requestGeneration);
                         });
-                    });
-                })
-                .addOnFailureListener(e -> {
-                    if (!isAdded() || requestGeneration != reportRequestGeneration) return;
-                    Log.e("FoggingReports", "Error loading logs", e);
-                    hideLayoutLoading();
-                    showReportUnavailable();
-                    NotificationHelper.showError(getContext(), "Unable to load the fogging report. Check your connection and try again.");
+                    }
+
+                    @Override
+                    public void onError(Exception e) {
+                        ReportWorker.postToMain(() -> {
+                            if (!isAdded() || getView() == null || requestGeneration != reportRequestGeneration) return;
+                            reportLoadFailed(e);
+                        });
+                    }
                 });
+    }
+
+    private void reportLoadFailed(Exception e) {
+        Log.e("FoggingReports", "Error loading fogging logs", e);
+        hideLayoutLoading();
+        showReportUnavailable();
+        NotificationHelper.showError(getContext(), "Unable to load the fogging report. Check your connection and try again.");
     }
 
     // A session that was already running when the report window opened
@@ -1229,6 +1247,8 @@ public class FoggingReportsFragment extends Fragment {
     }
 
     private void applyFoggingReport(FoggingReportModel model) {
+        resultFromCache = pendingResultFromCache;
+        applyCacheState();
         final FoggingReportFilter filter = model.filter;
         final FoggingReportSummary summary = model.summary;
         final int totalSessionCount = model.totalSessionCount;
@@ -1384,6 +1404,8 @@ public class FoggingReportsFragment extends Fragment {
     // cleared, or a stale report could keep being displayed/exported as if
     // it belonged to the new selection.
     private void showReportUnavailable() {
+        resultFromCache = false;
+        applyCacheState();
         currentFilter = null;
         currentSummary = null;
         currentTotals = null;
@@ -1958,6 +1980,11 @@ public class FoggingReportsFragment extends Fragment {
         });
     }
 
+    /** Shows or hides the offline notice and dims the export button to match the data now on screen. */
+    private void applyCacheState() {
+        CachedReportNotice.apply(tvCacheNotice, btnShare, resultFromCache);
+    }
+
     private void updateUIForRole() {
         if (btnShare != null) {
             btnShare.setVisibility(RoleConstants.ROLE_ADMIN.equalsIgnoreCase(userRole) ? View.VISIBLE : View.GONE);
@@ -1972,6 +1999,10 @@ public class FoggingReportsFragment extends Fragment {
         // export must be blocked rather than reusing stale data.
         if (currentFilter == null || currentSummary == null || currentTotals == null) {
             Toast.makeText(getContext(), "Load a fogging report before exporting.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (resultFromCache) {
+            Toast.makeText(getContext(), CachedReportNotice.EXPORT_BLOCKED, Toast.LENGTH_LONG).show();
             return;
         }
         // Confirmed live bug: processedSessions only ever holds COMPLETED

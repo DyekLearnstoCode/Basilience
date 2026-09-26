@@ -251,6 +251,18 @@
                     android:layout_marginTop="@dimen/ds_space_md"
                     android:text="" />
 
+                <TextView
+                    android:id="@+id/tvCacheNotice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    style="@style/Basilience.Caption"
+                    android:textColor="@color/alert_orange"
+                    android:visibility="gone"
+                    android:text="" />
+
                 <!-- INSIGHT HERO: one grouped surface - status badge, then
                      evidence, then a thin internal rule, then the primary
                      threshold/range value. A slim status-colored edge and

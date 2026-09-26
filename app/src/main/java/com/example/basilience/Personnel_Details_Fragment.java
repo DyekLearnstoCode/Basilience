@@ -258,7 +258,7 @@ public class Personnel_Details_Fragment extends Fragment {
             }
 
             List<String> deviceIds = new ArrayList<>();
-            for (DocumentSnapshot device : devices.getDocuments()) deviceIds.add(device.getId());
+            for (DocumentSnapshot device : devices) deviceIds.add(device.getId());
             helper.getAssignmentsForUser(personnelId).addOnSuccessListener(assignments -> {
                 if (!isAdded()) return;
                 java.util.HashSet<String> assignedIds = new java.util.HashSet<>();
