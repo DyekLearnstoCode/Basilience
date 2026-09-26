@@ -902,9 +902,9 @@ public class SystemReportsFragment extends Fragment {
                 });
     }
 
-    /** Shows or hides the offline notice and dims the export button to match the data now on screen. */
+    /** Shows or hides the offline notice to match the data now on screen. */
     private void applyCacheState() {
-        CachedReportNotice.apply(tvCacheNotice, btnShare, resultFromCache);
+        CachedReportNotice.apply(tvCacheNotice, resultFromCache);
     }
 
     private void showReportLoadFailure(Exception e) {
@@ -1765,10 +1765,6 @@ public class SystemReportsFragment extends Fragment {
             Toast.makeText(getContext(), "Load a report before exporting.", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (resultFromCache) {
-            Toast.makeText(getContext(), CachedReportNotice.EXPORT_BLOCKED, Toast.LENGTH_LONG).show();
-            return;
-        }
         String[] formatOptions = {"PDF (Summary Report)", "Excel (Comprehensive Data)"};
         NotificationHelper.showSelectionDialog(requireContext(), "Export Report", formatOptions, formatIndex -> {
             boolean isPdf = formatIndex == 0;
@@ -1862,10 +1858,6 @@ public class SystemReportsFragment extends Fragment {
             Toast.makeText(getContext(), "Load a report before exporting.", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (resultFromCache) {
-            Toast.makeText(getContext(), CachedReportNotice.EXPORT_BLOCKED, Toast.LENGTH_LONG).show();
-            return;
-        }
 
         if (exportInProgress) {
             Toast.makeText(getContext(), "An export is already in progress.", Toast.LENGTH_SHORT).show();
@@ -1879,6 +1871,7 @@ public class SystemReportsFragment extends Fragment {
         // reads only these values: not the fragment, its views, or the live
         // report state (which a newer load may replace while it runs).
         final ParameterReportFilter filter = currentFilter;
+        final boolean offlineCached = resultFromCache;
         final Map<String, List<ChartAggregation.Sample>> parameterSamples = currentParameterSamples;
         final Map<String, RangeRule> rules = captureRangeRules();
         final List<String> parameters = new ArrayList<>(selectedParameters);
@@ -1911,10 +1904,12 @@ public class SystemReportsFragment extends Fragment {
                 String userName = "Basilience User";
                 if (isPdf) {
                     CycleReportGenerator generator = new CycleReportGenerator(appContext, charts);
+                    generator.setOfflineCached(offlineCached);
                     file = generator.generateMultiParameterSensorReportPdf(filter, bundles, userName);
                     mimeType = "application/pdf";
                 } else {
                     ExcelReportGenerator generator = new ExcelReportGenerator(appContext, charts);
+                    generator.setOfflineCached(offlineCached);
                     file = generator.generateSensorReportXlsx(filter, bundles, userName);
                     mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
                 }

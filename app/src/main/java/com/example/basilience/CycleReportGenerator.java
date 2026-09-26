@@ -50,6 +50,7 @@ public class CycleReportGenerator {
     private static final int PDF_BODY = Color.parseColor("#333333");    // dark gray
     private static final int PDF_META = Color.parseColor("#6B6B6B");    // medium gray
     private static final int PDF_RULE = Color.parseColor("#C8C8C8");
+    private static final int PDF_WARNING = Color.parseColor("#B45309"); // dark amber, readable on white
 
     private static final float PDF_SIZE_BRAND = 19f;
     private static final float PDF_SIZE_REPORT_TITLE = 16f;
@@ -72,6 +73,14 @@ public class CycleReportGenerator {
     // findings list, not a full log.
     private static final int MAX_EXCURSIONS_PER_PARAMETER = 5;
     private static final int PARAMETER_CHART_HEIGHT = 110;
+
+    // Set for one export when its report was built only from the local cache: every page
+    // header then carries the data source and the "may be incomplete" warning.
+    private boolean offlineCached = false;
+
+    public void setOfflineCached(boolean offlineCached) {
+        this.offlineCached = offlineCached;
+    }
 
     public CycleReportGenerator(Context context) {
         this.context = context;
@@ -759,6 +768,11 @@ public class CycleReportGenerator {
         Paint.FontMetrics metaFm = paint.getFontMetrics();
         canvas.drawText("Generated on: " + DateUtils.formatDateTime(Timestamp.now()),
                 PAGE_WIDTH - MARGIN - 190, metaTop - metaFm.ascent, paint);
+        if (offlineCached) {
+            y = drawTextBlock(canvas, paint, "Data source: " + CachedReportNotice.DATA_SOURCE_OFFLINE, x, y);
+            y = drawWrappedBlock(canvas, CachedReportNotice.EXPORT_WARNING, x, y + 2,
+                    PAGE_WIDTH - 2 * MARGIN, PDF_SIZE_META, PDF_WARNING);
+        }
 
         y += 10;
         paint.setColor(PDF_RULE);

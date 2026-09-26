@@ -1980,9 +1980,9 @@ public class FoggingReportsFragment extends Fragment {
         });
     }
 
-    /** Shows or hides the offline notice and dims the export button to match the data now on screen. */
+    /** Shows or hides the offline notice to match the data now on screen. */
     private void applyCacheState() {
-        CachedReportNotice.apply(tvCacheNotice, btnShare, resultFromCache);
+        CachedReportNotice.apply(tvCacheNotice, resultFromCache);
     }
 
     private void updateUIForRole() {
@@ -1999,10 +1999,6 @@ public class FoggingReportsFragment extends Fragment {
         // export must be blocked rather than reusing stale data.
         if (currentFilter == null || currentSummary == null || currentTotals == null) {
             Toast.makeText(getContext(), "Load a fogging report before exporting.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if (resultFromCache) {
-            Toast.makeText(getContext(), CachedReportNotice.EXPORT_BLOCKED, Toast.LENGTH_LONG).show();
             return;
         }
         // Confirmed live bug: processedSessions only ever holds COMPLETED
@@ -2040,6 +2036,7 @@ public class FoggingReportsFragment extends Fragment {
         }
 
         final FoggingReportFilter filter = currentFilter;
+        final boolean offlineCached = resultFromCache;
         final List<FoggingSession> sessions = new ArrayList<>(processedSessions);
         // Same session set the on-screen table shows, including a session
         // still running now (which processedSessions leaves out).
@@ -2111,6 +2108,7 @@ public class FoggingReportsFragment extends Fragment {
                 final Uri contentUri;
                 try {
                     CycleReportGenerator generator = new CycleReportGenerator(appContext);
+                    generator.setOfflineCached(offlineCached);
                     result = generator.generateFoggingReportPdf(filter, chartBitmap, sessions, status,
                             totals, interpretation, userName);
                     contentUri = FileProvider.getUriForFile(appContext, packageName + ".fileprovider", result);
