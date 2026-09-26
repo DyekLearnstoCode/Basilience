@@ -1883,11 +1883,11 @@ public class SystemReportsFragment extends Fragment {
             // one is rendered to a Bitmap on the main thread and the finished
             // Bitmap is handed back to this worker for writing the file.
             final java.util.concurrent.atomic.AtomicLong mainRenderMs = new java.util.concurrent.atomic.AtomicLong();
-            final ControlChartRenderer.Provider charts = (bundle, buckets, widthPx, heightPx, topExcursion) ->
+            final ControlChartRenderer.Provider charts = (bundle, buckets, widthPx, heightPx, topExcursion, style) ->
                     ReportWorker.callOnMain(() -> {
                         long renderStart = SystemClock.elapsedRealtime();
                         android.graphics.Bitmap chart = ControlChartRenderer.render(appContext, bundle, buckets,
-                                widthPx, heightPx, topExcursion);
+                                widthPx, heightPx, topExcursion, style);
                         mainRenderMs.addAndGet(SystemClock.elapsedRealtime() - renderStart);
                         return chart;
                     });

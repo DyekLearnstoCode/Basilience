@@ -85,13 +85,37 @@ public final class ControlChartRenderer {
     public interface Provider {
         @Nullable
         Bitmap chartFor(ParameterExportBundle bundle, List<ChartAggregation.Bucket> buckets,
-                        int widthPx, int heightPx, @Nullable ChartAggregation.Excursion topExcursion);
+                        int widthPx, int heightPx, @Nullable ChartAggregation.Excursion topExcursion, Style style);
+    }
+
+    /**
+     * How the figure is typeset. STANDARD is the original look (used by the
+     * XLSX export). The PDF style sizes every text and stroke in points of the
+     * printed page (pixelsPerPoint = bitmap pixels per PDF point), so a tall
+     * chart placed on the page gets small, evenly spaced labels, and it moves
+     * the Min/Max threshold labels out of the plot into the right margin.
+     * The data, bands, dots, whiskers and excursion callout are identical.
+     */
+    public static final class Style {
+        public static final Style STANDARD = new Style(false, 1f);
+
+        final boolean pdf;
+        final float pixelsPerPoint;
+
+        private Style(boolean pdf, float pixelsPerPoint) {
+            this.pdf = pdf;
+            this.pixelsPerPoint = pixelsPerPoint;
+        }
+
+        public static Style pdf(float pixelsPerPoint) {
+            return new Style(true, pixelsPerPoint);
+        }
     }
 
     /** Renders directly on the calling thread, which must be the main thread. */
     public static Provider direct(Context context) {
-        return (bundle, buckets, widthPx, heightPx, topExcursion) ->
-                render(context, bundle, buckets, widthPx, heightPx, topExcursion);
+        return (bundle, buckets, widthPx, heightPx, topExcursion, style) ->
+                render(context, bundle, buckets, widthPx, heightPx, topExcursion, style);
     }
 
     /**
@@ -101,8 +125,11 @@ public final class ControlChartRenderer {
      * null when there is nothing to plot.
      */
     public static Bitmap render(Context context, ParameterExportBundle bundle, List<ChartAggregation.Bucket> buckets,
-                                 int widthPx, int heightPx, @Nullable ChartAggregation.Excursion topExcursion) {
+                                 int widthPx, int heightPx, @Nullable ChartAggregation.Excursion topExcursion,
+                                 Style style) {
         if (buckets.isEmpty()) return null;
+        final boolean pdf = style.pdf;
+        final float ppp = style.pixelsPerPoint;
 
         List<Entry> entries = new ArrayList<>(buckets.size());
         long baseMs = buckets.get(0).bucketStartMs;
@@ -119,16 +146,20 @@ public final class ControlChartRenderer {
             if (b.max > dataHigh) dataHigh = b.max;
         }
 
-        float axisTextSize = Math.max(18f, heightPx * 0.025f);
-        float lineWidth = Math.max(2f, heightPx * 0.005f);
-        float circleRadius = Math.max(3f, heightPx * 0.008f);
+        float axisTextSize = pdf ? 8.5f * ppp : Math.max(18f, heightPx * 0.025f);
+        float lineWidth = pdf ? 2.0f * ppp : Math.max(2f, heightPx * 0.005f);
+        float circleRadius = pdf ? 3.0f * ppp : Math.max(3f, heightPx * 0.008f);
 
         ThresholdBandLineChart chart = new ThresholdBandLineChart(context);
+        // MPAndroidChart takes text sizes, stroke widths, radii and offsets in dp and multiplies
+        // them by the screen density. The PDF style works in exact bitmap pixels, so it divides
+        // by that density first; the standard style keeps its original values unchanged.
+        final float dens = pdf ? com.github.mikephil.charting.utils.Utils.convertDpToPixel(1f) : 1f;
         chart.setLayoutParams(new ViewGroup.LayoutParams(widthPx, heightPx));
 
         LineDataSet lineSet = new LineDataSet(entries, bundle.displayParameter);
         lineSet.setColor(LINE_COLOR);
-        lineSet.setLineWidth(lineWidth);
+        lineSet.setLineWidth(lineWidth / dens);
         lineSet.setDrawCircles(false);
         lineSet.setDrawValues(false);
         lineSet.setHighlightEnabled(false);
@@ -153,7 +184,7 @@ public final class ControlChartRenderer {
         markerSet.setColor(Color.TRANSPARENT);
         markerSet.setLineWidth(0f);
         markerSet.setDrawCircles(true);
-        markerSet.setCircleRadius(circleRadius);
+        markerSet.setCircleRadius(circleRadius / dens);
         markerSet.setDrawCircleHole(false);
         markerSet.setCircleColors(markerColors);
         markerSet.setDrawValues(false);
@@ -170,20 +201,31 @@ public final class ControlChartRenderer {
         // borderless screenshot of a floating line.
         chart.setDrawBorders(true);
         chart.setBorderColor(Color.parseColor("#B0B0B0"));
-        chart.setBorderWidth(1f);
+        chart.setBorderWidth(pdf ? 0.8f * ppp / dens : 1f);
 
         YAxis axisLeft = chart.getAxisLeft();
-        axisLeft.setTextSize(axisTextSize);
+        axisLeft.setTextSize(axisTextSize / dens);
+        if (pdf) {
+            // A fixed, modest number of labels, all at the parameter's own
+            // precision, so the value axis can never stack or collide.
+            axisLeft.setLabelCount(6, false);
+            final String axisFormat = "%." + Math.max(1, Math.min(2, bundle.decimals)) + "f";
+            axisLeft.setValueFormatter(new com.github.mikephil.charting.formatter.ValueFormatter() {
+                @Override public String getFormattedValue(float value) {
+                    return String.format(Locale.getDefault(), axisFormat, value);
+                }
+            });
+        }
         chart.getAxisRight().setEnabled(false);
 
         if (bundle.rangeMin != null && bundle.rangeMax != null) {
             float margin = ThresholdZoneClassifier.marginFor(bundle.rangeMin, bundle.rangeMax);
             float axisFloor = Math.min(dataLow, bundle.rangeMin) - margin;
             float axisCeiling = Math.max(dataHigh, bundle.rangeMax) + margin;
-            chart.setThresholdBands(buildThresholdBands(bundle.rangeMin, bundle.rangeMax));
+            chart.setThresholdBands(buildThresholdBands(bundle.rangeMin, bundle.rangeMax, !pdf));
             axisLeft.setAxisMinimum(axisFloor);
             axisLeft.setAxisMaximum(axisCeiling);
-            addLimitLines(axisLeft, bundle, axisTextSize * 0.85f);
+            addLimitLines(axisLeft, bundle, axisTextSize * 0.85f, !pdf);
         } else {
             axisLeft.resetAxisMinimum();
             axisLeft.resetAxisMaximum();
@@ -191,7 +233,7 @@ public final class ControlChartRenderer {
 
         XAxis xAxis = chart.getXAxis();
         xAxis.setPosition(XAxis.XAxisPosition.BOTTOM);
-        xAxis.setTextSize(axisTextSize);
+        xAxis.setTextSize(axisTextSize / dens);
         AdaptiveTimeAxisFormatter formatter = new AdaptiveTimeAxisFormatter(baseMs, TIMEZONE_ID);
         long lastMs = buckets.get(buckets.size() - 1).bucketStartMs;
         float fullSpanMinutes = Math.max(1f, (lastMs - baseMs) / 60000f);
@@ -200,10 +242,20 @@ public final class ControlChartRenderer {
         xAxis.setGranularity(formatter.getGranularityMinutes());
         xAxis.setGranularityEnabled(true);
         xAxis.setLabelCount(formatter.suggestedLabelCount(), false);
-        chart.setExtraBottomOffset(heightPx * 0.02f);
-        chart.setExtraTopOffset(heightPx * 0.015f);
-        chart.setExtraLeftOffset(heightPx * 0.01f);
-        chart.setExtraRightOffset(heightPx * 0.02f);
+        if (pdf) {
+            xAxis.setAvoidFirstLastClipping(true);
+            // Generous margins: room left of the value labels, and a right
+            // margin that holds the Min/Max threshold labels outside the plot.
+            chart.setExtraBottomOffset(6f * ppp / dens);
+            chart.setExtraTopOffset(8f * ppp / dens);
+            chart.setExtraLeftOffset(8f * ppp / dens);
+            chart.setExtraRightOffset(46f * ppp / dens);
+        } else {
+            chart.setExtraBottomOffset(heightPx * 0.02f);
+            chart.setExtraTopOffset(heightPx * 0.015f);
+            chart.setExtraLeftOffset(heightPx * 0.01f);
+            chart.setExtraRightOffset(heightPx * 0.02f);
+        }
 
         int widthSpec = View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY);
         int heightSpec = View.MeasureSpec.makeMeasureSpec(heightPx, View.MeasureSpec.EXACTLY);
@@ -221,6 +273,10 @@ public final class ControlChartRenderer {
         // reflects). A whisker from the bucket's real min to its real max
         // makes that excursion visible instead of averaging it away.
         drawBucketWhiskers(bitmapCanvas, chart, buckets, baseMs);
+
+        if (pdf && bundle.rangeMin != null && bundle.rangeMax != null) {
+            drawThresholdLabelsInMargin(bitmapCanvas, chart, bundle, axisTextSize, ppp);
+        }
 
         if (topExcursion != null) {
             drawExcursionAnnotation(bitmapCanvas, chart, bundle, baseMs, topExcursion, axisTextSize);
@@ -254,11 +310,11 @@ public final class ControlChartRenderer {
     }
 
     /** Dashed Min/Max lines with numeric labels, matching the on-screen chart's own limit lines. */
-    private static void addLimitLines(YAxis axisLeft, ParameterExportBundle bundle, float textSize) {
+    private static void addLimitLines(YAxis axisLeft, ParameterExportBundle bundle, float textSize, boolean labelOnLine) {
         axisLeft.removeAllLimitLines();
         int decimals = bundle.decimals;
-        String minLabel = "Min " + String.format(Locale.getDefault(), "%." + decimals + "f", bundle.rangeMin);
-        String maxLabel = "Max " + String.format(Locale.getDefault(), "%." + decimals + "f", bundle.rangeMax);
+        String minLabel = labelOnLine ? "Min " + String.format(Locale.getDefault(), "%." + decimals + "f", bundle.rangeMin) : "";
+        String maxLabel = labelOnLine ? "Max " + String.format(Locale.getDefault(), "%." + decimals + "f", bundle.rangeMax) : "";
         axisLeft.addLimitLine(buildLimitLine(bundle.rangeMin, minLabel, textSize));
         axisLeft.addLimitLine(buildLimitLine(bundle.rangeMax, maxLabel, textSize));
     }
@@ -274,18 +330,50 @@ public final class ControlChartRenderer {
         return line;
     }
 
+    /** PDF style: the Min/Max values are written just outside the plot's right edge, level with their dashed lines, instead of on top of the plotted series. */
+    private static void drawThresholdLabelsInMargin(Canvas canvas, ThresholdBandLineChart chart, ParameterExportBundle bundle,
+                                                     float textSize, float ppp) {
+        Transformer transformer = chart.getTransformer(YAxis.AxisDependency.LEFT);
+        android.graphics.RectF content = chart.getViewPortHandler().getContentRect();
+        String format = "%." + bundle.decimals + "f";
+
+        float[] maxPt = {0f, bundle.rangeMax};
+        float[] minPt = {0f, bundle.rangeMin};
+        transformer.pointValuesToPixel(maxPt);
+        transformer.pointValuesToPixel(minPt);
+
+        Paint paint = new Paint();
+        paint.setAntiAlias(true);
+        paint.setColor(RED_COLOR);
+        paint.setTextSize(textSize);
+
+        float half = textSize * 0.35f; // vertical centring of the text on its line
+        float maxY = maxPt[1] + half;
+        float minY = minPt[1] + half;
+        // Keep the two labels from touching if the limits are close together.
+        float minGap = textSize * 1.2f;
+        if (minY - maxY < minGap) {
+            float mid = (minY + maxY) / 2f;
+            maxY = mid - minGap / 2f;
+            minY = mid + minGap / 2f;
+        }
+        float x = content.right + 4f * ppp;
+        canvas.drawText("Max " + String.format(Locale.getDefault(), format, bundle.rangeMax), x, maxY, paint);
+        canvas.drawText("Min " + String.format(Locale.getDefault(), format, bundle.rangeMin), x, minY, paint);
+    }
+
     /** Same centralized margin (ThresholdZoneClassifier) every export/report output uses - a zone can never disagree between the PDF and XLSX, or with the on-screen chart's own coloring. */
-    private static List<ThresholdBandLineChart.Band> buildThresholdBands(float min, float max) {
+    private static List<ThresholdBandLineChart.Band> buildThresholdBands(float min, float max, boolean withLabels) {
         List<ThresholdBandLineChart.Band> bands = new ArrayList<>();
         float margin = ThresholdZoneClassifier.marginFor(min, max);
         int red = Color.parseColor("#F8D7DA");
         int yellow = Color.parseColor("#FFF3CD");
         int green = Color.parseColor("#E8F5EA");
-        bands.add(new ThresholdBandLineChart.Band(Float.NaN, min, red, "Out of Range"));
-        bands.add(new ThresholdBandLineChart.Band(min, min + margin, yellow, "Near Threshold"));
-        bands.add(new ThresholdBandLineChart.Band(min + margin, max - margin, green, "Normal"));
-        bands.add(new ThresholdBandLineChart.Band(max - margin, max, yellow, "Near Threshold"));
-        bands.add(new ThresholdBandLineChart.Band(max, Float.NaN, red, "Out of Range"));
+        bands.add(new ThresholdBandLineChart.Band(Float.NaN, min, red, withLabels ? "Out of Range" : null));
+        bands.add(new ThresholdBandLineChart.Band(min, min + margin, yellow, withLabels ? "Near Threshold" : null));
+        bands.add(new ThresholdBandLineChart.Band(min + margin, max - margin, green, withLabels ? "Normal" : null));
+        bands.add(new ThresholdBandLineChart.Band(max - margin, max, yellow, withLabels ? "Near Threshold" : null));
+        bands.add(new ThresholdBandLineChart.Band(max, Float.NaN, red, withLabels ? "Out of Range" : null));
         return bands;
     }
 

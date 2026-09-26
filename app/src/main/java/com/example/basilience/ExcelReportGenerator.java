@@ -257,7 +257,7 @@ public class ExcelReportGenerator {
         if (!buckets.isEmpty()) {
             int chartTopRow = rowIndex;
             int chartBottomRow = chartTopRow + CHART_ANCHOR_ROWS;
-            Bitmap chartBitmap = chartProvider.chartFor(bundle, buckets, 1500, 620, topExcursion);
+            Bitmap chartBitmap = chartProvider.chartFor(bundle, buckets, 1500, 620, topExcursion, ControlChartRenderer.Style.STANDARD);
             if (chartBitmap != null) {
                 embedPicture(workbook, sheet, chartBitmap, 0, chartTopRow, NUM_COLS, chartBottomRow);
                 chartBitmap.recycle();

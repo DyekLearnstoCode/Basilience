@@ -72,7 +72,15 @@ public class CycleReportGenerator {
     // several noisy parameters can never balloon the page count - this is a
     // findings list, not a full log.
     private static final int MAX_EXCURSIONS_PER_PARAMETER = 5;
-    private static final int PARAMETER_CHART_HEIGHT = 110;
+    // Each parameter's chart aims for roughly 40% of the usable page height and never
+    // drops below the minimum: when the space left on a page is smaller, the block starts a new page.
+    private static final int PARAMETER_CHART_TARGET_HEIGHT = 300;
+    private static final int PARAMETER_CHART_MIN_HEIGHT = 240;
+    // The first block shares page 1 with the report details, so it may use a smaller chart
+    // rather than pushing itself to page 2 and leaving page 1 almost empty.
+    private static final int PARAMETER_CHART_FIRST_BLOCK_MIN_HEIGHT = 170;
+    // Bitmap pixels per PDF point for the chart image (3x keeps thin lines and small text crisp).
+    private static final int PARAMETER_CHART_PIXELS_PER_POINT = 3;
 
     // Set for one export when its report was built only from the local cache: every page
     // header then carries the data source and the "may be incomplete" warning.
@@ -328,24 +336,32 @@ public class CycleReportGenerator {
         y = drawTextBlock(canvas, paint, "Parameters Included: " + paramList, x, y);
         y += PDF_GAP_SECTION;
 
+        boolean firstBlock = true;
         for (ParameterExportBundle bundle : bundles) {
             List<ChartAggregation.Bucket> buckets = ControlChartRenderer.aggregateForChart(bundle,
                     filter.effectiveStartMs, filter.effectiveEndMs);
             List<ChartAggregation.Excursion> excursions = ChartAggregation.findExcursions(bundle.samples,
                     bundle.rangeMin, bundle.rangeMax, MAX_EXCURSIONS_PER_PARAMETER);
 
-            int blockHeight = estimateParameterBlockHeight(bundle, excursions, contentWidth);
-            if (y + blockHeight > PDF_FOOTER_SAFE_Y) {
+            // Everything except the chart, so the chart can take the space that is left
+            // (up to its target height) and a block never starts where it cannot fit.
+            int fixedHeight = estimateParameterBlockHeight(bundle, excursions, contentWidth);
+            int chartHeight = Math.min(PARAMETER_CHART_TARGET_HEIGHT, PDF_FOOTER_SAFE_Y - y - fixedHeight);
+            int minChartHeight = firstBlock ? PARAMETER_CHART_FIRST_BLOCK_MIN_HEIGHT : PARAMETER_CHART_MIN_HEIGHT;
+            if (chartHeight < minChartHeight) {
                 drawModernReportFooter(canvas, paint, pageNumber - 1);
                 document.finishPage(page);
                 pageInfo = new PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, pageNumber++).create();
                 page = document.startPage(pageInfo);
                 canvas = page.getCanvas();
                 y = drawModernReportHeader(canvas, paint, x, 50, "Parameter Report", userName, filter.cycleStatus);
+                chartHeight = Math.max(PARAMETER_CHART_MIN_HEIGHT,
+                        Math.min(PARAMETER_CHART_TARGET_HEIGHT, PDF_FOOTER_SAFE_Y - y - fixedHeight));
             }
 
-            y = drawParameterBlock(canvas, paint, bundle, buckets, excursions, x, y, contentWidth);
+            y = drawParameterBlock(canvas, paint, bundle, buckets, excursions, x, y, contentWidth, chartHeight);
             y += PDF_GAP_SECTION;
+            firstBlock = false;
         }
 
         drawModernReportFooter(canvas, paint, pageNumber - 1);
@@ -366,24 +382,24 @@ public class CycleReportGenerator {
         return file;
     }
 
-    /** Worst-case height for one parameter's block, so pagination can decide BEFORE drawing whether it fits. */
+    /** Worst-case height of one parameter's block EXCLUDING its chart, so pagination can decide BEFORE drawing how tall the chart can be. */
     private int estimateParameterBlockHeight(ParameterExportBundle bundle, List<ChartAggregation.Excursion> excursions,
                                               int contentWidth) {
         int titleHeight = (int) Math.ceil(PDF_SIZE_PARAM_TITLE * 1.4f) + 6;
         int statsHeight = (int) Math.ceil(PDF_SIZE_BODY * 1.4f) * 5; // target range + status + avg + min + max lines
-        int chartHeight = PARAMETER_CHART_HEIGHT + PDF_GAP_AFTER_HEADING + (int) Math.ceil(PDF_SIZE_SECTION * 1.4f);
+        int chartGaps = PDF_GAP_AFTER_HEADING;
         int findingsHeight = excursions.isEmpty() ? 0
                 : (int) Math.ceil(PDF_SIZE_SECTION * 1.4f) + PDF_GAP_AFTER_HEADING
                     + excursions.size() * (int) Math.ceil(PDF_SIZE_BODY * 1.4f);
         int interpretationHeight = (int) Math.ceil(PDF_SIZE_SECTION * 1.4f) + PDF_GAP_AFTER_HEADING
                 + measureWrappedHeight(bundle.interpretation, contentWidth, PDF_SIZE_BODY);
-        return titleHeight + statsHeight + PDF_GAP_SECTION + chartHeight + PDF_GAP_SECTION
+        return titleHeight + statsHeight + PDF_GAP_SECTION + chartGaps + PDF_GAP_SECTION
                 + findingsHeight + (excursions.isEmpty() ? 0 : PDF_GAP_SECTION) + interpretationHeight;
     }
 
     private int drawParameterBlock(Canvas canvas, Paint paint, ParameterExportBundle bundle,
                                     List<ChartAggregation.Bucket> buckets, List<ChartAggregation.Excursion> excursions,
-                                    int x, int y, int contentWidth) {
+                                    int x, int y, int contentWidth, int chartHeight) {
         paint.setColor(PDF_HEADING);
         paint.setTextSize(PDF_SIZE_PARAM_TITLE);
         paint.setFakeBoldText(true);
@@ -404,15 +420,24 @@ public class CycleReportGenerator {
         y += PDF_GAP_AFTER_HEADING;
 
         ChartAggregation.Excursion topExcursion = excursions.isEmpty() ? null : excursions.get(0);
-        Bitmap chartBitmap = chartProvider.chartFor(bundle, buckets, contentWidth * 2, PARAMETER_CHART_HEIGHT * 2, topExcursion);
+        // The bitmap is rendered at exactly (page points x pixels-per-point), so drawing it into
+        // the contentWidth x chartHeight box keeps its aspect ratio.
+        final int scale = PARAMETER_CHART_PIXELS_PER_POINT;
+        Bitmap chartBitmap = chartProvider.chartFor(bundle, buckets, contentWidth * scale, chartHeight * scale,
+                topExcursion, ControlChartRenderer.Style.pdf(scale));
         if (chartBitmap != null) {
-            Rect destRect = new Rect(x, y, x + contentWidth, y + PARAMETER_CHART_HEIGHT);
+            Rect destRect = new Rect(x, y, x + contentWidth, y + chartHeight);
             canvas.drawBitmap(chartBitmap, null, destRect, paint);
             chartBitmap.recycle();
         }
-        y += PARAMETER_CHART_HEIGHT + PDF_GAP_SECTION;
+        y += chartHeight + PDF_GAP_SECTION;
+
+        // Interpretation sits directly under the chart it explains.
+        y = drawSectionHeading(canvas, paint, "Interpretation", x, y);
+        y = drawWrappedBlock(canvas, bundle.interpretation, x, y, contentWidth, PDF_SIZE_BODY, PDF_BODY);
 
         if (!excursions.isEmpty()) {
+            y += PDF_GAP_SECTION;
             y = drawSectionHeading(canvas, paint, "Out-of-Range Findings", x, y);
             applyBodyPaint(paint);
             for (ChartAggregation.Excursion e : excursions) {
@@ -424,9 +449,6 @@ public class CycleReportGenerator {
             }
             y += PDF_GAP_AFTER_HEADING;
         }
-
-        y = drawSectionHeading(canvas, paint, "Interpretation", x, y);
-        y = drawWrappedBlock(canvas, bundle.interpretation, x, y, contentWidth, PDF_SIZE_BODY, PDF_BODY);
 
         return y;
     }
