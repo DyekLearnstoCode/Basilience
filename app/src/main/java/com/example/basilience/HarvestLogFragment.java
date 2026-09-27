@@ -83,15 +83,11 @@ public class HarvestLogFragment extends Fragment {
     private Harvest editingHarvest = null;
     private Cycle currentCycle = null;
     // The exact physical measurement backing the CURRENT new-harvest attempt
-    // when currentHarvestSource == "SCALE" - null for MANUAL entries, and
-    // always null while editing an existing Harvest (see showHarvestDialog(),
-    // which hides "Read from Harvest Scale" entirely once harvest != null:
-    // editing history must never consume a brand-new physical measurement).
-    // Retained across the "Read from Harvest Scale" tap and the eventual
-    // Save tap so the measurement's identity (not just its weight) reaches
-    // addHarvestTransaction(cycleId, harvest, HarvestScaleReading) for
-    // atomic, idempotent consumption. Reset to null on every fresh manual
-    // entry and immediately after a successful save.
+    // when currentHarvestSource == "SCALE" - null for MANUAL entries (the
+    // Manual Entry dialog never sets this; only the top-level "Read from
+    // Scale" choice in showAddHarvestChoiceDialog()/addHarvestFromScale()
+    // does) and always null while editing an existing Harvest. Reset to
+    // null immediately after a successful save.
     private HarvestScaleReading currentScaleReading = null;
     // deviceId of the Basilience Harvest Scale paired with this fragment's
     // device (Database_Helper.setHarvestScaleId()/getHarvestScaleId()) - a
@@ -327,12 +323,11 @@ public class HarvestLogFragment extends Fragment {
     }
 
     // Entry point for the FAB, once readiness checks above pass. Offers a
-    // choice between the existing manual form (unchanged - see
-    // showHarvestDialog()) and reading straight from a paired Harvest
-    // Scale with no form step at all (see addHarvestFromScale()). Skips
-    // straight to the manual form when no scale is paired, matching
-    // showHarvestDialog()'s own "hide the control rather than offer one
-    // that can only fail" reasoning for the same pairing check.
+    // choice between the manual form (showHarvestDialog()) and reading
+    // straight from a paired Harvest Scale with no form step at all (see
+    // addHarvestFromScale()) - the only two ways to add a new harvest.
+    // Skips straight to the manual form when no scale is paired, so a
+    // control that can only fail is never offered.
     private void showAddHarvestChoiceDialog() {
         if (pairedHarvestScaleId == null || pairedHarvestScaleId.isEmpty()) {
             showHarvestDialog(null);
@@ -356,9 +351,8 @@ public class HarvestLogFragment extends Fragment {
     // measurement in the same transaction (see addHarvestTransaction(String,
     // Harvest, HarvestScaleReading)) - with a loading state while fetching
     // and a success confirmation once saved, no intermediate form to review
-    // or edit first. (showHarvestDialog()'s own "Read from Harvest Scale"
-    // button is the alternative path for anyone who wants to review/adjust
-    // the value or add notes before saving.)
+    // or edit first. Manual Entry (showHarvestDialog()) is the alternative
+    // for typing in a weight instead.
     private void addHarvestFromScale() {
         if (isHarvestSubmitting) return;
         if (currentCycle == null) {
@@ -434,75 +428,6 @@ public class HarvestLogFragment extends Fragment {
         TextView tvHarvestDate = dialogView.findViewById(R.id.tvHarvestDate);
         Button btnSave = dialogView.findViewById(R.id.btnSaveHarvest);
         Button btnCancel = dialogView.findViewById(R.id.btnCancel);
-        Button btnReadSensor = dialogView.findViewById(R.id.btnReadSensor);
-
-        // BasilienceHarvestScale (a standalone ESP8266 device, separate
-        // from this device's own ESP32 grow-chamber firmware) publishes
-        // real weight readings once paired - see loadPairedHarvestScale()
-        // and Database_Helper.setHarvestScaleId()/getHarvestScaleId(). No
-        // pairing means nothing to read from, so the control stays hidden
-        // rather than offering a button that can only ever fail.
-        //
-        // Also hidden outright while EDITING (harvest != null): scale
-        // capture is only for creating a NEW Harvest. Editing history must
-        // never consume a brand-new physical measurement - see Part W.
-        if (harvest != null || pairedHarvestScaleId == null || pairedHarvestScaleId.isEmpty()) {
-            btnReadSensor.setVisibility(View.GONE);
-        } else {
-        btnReadSensor.setVisibility(View.VISIBLE);
-        btnReadSensor.setOnClickListener(v -> {
-            btnReadSensor.setEnabled(false);
-            // This reads the scale's most recent STABILITY-CONFIRMED,
-            // UNCONSUMED entry - not the raw live field it overwrites every
-            // 5 seconds regardless of settling, and not one already turned
-            // into an earlier Harvest Log (see findUnconsumedHarvestScaleReading()).
-            dbHelper.findUnconsumedHarvestScaleReading(pairedHarvestScaleId)
-                    .addOnSuccessListener(reading -> {
-                        if (!isAdded()) return;
-                        btnReadSensor.setEnabled(true);
-                        if (layoutWeight != null) layoutWeight.setError(null);
-                        // Whole-gram preview, matching the physical scale's own LCD
-                        // (which only ever shows whole grams) - not
-                        // HarvestFormatter.formatWeight()'s "1.5 kg"/"850 g" display
-                        // string, since this field is still a bare parseable number
-                        // (Save re-parses it purely to validate it's non-empty/
-                        // numeric/positive - see the Save handler below). The value
-                        // actually SAVED is NOT this rounded text: it comes from
-                        // currentScaleReading.getGrams() directly, so the stored
-                        // decimal precision is never lost to this rounded preview.
-                        etWeight.setText(String.valueOf(Math.round(reading.getGrams())));
-                        currentHarvestSource = "SCALE";
-                        // Retained until Save (or the dialog is reopened
-                        // fresh) so the measurement's IDENTITY - not just its
-                        // weight - reaches addHarvestTransaction() for atomic,
-                        // idempotent consumption.
-                        currentScaleReading = reading;
-                        // Locked immediately after populating - a SCALE-
-                        // sourced Harvest's weight must always equal the
-                        // physical measurement it's consuming. Previously
-                        // this field stayed freely editable after a sensor
-                        // read, so a user could type over the real value
-                        // while Save still attached currentScaleReading's
-                        // identity, silently logging a number the scale
-                        // never actually produced. Someone who wants a
-                        // different number now has to cancel and use Manual
-                        // Entry instead, which never attaches a scale
-                        // reading. Notes remain freely editable.
-                        etWeight.setEnabled(false);
-                        if (layoutWeight != null) {
-                            layoutWeight.setHelperText("Locked to the scale reading. Use Manual Entry for a different weight.");
-                        }
-                    })
-                    .addOnFailureListener(e -> {
-                        if (!isAdded()) return;
-                        btnReadSensor.setEnabled(true);
-                        Log.e(TAG, "Failed to read harvest scale reading", e);
-                        NotificationHelper.showError(getContext(), specificOrGenericMessage(e,
-                                "Unable to read the harvest scale. Check that it's powered on, connected to Wi-Fi, and has a stable weighing on the platform.",
-                                FirebaseFirestoreException.Code.ABORTED));
-                    });
-        });
-        }
 
         editingHarvest = harvest;
         currentHarvestSource = "MANUAL";
