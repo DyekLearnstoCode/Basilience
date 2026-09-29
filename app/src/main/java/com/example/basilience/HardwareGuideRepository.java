@@ -107,6 +107,34 @@ public class HardwareGuideRepository {
                 });
     }
 
+    /**
+     * Writes just the video card fields for one component (currently only
+     * {@link HardwareComponentKey#VIDEO_TUTORIAL}) - separate from
+     * {@link #saveOverride} since the video card has no purpose/steps/image
+     * of its own and shouldn't force an Admin through that unrelated form.
+     * Blank title/description/url/thumbnail are stored as null so the
+     * bundled default text is used and {@link com.example.basilience.models.GuideSection#hasVideo()}
+     * correctly falls back to "Coming Soon" for a blank URL.
+     */
+    public Task<Void> saveVideoOverride(String deviceId, HardwareComponentKey key, @Nullable String videoTitle,
+                                         @Nullable String videoDescription, @Nullable String videoUrl,
+                                         @Nullable String videoThumbnailUrl) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("componentKey", key.name());
+        data.put("videoTitle", blankToNull(videoTitle));
+        data.put("videoDescription", blankToNull(videoDescription));
+        data.put("videoUrl", blankToNull(videoUrl));
+        data.put("videoThumbnailUrl", blankToNull(videoThumbnailUrl));
+        data.put("updatedBy", FirebaseAuth.getInstance().getUid());
+        data.put("updatedAt", FieldValue.serverTimestamp());
+        return overrideDoc(deviceId, key).set(data, SetOptions.merge());
+    }
+
+    @Nullable
+    private static String blankToNull(@Nullable String value) {
+        return value == null || value.trim().isEmpty() ? null : value.trim();
+    }
+
     /** Clears just the custom image, leaving any saved text overrides untouched. A device-cleanup Cloud Function deletes the now-orphaned Storage file. */
     public Task<Void> restoreDefaultImage(String deviceId, HardwareComponentKey key) {
         Map<String, Object> updates = new HashMap<>();
@@ -148,6 +176,16 @@ public class HardwareGuideRepository {
         if (troubleshooting != null) b.troubleshooting(troubleshooting);
         String imageUrl = doc.getString("imageUrl");
         if (imageUrl != null) b.imageUrl(imageUrl);
+        String videoTitle = doc.getString("videoTitle");
+        String videoDescription = doc.getString("videoDescription");
+        if (videoTitle != null || videoDescription != null) {
+            b.video(videoTitle != null ? videoTitle : base.getVideoTitle(),
+                    videoDescription != null ? videoDescription : base.getVideoDescription());
+        }
+        String videoUrl = doc.getString("videoUrl");
+        if (videoUrl != null) b.videoUrl(videoUrl);
+        String videoThumbnailUrl = doc.getString("videoThumbnailUrl");
+        if (videoThumbnailUrl != null) b.videoThumbnailUrl(videoThumbnailUrl);
         return b.build();
     }
 

@@ -304,6 +304,12 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private ValueEventListener statusListener;
     private DatabaseReference manualModeRef;
     private ValueEventListener manualModeListener;
+    // The full Admin/Farmer-guarded switch listener rebuilt on every
+    // manualModeListener RTDB echo (see below) - kept as a field, not just a
+    // local, so onModeSwitchChanged() and writeManualMode()'s failure path
+    // can always re-arm the switch back to this SAME guarded listener
+    // instead of ever temporarily downgrading to a weaker one.
+    private android.widget.CompoundButton.OnCheckedChangeListener guardedModeSwitchListener;
     private DatabaseReference actuatorStatusRef;
     private ValueEventListener actuatorStatusListener;
     private DatabaseReference manualControlGrantsRef;
@@ -1035,14 +1041,11 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                         modeSwitch.setChecked(isManualMode);
                         modeSwitch.setText("Manual Mode");
 
-                        // Named (not inline) so the Admin guard below can restore
-                        // this exact listener - including its confirmation-dialog
-                        // logic - after reverting a blocked attempt, instead of
-                        // permanently downgrading to the simpler post-confirm
-                        // listener used at lines below.
-                        final android.widget.CompoundButton.OnCheckedChangeListener[] fullListenerRef =
-                                new android.widget.CompoundButton.OnCheckedChangeListener[1];
-                        fullListenerRef[0] = (buttonView, checked) -> {
+                        // A field (not a local), so every re-arm point below -
+                        // including writeManualMode()'s failure-recovery path -
+                        // can always restore this SAME guarded listener rather
+                        // than ever temporarily downgrading to a weaker one.
+                        guardedModeSwitchListener = (buttonView, checked) -> {
                             if (!isAdminUser()) {
                                 // Turning Manual Mode ON is still Admin-only,
                                 // always - Database_Helper.updateManualMode()
@@ -1060,7 +1063,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                                 boolean attemptingTurnOff = isManualMode && !checked;
                                 modeSwitch.setOnCheckedChangeListener(null);
                                 modeSwitch.setChecked(isManualMode);
-                                modeSwitch.setOnCheckedChangeListener(fullListenerRef[0]);
+                                modeSwitch.setOnCheckedChangeListener(guardedModeSwitchListener);
 
                                 if (attemptingTurnOff && hasActiveGrant()) {
                                     NotificationHelper.showConfirmation(requireContext(), "Turn Off Manual Mode",
@@ -1118,7 +1121,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                                 // Snap back and show confirmation
                                 modeSwitch.setOnCheckedChangeListener(null);
                                 modeSwitch.setChecked(false);
-                                modeSwitch.setOnCheckedChangeListener((btn, ch) -> onModeSwitchChanged(modeSwitch, ch));
+                                modeSwitch.setOnCheckedChangeListener(guardedModeSwitchListener);
 
                                 String title = "Enable Manual Mode";
                                 String message = "Manual Mode lets an Admin control system functions directly. Built-in safety checks remain active, so some actions may be prevented when conditions are unsafe. Are you sure you want to proceed?";
@@ -1132,15 +1135,31 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                                     isManualMode = true;
                                     modeSwitch.setOnCheckedChangeListener(null);
                                     modeSwitch.setChecked(true);
+                                    modeSwitch.setOnCheckedChangeListener(guardedModeSwitchListener);
                                     updateActuatorControls();
-                                    dbHelper.updateManualMode(true);
-                                    modeSwitch.setOnCheckedChangeListener((btn, ch) -> onModeSwitchChanged(modeSwitch, ch));
+                                    writeManualMode(modeSwitch, true);
                                 });
                                 return;
                             }
-                            onModeSwitchChanged(modeSwitch, checked);
+
+                            // Turning Manual Mode OFF (Admin): snap back and confirm
+                            // first, same treatment as turning it ON above - this used
+                            // to go straight through to onModeSwitchChanged() with no
+                            // prompt at all.
+                            modeSwitch.setOnCheckedChangeListener(null);
+                            modeSwitch.setChecked(true);
+                            modeSwitch.setOnCheckedChangeListener(guardedModeSwitchListener);
+
+                            NotificationHelper.showConfirmation(requireContext(), "Turn Off Manual Mode",
+                                    "Pumps, fans, and lights will return to automatic control. Continue?",
+                                    "Turn Off", "Cancel", () -> {
+                                        modeSwitch.setOnCheckedChangeListener(null);
+                                        modeSwitch.setChecked(false);
+                                        modeSwitch.setOnCheckedChangeListener(guardedModeSwitchListener);
+                                        onModeSwitchChanged(modeSwitch, false);
+                                    });
                         };
-                        modeSwitch.setOnCheckedChangeListener(fullListenerRef[0]);
+                        modeSwitch.setOnCheckedChangeListener(guardedModeSwitchListener);
                     }
                     updateActuatorControls();
                 }
@@ -2105,7 +2124,8 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 && (actuator == fogger || actuator == reservoirFan)
                 && ("cold".equalsIgnoreCase(actuator.strategy)
                     || "normal".equalsIgnoreCase(actuator.strategy)
-                    || "hot".equalsIgnoreCase(actuator.strategy))) {
+                    || "hot".equalsIgnoreCase(actuator.strategy)
+                    || "night".equalsIgnoreCase(actuator.strategy))) {
             String strategyLabel = actuator.strategy.substring(0, 1).toUpperCase(java.util.Locale.ROOT)
                     + actuator.strategy.substring(1).toLowerCase(java.util.Locale.ROOT);
             suffix += " · " + strategyLabel;
@@ -2162,7 +2182,32 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
 
         updateActuatorControls();
-        dbHelper.updateManualMode(checked);
+        writeManualMode(modeSwitch, checked);
+    }
+
+    /**
+     * Writes commands/manualMode for an already-optimistically-applied switch
+     * change (isManualMode/modeSwitch/actuator controls are updated by the
+     * caller before this runs). Success needs no extra handling - the switch
+     * already shows the right state, and manualModeListener's own RTDB echo
+     * reconciles it normally either way. On failure, reverts the switch to
+     * the last CONFIRMED state (the opposite of what was just requested,
+     * since Manual Mode is a plain boolean) without re-triggering
+     * guardedModeSwitchListener, and reports the error - same
+     * NotificationHelper.showError pattern already used by
+     * endManualModeSession()/requestManualControlAccess() above.
+     */
+    private void writeManualMode(SwitchMaterial modeSwitch, boolean requestedChecked) {
+        dbHelper.updateManualMode(requestedChecked).addOnFailureListener(e -> {
+            if (!isAdded()) return;
+            boolean previousConfirmed = !requestedChecked;
+            isManualMode = previousConfirmed;
+            modeSwitch.setOnCheckedChangeListener(null);
+            modeSwitch.setChecked(previousConfirmed);
+            modeSwitch.setOnCheckedChangeListener(guardedModeSwitchListener);
+            updateActuatorControls();
+            NotificationHelper.showError(requireContext(), "Unable to update Manual Mode. Please try again.");
+        });
     }
 
     private void setActuatorEnabled(View card, boolean enabled) {
@@ -2603,6 +2648,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (manualModeRef != null && manualModeListener != null) {
             manualModeRef.removeEventListener(manualModeListener);
         }
+        guardedModeSwitchListener = null;
         if (manualControlGrantsRef != null && manualControlGrantsListener != null) {
             manualControlGrantsRef.removeEventListener(manualControlGrantsListener);
         }

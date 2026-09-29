@@ -43,6 +43,10 @@ final class MobileGuideContent {
                         "Tapping Home from any screen always returns you to the Dashboard."))
                 .build());
 
+        list.add(GuideSection.builder("Mobile App Video Tutorial")
+                .video("Video Tutorial", "A complete walkthrough of the Basilience mobile application will be available here.")
+                .build());
+
         list.add(GuideSection.builder("Dashboard")
                 .description("The Dashboard is what you see right after selecting a device. It's the starting point for everything else.")
                 .image(com.example.basilience.R.drawable.guide_dashboard)

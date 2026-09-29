@@ -1,5 +1,6 @@
 package com.example.basilience;
 
+import android.content.Context;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.LayoutInflater;
@@ -85,6 +86,19 @@ public class HardwareGuideEditorFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+
+        // Defense-in-depth: HardwareGuideFragment only offers the "Edit Guide"
+        // entry point to Admins, and firestore.rules independently rejects an
+        // unauthorized write server-side, but neither stops a Farmer who
+        // deep-links straight to this destination from seeing the editor UI
+        // render first. Checked before touching args/deviceId/componentKey or
+        // any Firestore state, so nothing here is initialized for a role that
+        // can never use it.
+        if (!isAdmin()) {
+            NotificationHelper.showError(requireContext(), "You don't have permission to edit this guide.");
+            Navigation.findNavController(view).popBackStack();
+            return;
+        }
 
         Bundle args = getArguments();
         deviceId = args != null ? args.getString(ARG_DEVICE_ID) : null;
@@ -289,5 +303,9 @@ public class HardwareGuideEditorFragment extends Fragment {
         } catch (IllegalArgumentException e) {
             return null;
         }
+    }
+
+    private boolean isAdmin() {
+        return RoleConstants.isAdmin(requireContext().getSharedPreferences("basilience_prefs", Context.MODE_PRIVATE));
     }
 }

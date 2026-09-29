@@ -977,7 +977,7 @@ exports.onAutomaticOperationLifecycleUpdated = onValueWritten({
             ? sensorValue >= 0 && sensorValue <= 14
             : operation === "EC_CORRECTION"
                 ? sensorValue >= 0
-                // Physical depth ceiling, not MAX_WORKING_WATER_CM (6.0) - the
+                // Physical depth ceiling, not MAX_WORKING_WATER_CM (20.0) - the
                 // live waterLevelCm reading at refill completion can
                 // legitimately sit above the 100%-working-capacity ceiling
                 // (overfill), and that must not suppress this notification.
@@ -1631,12 +1631,20 @@ exports.onHarvestCreated = onDocumentCreated("devices/{deviceId}/cycles/{cycleId
 // and use device-uptime millis() for their own timestamp, so we re-stamp with
 // Date.now() here rather than trusting the RTDB value.
 const SENSOR_LOG_INTERVAL_MS = 5 * 60 * 1000;
-const MAX_WORKING_WATER_CM = 6.0; // Mirrors firmware Config.h's constant.
+// Water-level management spec alignment: was 6.0 (the reservoir's old
+// "working capacity" basis), changed to 20.0 to match firmware Config.h's
+// current MAX_WORKING_WATER_CM (the reservoir's ~20cm full depth, now the
+// 100% basis - see the water-depth-model task report). Used below only to
+// sanity-bound an admin-configured refillStopLevelCm setting before trusting
+// it as a notification-success target - the same bound firmware itself
+// applies to an incoming refillStartLevelCm/refillStopLevelCm write
+// (FirebaseManager::readSettings()).
+const MAX_WORKING_WATER_CM = 20.0;
 // Physical plausibility ceiling for a LOGGED depth reading - the installed
 // sensor-to-bottom calibration distance (firmware Config.h's
-// WATER_LEVEL_EMPTY_DISTANCE_CM default), not MAX_WORKING_WATER_CM (6.0),
+// WATER_LEVEL_EMPTY_DISTANCE_CM default), not MAX_WORKING_WATER_CM (20.0),
 // which is only the 100% WORKING-capacity ceiling for the derived
-// percentage. A depth above 6cm is a legitimate overfill reading, not
+// percentage. A depth above 20cm is a legitimate overfill reading, not
 // invalid data, and must not be silently dropped from history - see the
 // static automation integration audit, part 2.
 const MAX_PHYSICAL_WATER_DEPTH_CM = 28.67;
@@ -1693,7 +1701,7 @@ exports.logSensorData = onValueWritten({
 // Firmware (FirebaseManager::writeActuators) never writes /actuators/FOGGER —
 // it writes the confirmed relay state to /actuatorStatus/fogger/running (bool),
 // alongside /actuatorStatus/fogger/source ("automatic" | "manual" | "android")
-// and optional /actuatorStatus/fogger/strategy ("startup" | "normal" | "hot" | "cold").
+// and optional /actuatorStatus/fogger/strategy ("startup" | "normal" | "hot" | "cold" | "night").
 // That is the only place an ON/OFF transition can be observed, so the trigger
 // watches the whole actuatorStatus/fogger node (not just /running) to read
 // source/reason atomically with the transition.

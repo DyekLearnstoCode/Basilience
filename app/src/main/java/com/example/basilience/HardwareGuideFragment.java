@@ -14,6 +14,8 @@ import androidx.navigation.Navigation;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.example.basilience.models.GuideSection;
+import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.ListenerRegistration;
 
 public class HardwareGuideFragment extends Fragment {
@@ -87,11 +89,51 @@ public class HardwareGuideFragment extends Fragment {
     }
 
     private void openEditor(HardwareComponentKey component) {
-        if (!isAdded() || deviceId == null) return;
+        if (!isAdded() || deviceId == null || component == null) return;
+
+        if (component == HardwareComponentKey.VIDEO_TUTORIAL) {
+            openVideoEditor(component);
+            return;
+        }
+
         Bundle args = new Bundle();
         args.putString(HardwareGuideEditorFragment.ARG_DEVICE_ID, deviceId);
         args.putString(HardwareGuideEditorFragment.ARG_COMPONENT_KEY, component.name());
         Navigation.findNavController(requireView()).navigate(R.id.hardwareGuideEditorFragment, args);
+    }
+
+    /**
+     * A lightweight dialog instead of the full HardwareGuideEditorFragment -
+     * VIDEO_TUTORIAL has no purpose/steps/indicators/image, only the four
+     * video card fields, so the structured editor screen would be the wrong
+     * shape for it.
+     */
+    private void openVideoEditor(HardwareComponentKey component) {
+        GuideSection bundled = HardwareGuideContent.byKey(component);
+        repository.getOverride(deviceId, component).addOnCompleteListener(task -> {
+            if (!isAdded()) return;
+            DocumentSnapshot doc = task.isSuccessful() ? task.getResult() : null;
+            boolean hasOverride = doc != null && doc.exists();
+            String title = hasOverride ? doc.getString("videoTitle") : null;
+            String description = hasOverride ? doc.getString("videoDescription") : null;
+            String url = hasOverride ? doc.getString("videoUrl") : null;
+            String thumbnailUrl = hasOverride ? doc.getString("videoThumbnailUrl") : null;
+
+            VideoGuideEditorDialog.show(requireContext(),
+                    title != null ? title : (bundled != null ? bundled.getVideoTitle() : null),
+                    description != null ? description : (bundled != null ? bundled.getVideoDescription() : null),
+                    url != null ? url : (bundled != null ? bundled.getVideoUrl() : null),
+                    thumbnailUrl,
+                    (newTitle, newDescription, newUrl, newThumbnailUrl) -> {
+                        repository.saveVideoOverride(deviceId, component, newTitle, newDescription, newUrl, newThumbnailUrl)
+                                .addOnSuccessListener(v -> {
+                                    if (isAdded()) NotificationHelper.showSuccess(requireContext(), "Video tutorial updated.");
+                                })
+                                .addOnFailureListener(e -> {
+                                    if (isAdded()) NotificationHelper.showError(requireContext(), "Unable to save changes. Please try again.");
+                                });
+                    });
+        });
     }
 
     private void scrollToPendingTargetIfNeeded(RecyclerView recyclerView) {

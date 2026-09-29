@@ -1,6 +1,9 @@
 package com.example.basilience;
 
+import android.content.ActivityNotFoundException;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -95,7 +98,12 @@ public class GuideSectionAdapter extends RecyclerView.Adapter<GuideSectionAdapte
 
         holder.tvSectionTitle.setText(section.getTitle());
 
-        if (editable && section.getHardwareKey() != null) {
+        // A video-card section with no hardwareKey (e.g. the Mobile Guide's
+        // globally-configured video) still gets an Edit button when this
+        // adapter instance was constructed as editable - the null component
+        // just tells the listener "this is a video-only edit," which is the
+        // only kind of section MobileGuideFragment ever makes editable.
+        if (editable && (section.getHardwareKey() != null || section.hasVideoCard())) {
             HardwareComponentKey component = section.getHardwareKey();
             holder.btnEditGuide.setVisibility(View.VISIBLE);
             holder.btnEditGuide.setOnClickListener(v -> {
@@ -199,6 +207,41 @@ public class GuideSectionAdapter extends RecyclerView.Adapter<GuideSectionAdapte
         } else {
             holder.layoutWarning.setVisibility(View.GONE);
         }
+
+        bindVideoCard(holder, section, context);
+    }
+
+    /**
+     * Renders a section's optional video card. Two states only, never a
+     * broken/blank player: no URL yet -> "Coming Soon" badge; a real URL ->
+     * a "Watch Video" button that opens it via ACTION_VIEW (browser/YouTube
+     * app/etc., whichever the device already resolves it to), matching how
+     * the rest of the app never embeds a video player of its own.
+     */
+    private static void bindVideoCard(ViewHolder holder, GuideSection section, Context context) {
+        if (!section.hasVideoCard()) {
+            holder.layoutVideoCard.setVisibility(View.GONE);
+            return;
+        }
+        holder.layoutVideoCard.setVisibility(View.VISIBLE);
+        holder.tvVideoTitle.setText(section.getVideoTitle());
+        holder.tvVideoDescription.setText(section.getVideoDescription());
+
+        boolean hasVideo = section.hasVideo();
+        holder.tvVideoComingSoonBadge.setVisibility(hasVideo ? View.GONE : View.VISIBLE);
+        holder.btnWatchVideo.setVisibility(hasVideo ? View.VISIBLE : View.GONE);
+        if (hasVideo) {
+            String videoUrl = section.getVideoUrl();
+            holder.btnWatchVideo.setOnClickListener(v -> {
+                try {
+                    context.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(videoUrl)));
+                } catch (ActivityNotFoundException e) {
+                    NotificationHelper.showError(context, "No app found to open this video link.");
+                }
+            });
+        } else {
+            holder.btnWatchVideo.setOnClickListener(null);
+        }
     }
 
     @Override
@@ -231,6 +274,9 @@ public class GuideSectionAdapter extends RecyclerView.Adapter<GuideSectionAdapte
         LinearLayout layoutImagePlaceholder, stepsContainer, layoutTip, layoutWarning;
         LinearLayout indicatorsContainer, commonProblemsContainer, troubleshootingContainer;
         MaterialButton btnEditGuide;
+        LinearLayout layoutVideoCard;
+        TextView tvVideoTitle, tvVideoDescription, tvVideoComingSoonBadge;
+        MaterialButton btnWatchVideo;
 
         ViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -256,6 +302,11 @@ public class GuideSectionAdapter extends RecyclerView.Adapter<GuideSectionAdapte
             commonProblemsContainer = itemView.findViewById(R.id.commonProblemsContainer);
             tvTroubleshootingLabel = itemView.findViewById(R.id.tvTroubleshootingLabel);
             troubleshootingContainer = itemView.findViewById(R.id.troubleshootingContainer);
+            layoutVideoCard = itemView.findViewById(R.id.layoutVideoCard);
+            tvVideoTitle = itemView.findViewById(R.id.tvVideoTitle);
+            tvVideoDescription = itemView.findViewById(R.id.tvVideoDescription);
+            tvVideoComingSoonBadge = itemView.findViewById(R.id.tvVideoComingSoonBadge);
+            btnWatchVideo = itemView.findViewById(R.id.btnWatchVideo);
         }
     }
 }

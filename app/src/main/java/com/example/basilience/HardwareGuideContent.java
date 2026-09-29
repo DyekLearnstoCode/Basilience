@@ -47,6 +47,11 @@ final class HardwareGuideContent {
                         "The system keeps monitoring and automating even while no one is looking at the app."))
                 .build());
 
+        list.add(GuideSection.builder("Hardware Video Tutorial")
+                .hardwareKey(HardwareComponentKey.VIDEO_TUTORIAL)
+                .video("Video Tutorial", "A step-by-step hardware setup and usage video will be available here.")
+                .build());
+
         list.add(GuideSection.builder("Main Controller")
                 .hardwareKey(HardwareComponentKey.MAIN_CONTROLLER)
                 .image(com.example.basilience.R.drawable.hw_main_controller)

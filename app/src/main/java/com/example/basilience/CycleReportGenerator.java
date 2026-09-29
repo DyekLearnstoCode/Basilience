@@ -65,8 +65,8 @@ public class CycleReportGenerator {
 
     // Display order/labels for the persisted fogging strategies, matching
     // what the Fogging Report screen lists.
-    private static final String[] FOGGING_STRATEGY_ORDER = {"normal", "startup", "hot", "cold"};
-    private static final String[] FOGGING_STRATEGY_LABELS = {"Normal", "Startup", "Hot", "Cold"};
+    private static final String[] FOGGING_STRATEGY_ORDER = {"normal", "startup", "hot", "cold", "night"};
+    private static final String[] FOGGING_STRATEGY_LABELS = {"Normal", "Startup", "Hot", "Cold", "Night"};
 
     // Multi-parameter Parameter Report PDF: capped so a long report with
     // several noisy parameters can never balloon the page count - this is a

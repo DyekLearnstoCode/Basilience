@@ -333,5 +333,17 @@ service cloud.firestore {
        allow write: if false; // Only written by IoT devices/cloud functions
     }
 
+    // APP CONFIG collection - small, GLOBAL (not per-device) admin-editable
+    // content that isn't tied to any one device, e.g. appConfig/mobileGuideVideo
+    // (the Mobile App Video Tutorial's title/description/URL/thumbnail - see
+    // MobileGuideVideoRepository.java). No per-device ownership check applies
+    // here since nothing in this collection belongs to a specific device.
+    // Read is open to any signed-in user (Farmers included) since this is
+    // app-wide guide content, not sensitive data; only an Admin may write it.
+    match /appConfig/{configId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
   }
 }

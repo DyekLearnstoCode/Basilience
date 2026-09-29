@@ -1129,10 +1129,15 @@ public class DevOptionsFragment extends Fragment {
         });
     }
 
-    // Working depth is 0..6cm (MAX_WORKING_WATER_CM) - see firmware
-    // Config.h's "Water Reservoir Geometry". The physical container height
-    // (~29cm) is never a valid bound here.
-    private static final float REFILL_THRESHOLD_MAX_CM = 6.0f;
+    // Working depth is 0..20cm (MAX_WORKING_WATER_CM) - see firmware
+    // Config.h's "Water Reservoir Geometry". Water-level management spec
+    // alignment: MAX_WORKING_WATER_CM is now the reservoir's ~20cm full
+    // depth (was 6cm) - was 6.0f here, changed to match so this admin bound
+    // stays a correct mirror of the firmware's own <= MAX_WORKING_WATER_CM
+    // validation (FirebaseManager::readSettings()). The physical container
+    // height (~29cm, sensor-mount headroom above the fill line) is still
+    // never a valid bound here.
+    private static final float REFILL_THRESHOLD_MAX_CM = 20.0f;
 
     private void saveRefillThresholds() {
         if (settingsRef == null || etRefillStart == null || etRefillStop == null) return;

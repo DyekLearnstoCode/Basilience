@@ -86,21 +86,27 @@ public class FoggingReportsFragment extends Fragment {
     // FoggingReportFilter.effectiveStartMs/effectiveEndMs.
     private static final int WATER_OUTLOOK_LOOKBACK_DAYS = 7;
     // Water-depth model (see firmware Config.h's "Water Reservoir
-    // Geometry"): working capacity is MAX_WORKING_WATER_CM (6.0cm) of depth
-    // over the reservoir's actual measured base area, not the tank's full
-    // physical height (~29cm) - matches the same reference value firmware
-    // publishes as waterVolumeLiters at 100%. Superseded the old 61.7L
-    // assumption, which predated the water-depth model and did not match
-    // either the old or new reservoir interpretation.
-    private static final float WATER_OUTLOOK_TANK_CAPACITY_CM = 6.0f;
-    private static final float WATER_OUTLOOK_TANK_CAPACITY_LITERS = 10.608f;
+    // Geometry"): working capacity is MAX_WORKING_WATER_CM of depth over the
+    // reservoir's actual measured base area, not the tank's full physical
+    // height (~29cm, sensor-mount headroom above the fill line) - matches
+    // the same reference value firmware publishes as waterVolumeLiters at
+    // 100%. Only ever used below as a ratio (LITERS/CM = 1.768 L/cm, the
+    // reservoir's fixed base-area conversion), so this pair's absolute
+    // values don't change the computed liters - kept in sync with the
+    // firmware constant anyway so the comment/reference value stays honest.
+    //
+    // Water-level management spec alignment: MAX_WORKING_WATER_CM is now the
+    // reservoir's ~20cm full depth (100% per the spec), was 6.0cm/10.608L -
+    // changed to match.
+    private static final float WATER_OUTLOOK_TANK_CAPACITY_CM = 20.0f;
+    private static final float WATER_OUTLOOK_TANK_CAPACITY_LITERS = 35.36f;
     // Physical plausibility ceiling for a raw depth READING (not the working
     // percentage) - the installed sensor-to-bottom calibration distance
     // (firmware Config.h's WATER_LEVEL_EMPTY_DISTANCE_CM default), never
     // WATER_OUTLOOK_TANK_CAPACITY_CM above, which is only the 100%
     // working-capacity ceiling used for the liters conversion ratio. A depth
-    // above 6cm is a legitimate overfill, not invalid data - see the static
-    // automation integration audit, part 2.
+    // above WATER_OUTLOOK_TANK_CAPACITY_CM is a legitimate overfill, not
+    // invalid data - see the static automation integration audit, part 2.
     private static final float MAX_PHYSICAL_WATER_DEPTH_CM = 28.67f;
     // Estimation assumption, not measured device configuration - see the
     // "Estimated ..." UI wording that makes clear this is a rough forecast.
@@ -1543,8 +1549,8 @@ public class FoggingReportsFragment extends Fragment {
         strategyRows.removeAllViews();
 
         Map<String, Long> strategyDurations = totals.strategyRuntimeMs;
-        String[] order = {"normal", "startup", "hot", "cold"};
-        String[] labels = {"Normal", "Startup", "Hot", "Cold"};
+        String[] order = {"normal", "startup", "hot", "cold", "night"};
+        String[] labels = {"Normal", "Startup", "Hot", "Cold", "Night"};
 
         boolean any = false;
         for (int i = 0; i < order.length; i++) {
@@ -1840,7 +1846,7 @@ public class FoggingReportsFragment extends Fragment {
         if (waterLevelCm == null) return false;
         if (waterLevelCm.isNaN() || waterLevelCm.isInfinite()) return false;
         // Physical plausibility, not the 100%-working ceiling - a reading
-        // above WATER_OUTLOOK_TANK_CAPACITY_CM (6cm) is a real overfill and
+        // above WATER_OUTLOOK_TANK_CAPACITY_CM (20cm) is a real overfill and
         // must still be accepted; see MAX_PHYSICAL_WATER_DEPTH_CM's own
         // comment.
         return waterLevelCm >= 0 && waterLevelCm <= MAX_PHYSICAL_WATER_DEPTH_CM;

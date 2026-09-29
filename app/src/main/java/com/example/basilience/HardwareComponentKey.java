@@ -27,7 +27,17 @@ public enum HardwareComponentKey {
     TEMPERATURE_CONTROL,
     GROW_LIGHT,
     RESERVOIR,
-    HARVEST_SCALE;
+    HARVEST_SCALE,
+    /**
+     * Not a physical component - reuses this same per-device
+     * {@code devices/{deviceId}/hardwareGuide/{componentKey}} override
+     * document/editor architecture purely so the Hardware Video Tutorial's
+     * title/description/URL/thumbnail can be remotely edited without a new
+     * Firestore collection or a second content system. See
+     * HardwareGuideRepository#saveVideoOverride and
+     * HardwareGuideFragment#openEditor.
+     */
+    VIDEO_TUTORIAL;
 
     /**
      * Resolves which hardware component a TYPE_HARDWARE notification concerns,

@@ -202,6 +202,67 @@
         android:orientation="vertical"
         android:layout_marginTop="4dp" />
 
+    <!-- VIDEO TUTORIAL CARD: only present on the sections that opt into it
+         (GuideSection.hasVideoCard()). Two mutually exclusive states inside
+         the same card so no redesign is needed once a real video exists:
+         tvVideoComingSoonBadge (no URL yet) or btnWatchVideo (URL set). -->
+    <LinearLayout
+        android:id="@+id/layoutVideoCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="@dimen/ds_space_md"
+        android:background="@drawable/guide_image_placeholder_bg"
+        android:padding="@dimen/ds_space_md"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tvVideoTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                style="@style/Basilience.CardOptionLabel"
+                android:fontFamily="sans-serif-medium"
+                android:text="Video Tutorial" />
+
+            <TextView
+                android:id="@+id/tvVideoComingSoonBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                style="@style/Basilience.StatusBadge"
+                android:background="@drawable/ds_status_pill_warning"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp"
+                android:textColor="@color/state_warning"
+                android:textSize="11sp"
+                android:text="Coming Soon"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvVideoDescription"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            style="@style/Basilience.BodyMuted"
+            android:text="Video description" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnWatchVideo"
+            style="@style/BasilienceButton.Primary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/ds_space_sm"
+            android:text="Watch Video"
+            android:visibility="gone" />
+    </LinearLayout>
+
     <!-- TIP: informational only, never used for warnings -->
     <LinearLayout
         android:id="@+id/layoutTip"

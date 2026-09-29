@@ -100,6 +100,7 @@ public class FoggingSession {
             case "normal":
             case "hot":
             case "cold":
+            case "night":
                 return strategy;
             default:
                 return null;

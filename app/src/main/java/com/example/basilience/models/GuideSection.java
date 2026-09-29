@@ -36,6 +36,10 @@ public class GuideSection {
     private final List<String> commonProblems;
     private final List<String> troubleshooting;
     private final String imageUrl;
+    private final String videoTitle;
+    private final String videoDescription;
+    private final String videoUrl;
+    private final String videoThumbnailUrl;
 
     private GuideSection(Builder b) {
         this.title = b.title;
@@ -53,6 +57,10 @@ public class GuideSection {
         this.commonProblems = b.commonProblems == null ? Collections.emptyList() : b.commonProblems;
         this.troubleshooting = b.troubleshooting == null ? Collections.emptyList() : b.troubleshooting;
         this.imageUrl = b.imageUrl;
+        this.videoTitle = b.videoTitle;
+        this.videoDescription = b.videoDescription;
+        this.videoUrl = b.videoUrl;
+        this.videoThumbnailUrl = b.videoThumbnailUrl;
     }
 
     public String getTitle() { return title; }
@@ -81,6 +89,23 @@ public class GuideSection {
     @Nullable
     public String getImageUrl() { return imageUrl; }
 
+    /** Heading for this section's video card (e.g. "Video Tutorial"), or null if this section has no video card at all. */
+    @Nullable
+    public String getVideoTitle() { return videoTitle; }
+    /** Short caption shown under the video title, in both the Coming Soon and playable states. */
+    @Nullable
+    public String getVideoDescription() { return videoDescription; }
+    /** Where to open the real tutorial video, or null/blank while none exists yet (renders as "Coming Soon"). */
+    @Nullable
+    public String getVideoUrl() { return videoUrl; }
+    /** Optional preview image for the video card; not required for the Coming Soon or playable states to render correctly. */
+    @Nullable
+    public String getVideoThumbnailUrl() { return videoThumbnailUrl; }
+    /** True once a real video URL has been provided - false renders the video card as "Coming Soon" instead of a player. */
+    public boolean hasVideo() { return videoUrl != null && !videoUrl.trim().isEmpty(); }
+    /** True if this section has a video card at all (Coming Soon or playable). */
+    public boolean hasVideoCard() { return videoTitle != null; }
+
     public static Builder builder(String title) {
         return new Builder(title);
     }
@@ -101,7 +126,10 @@ public class GuideSection {
                 .indicators(indicators)
                 .commonProblems(commonProblems)
                 .troubleshooting(troubleshooting)
-                .imageUrl(imageUrl);
+                .imageUrl(imageUrl)
+                .video(videoTitle, videoDescription)
+                .videoUrl(videoUrl)
+                .videoThumbnailUrl(videoThumbnailUrl);
     }
 
     public static class Builder {
@@ -121,6 +149,10 @@ public class GuideSection {
         private List<String> commonProblems;
         private List<String> troubleshooting;
         private String imageUrl;
+        private String videoTitle;
+        private String videoDescription;
+        private String videoUrl;
+        private String videoThumbnailUrl;
 
         private Builder(String title) {
             this.title = title;
@@ -203,6 +235,25 @@ public class GuideSection {
         /** Admin-uploaded replacement photo (HTTPS download URL). Leave unset to use the bundled {@link #image}/{@link #imagePlaceholder}. */
         public Builder imageUrl(String imageUrl) {
             this.imageUrl = imageUrl;
+            return this;
+        }
+
+        /** Adds a video card to this section: title/description are shown whether or not a real video exists yet. Pass a URL separately via {@link #videoUrl}. */
+        public Builder video(String videoTitle, String videoDescription) {
+            this.videoTitle = videoTitle;
+            this.videoDescription = videoDescription;
+            return this;
+        }
+
+        /** Where the real tutorial video lives. Leave unset (or blank) to render the video card as "Coming Soon" - never a broken/empty player. */
+        public Builder videoUrl(String videoUrl) {
+            this.videoUrl = videoUrl;
+            return this;
+        }
+
+        /** Optional preview image for the video card. Safe to leave unset in either the Coming Soon or playable state. */
+        public Builder videoThumbnailUrl(String videoThumbnailUrl) {
+            this.videoThumbnailUrl = videoThumbnailUrl;
             return this;
         }
 

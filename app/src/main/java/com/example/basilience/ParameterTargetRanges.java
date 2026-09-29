@@ -22,7 +22,15 @@ public enum ParameterTargetRanges {
     AIR_TEMPERATURE("Air Temperature", "minAirTemp", "maxAirTemp", 20f, 32f, -40f, 80f, 1, "°C"),
     HUMIDITY("Humidity", "minHumidity", "maxHumidity", 60f, 75f, 0f, 100f, 1, "%"),
     WATER_TEMPERATURE("Water Temperature", "minWaterTemp", "maxWaterTemp", 18f, 28f, 0f, 100f, 1, "°C"),
-    WATER_LEVEL("Water Level", "minWaterLevel", "maxWaterLevel", 20f, 75f, 0f, 100f, 1, "%");
+    // Water-level management spec alignment (firmware Config.h): 100% now
+    // means the reservoir's ~20cm full depth (was a 6cm "working capacity"),
+    // so these defaults were recomputed from the actual refill control
+    // thresholds (REFILL_START_CM=2.0cm, REFILL_STOP_CM=5.0cm) against the
+    // new basis - 2.0/20*100, 5.0/20*100 - matching Config.h's
+    // TARGET_MIN_WATER_LEVEL/TARGET_MAX_WATER_LEVEL exactly (was 20f/75f,
+    // itself a stale leftover from the retired legacy percentage refill
+    // model that never matched the real cm-based control band either).
+    WATER_LEVEL("Water Level", "minWaterLevel", "maxWaterLevel", 10f, 25f, 0f, 100f, 1, "%");
 
     public final String displayName;
     public final String minKey;
