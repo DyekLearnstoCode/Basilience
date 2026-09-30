@@ -19,22 +19,26 @@ public class DeviceConnectionManager {
     private final MutableLiveData<DeviceConnectivityState> connectivityState =
             new MutableLiveData<>(DeviceConnectivityState.RECONNECTING);
 
-    // Matches the firmware's real sensor-publish cadence (FirebaseManager.cpp's
-    // SENSOR_UPLOAD_INTERVAL_MS, 5s), which is what actually drives
-    // trackDeviceHeartbeat in functions/index.js. This used to say 10s, left
-    // over from before that cadence was sped up to 5s - retuned so a missed
-    // heartbeat is flagged (RECONNECTING) after genuinely missing two real
-    // heartbeats, not four.
-    public static final long HEARTBEAT_INTERVAL_MS = 5_000L;
-    public static final long FRESH_HEARTBEAT_MAX_AGE_MS = HEARTBEAT_INTERVAL_MS * 2L;
-    // Kept equal to functions/index.js's own OFFLINE_TIMEOUT_MS on purpose, so
-    // this client-side staleness fallback (which only ever downgrades to
-    // RECONNECTING, never to a hard OFFLINE - that label is authoritative from
-    // the backend's own trackDeviceHeartbeat/delayedOfflineCheck) lines up with
-    // when the backend will actually flag the device offline. Retuned from 40s
-    // to 30s alongside that backend value - see its own comment for why 30s
-    // is the right number now that the real heartbeat cadence is 5s, not 10s.
-    public static final long OFFLINE_TIMEOUT_MS = 30_000L;
+    // Single source of truth for device reachability, used by every screen.
+    // It is derived ONLY from the age of the last successful device heartbeat
+    // (status/lastServerSeen, written by trackDeviceHeartbeat in
+    // functions/index.js with the Cloud Function's server clock):
+    //   age <  30s        -> ONLINE
+    //   30s <= age < 120s -> RECONNECTING
+    //   age >= 120s       -> OFFLINE ("Device Unreachable")
+    // status/online is deliberately NOT part of the classification: it means
+    // "cloud session state", and a short Firebase/TLS outage with Wi-Fi up and
+    // local automation still running must never read as unreachable.
+    // UNREACHABLE_MIN_AGE_MS is kept equal to OFFLINE_TIMEOUT_MS in
+    // functions/index.js so the app label and the backend's "Device
+    // Unreachable" push flip at the same moment.
+    public static final long ONLINE_MAX_AGE_MS = 30_000L;
+    public static final long UNREACHABLE_MIN_AGE_MS = 120_000L;
+    // A lastServerSeen ahead of the (offset-corrected) server clock by more than
+    // this cannot be a genuine fresh heartbeat; it is treated as unverifiable
+    // (RECONNECTING) rather than trusted as ONLINE forever. Anything smaller is
+    // ordinary clock skew and counts as age 0.
+    private static final long FUTURE_SKEW_TOLERANCE_MS = ONLINE_MAX_AGE_MS;
     private static final long STATE_REFRESH_INTERVAL_MS = 2_000L;
     private static final String RTDB_URL =
             "https://basilience-database-default-rtdb.asia-southeast1.firebasedatabase.app";
@@ -67,7 +71,7 @@ public class DeviceConnectionManager {
     // .info/serverTimeOffset is the SDK's own answer to this - serverTimeMs =
     // System.currentTimeMillis() + serverTimeOffsetMs - and is kept live here,
     // not read once, since the offset can itself change (e.g. NTP resync).
-    private volatile long serverTimeOffsetMs = 0L;
+    private static volatile long serverTimeOffsetMs = 0L;
     private DatabaseReference serverTimeOffsetRef;
     private ValueEventListener serverTimeOffsetListener;
 
@@ -130,26 +134,41 @@ public class DeviceConnectionManager {
         return connectivityState;
     }
 
-    public static DeviceConnectivityState resolveState(Boolean backendOnline,
-                                                        Long lastServerSeen,
-                                                        long nowMs) {
-        return resolveState(backendOnline, lastServerSeen, false, nowMs);
+    // The database server's current time as best this phone can tell:
+    // System.currentTimeMillis() corrected by .info/serverTimeOffset. Every
+    // caller of resolveState() passes this, not the raw local clock.
+    public static long serverNowMs() {
+        getInstance(); // makes sure the .info/serverTimeOffset listener is attached
+        return System.currentTimeMillis() + serverTimeOffsetMs;
     }
 
-    public static DeviceConnectivityState resolveState(Boolean backendOnline,
-                                                        Long lastServerSeen,
+    public static DeviceConnectivityState resolveState(Long lastServerSeen, long nowMs) {
+        return resolveState(lastServerSeen, false, nowMs);
+    }
+
+    public static DeviceConnectivityState resolveState(Long lastServerSeen,
                                                         boolean provisioning,
                                                         long nowMs) {
         if (provisioning) return DeviceConnectivityState.RECONNECTING;
-        if (Boolean.FALSE.equals(backendOnline)) return DeviceConnectivityState.OFFLINE;
-        if (!Boolean.TRUE.equals(backendOnline) || lastServerSeen == null) {
+
+        // Missing or malformed (readLongValue() yields null for a non-number)
+        // is the startup / not-yet-loaded case: the most conservative existing
+        // state, never a hard "Device Unreachable".
+        if (lastServerSeen == null || lastServerSeen <= 0L) {
             return DeviceConnectivityState.RECONNECTING;
         }
 
-        long ageMs = Math.max(0L, nowMs - lastServerSeen);
-        if (ageMs >= OFFLINE_TIMEOUT_MS) return DeviceConnectivityState.RECONNECTING;
-        if (ageMs > FRESH_HEARTBEAT_MAX_AGE_MS) return DeviceConnectivityState.RECONNECTING;
-        return DeviceConnectivityState.ONLINE;
+        long ageMs = nowMs - lastServerSeen;
+        if (ageMs < 0L) {
+            // Future timestamp: small skew counts as age 0, a large one is
+            // unverifiable.
+            return -ageMs > FUTURE_SKEW_TOLERANCE_MS
+                    ? DeviceConnectivityState.RECONNECTING
+                    : DeviceConnectivityState.ONLINE;
+        }
+        if (ageMs < ONLINE_MAX_AGE_MS) return DeviceConnectivityState.ONLINE;
+        if (ageMs < UNREACHABLE_MIN_AGE_MS) return DeviceConnectivityState.RECONNECTING;
+        return DeviceConnectivityState.OFFLINE;
     }
 
     public void monitorDevice(String deviceId) {
@@ -177,8 +196,8 @@ public class DeviceConnectionManager {
         connectivityState.setValue(DeviceConnectivityState.RECONNECTING);
         onlineStatus.setValue(false);
 
-        // Both fields are backend-owned: online is the confirmed classification and
-        // lastServerSeen is written with the Cloud Function server clock.
+        // Both fields are backend-owned. lastServerSeen (Cloud Function server
+        // clock) alone drives the state; online is only kept for logging.
         statusRef = db.getReference("devices").child(deviceId).child("status");
         statusListener = new ValueEventListener() {
             @Override
@@ -213,8 +232,8 @@ public class DeviceConnectionManager {
                     onlineStatus.setValue(false);
                     return;
                 }
-                // Any other cancellation is not an authoritative status/online=false
-                // event. Retain the last backend-reported presence value.
+                // Any other cancellation is not evidence the device is unreachable.
+                // Retain the last heartbeat timestamp; its age keeps advancing.
             }
         };
         statusRef.addValueEventListener(statusListener);
@@ -232,18 +251,17 @@ public class DeviceConnectionManager {
         // System.currentTimeMillis() alone assumes this device's clock agrees
         // with the Cloud Function's server clock that authored lastServerSeen -
         // see the field comment on serverTimeOffsetMs for why that assumption
-        // isn't safe to make. + serverTimeOffsetMs converts local time to the
+        // isn't safe to make. serverNowMs() converts local time to the
         // database server's time, the same correction Firebase's own docs
         // recommend for comparing against a ServerValue.TIMESTAMP-derived value.
-        long nowMs = System.currentTimeMillis() + serverTimeOffsetMs;
-        DeviceConnectivityState state = resolveState(
-                backendOnline, lastServerSeen, provisioning, nowMs);
+        long nowMs = serverNowMs();
+        DeviceConnectivityState state = resolveState(lastServerSeen, provisioning, nowMs);
 
         if (state != lastLoggedState
                 || !java.util.Objects.equals(lastServerSeen, lastLoggedServerSeen)
                 || !java.util.Objects.equals(backendOnline, lastLoggedBackendOnline)) {
             Long ageMs = lastServerSeen != null ? Math.max(0L, nowMs - lastServerSeen) : null;
-            android.util.Log.d(TAG, "[CONNECTIVITY] online=" + backendOnline
+            android.util.Log.d(TAG, "[CONNECTIVITY] online(hint only)=" + backendOnline
                     + " provisioning=" + provisioning);
             android.util.Log.d(TAG, "[CONNECTIVITY] lastServerSeen=" + lastServerSeen
                     + " now=" + nowMs + " offsetMs=" + serverTimeOffsetMs + " ageMs=" + ageMs);

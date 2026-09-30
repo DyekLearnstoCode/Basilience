@@ -17,17 +17,20 @@ admin.initializeApp({
 
 setGlobalOptions({ maxInstances: 10, region: "asia-southeast1" });
 
-// Firmware publishes sensors every 5 seconds (SENSOR_UPLOAD_INTERVAL_MS in
-// FirebaseManager.cpp - this comment used to say 10 seconds, from before that
-// cadence was sped up) and can still spend up to 20 seconds restoring Wi-Fi
-// on its own (RECOVERY_TIMEOUT in WiFiManager.h, unrelated to the heartbeat
-// cadence and unchanged). Thirty seconds keeps a real 10 second margin above
-// that 20 second reconnect bound, so an ordinary brief Wi-Fi drop is never
-// mistaken for the device going offline, while still being comfortably more
-// than several real missed heartbeats plus ordinary write/jitter latency.
-// The task runs after that threshold has safely elapsed.
-const OFFLINE_CHECK_DELAY_SECONDS = 35;
-const OFFLINE_TIMEOUT_MS = 30000;
+// Reachability is derived from the age of the last successful heartbeat
+// (status/lastServerSeen, written below with this function's server clock):
+//   age <  30s        -> app shows ONLINE
+//   30s <= age < 120s -> app shows RECONNECTING...
+//   age >= 120s       -> DEVICE UNREACHABLE (this is when status/online flips
+//                        to false and the "Device Unreachable" push is sent)
+// Firmware can lose Firebase/TLS for tens of seconds while Wi-Fi stays up and
+// local automation keeps running, and recovers on its own, so a single missed
+// window must not be reported as the device being unreachable. Keep the
+// app's DeviceConnectionManager.UNREACHABLE_MIN_AGE_MS equal to
+// OFFLINE_TIMEOUT_MS. The check task is scheduled a few seconds past the
+// threshold so the age has safely elapsed when it runs.
+const OFFLINE_CHECK_DELAY_SECONDS = 125;
+const OFFLINE_TIMEOUT_MS = 120000;
 const CONNECTIVITY_FCM_TTL_MS = 3 * 60 * 1000;
 // Manual setup commonly requires switching the phone to the ESP32 AP, entering
 // credentials, and waiting for a restart. Ten minutes avoids false alarms during

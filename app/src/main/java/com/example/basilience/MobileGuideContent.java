@@ -78,15 +78,17 @@ final class MobileGuideContent {
                 .image(com.example.basilience.R.drawable.guide_actuators)
                 .imagePlaceholder("Monitoring screen scrolled down to the actuator list")
                 .steps(Arrays.asList(
-                        "Manual Mode (the switch at the top of the section) is available to Admin accounts and lets you control individual actuators by hand. The automatic system keeps running underneath even while Manual Mode is on.",
+                        "Manual Mode (the switch at the top of the section) lets an Admin control individual actuators by hand. A Farmer cannot turn Manual Mode on alone. A Farmer can tap the switch to ask an Admin for manual-control access, and the Admin approves or denies the request. The Admin sees that request only while this device's Monitoring screen is open.",
+                        "Manual control puts a hold on the actuator you control by hand. Other eligible automatic operations may continue. If an automatic job such as refilling or dosing is already running, turning Manual Mode on can stop it, and the app asks you to confirm first.",
                         "Built-in safety checks stay active while Manual Mode is on. A request can still be turned down (shown as \"Rejected\") if conditions aren't safe, with a short reason shown when that happens.",
-                        "Manual Mode turns itself off automatically after 15 minutes with no manual action, and normal automatic control resumes on its own. No action is needed from you when that happens.",
+                        "Manual Mode automatically ends after about 15 minutes of inactivity, returning the system to automatic operation. Each manual action restarts that time. No action is needed from you when that happens. A Farmer would need to ask again.",
                         "Each actuator row shows its name (for example \"Fogger\" or \"Grow Lights\") and a status word.",
                         "Off, Command Sent, Validating, Starting, Running, and Stopping describe where a command currently is.",
-                        "A small · Auto, · Manual, or · App tag after the status shows what triggered it: the automatic system, a physical control, or this app.",
+                        "A small · Auto or · Manual tag after the status shows how the actuator is being controlled. Auto means the automatic system is running it. Manual means the actuator is being controlled manually through the Basilience mobile application. · Override appears when a manual action was confirmed on top of a warning.",
+                        "While the Fogger or Reservoir Fan is running automatically, its status can also name the fogging pattern in use: Normal, Hot, Cold, or Night.",
                         "Toggling a switch while Manual Mode is on sends a command directly to that actuator. pH Up, pH Down, and Nutrients are the exception: each request runs the pump for a single 5-second dose and then stops it automatically. Turning the switch back off yourself isn't needed. This is a one-time manual dose, not the same as the system's full automatic correction, which keeps checking the reading afterward.",
                         "Turning on the Fogger by hand also runs the Root Blower together with it to move the fog through the root area. You don't need to turn the blower on separately. After you stop the Fogger, the blower keeps running a little longer to clear the remaining fog before switching off on its own."))
-                .warning("Actuator switches are disabled unless Manual Mode is turned on.")
+                .warning("Actuator switches are disabled unless Manual Mode is turned on. A Farmer can use them only after an Admin approves the request. Start Reservoir Refill and Reset Safety are for Admins only.")
                 .build());
 
         list.add(GuideSection.builder("Growth Cycles")
@@ -128,14 +130,15 @@ final class MobileGuideContent {
         list.add(GuideSection.builder("Recording Harvest Weight")
                 .description("Harvest weight can be entered by hand, or read automatically from a paired harvest scale.")
                 .image(com.example.basilience.R.drawable.guide_add_harvest)
-                .imagePlaceholder("Add Harvest dialog with weight field and today's date shown")
+                .imagePlaceholder("Add Harvest choice showing Manual Entry and Read from Scale")
                 .steps(Arrays.asList(
                         "On an active cycle's Harvest screen, tap the + button.",
-                        "The dialog shows the date this harvest will be recorded under.",
-                        "Enter the harvested weight in grams, or tap \"Read from Harvest Scale\" to fill it in from the device's paired scale instead of typing it. This button only appears once a harvest scale has been paired to the device.",
-                        "Notes are optional.",
-                        "Tap Save. The total, chart, and history update immediately."))
-                .warning("If a harvest isn't due yet, tapping + shows how many days remain instead of the entry form. Admin accounts can choose to override this and log the harvest early, which also resets the schedule from that date.")
+                        "If a harvest scale has been paired to the device, an Add Harvest choice appears: Manual Entry or Read from Scale. If no scale is paired, the Manual Entry form opens right away.",
+                        "Manual Entry: type the harvested weight in grams. The form shows the date this harvest will be recorded under. Notes are optional. Tap Save.",
+                        "Read from Scale: Basilience uses the newest eligible reading from the paired scale and saves it right away. There is no preview screen and no extra Save step.",
+                        "A scale reading is eligible only if it is recent (less than 30 minutes old) and has not already been recorded. Put the harvest on the scale and wait for it to save its reading before you choose Read from Scale.",
+                        "Either way, the total, chart, and history update immediately. Each history entry is tagged MANUAL or SCALE."))
+                .warning("If a harvest isn't due yet, a Farmer sees the scheduled date and cannot add one. An Admin sees how many days remain and can choose to continue and log the harvest early, which also resets the schedule from that date.")
                 .build());
 
         list.add(GuideSection.builder("Reports")
@@ -171,10 +174,12 @@ final class MobileGuideContent {
                 .imagePlaceholder("Fogging Report with sessions, chart, and Water Outlook visible")
                 .steps(Arrays.asList(
                         "Choose a Cultivation Cycle and a Period, the same way as the Parameter Report.",
-                        "Sessions, Runtime, and Avg Session summarize fogging activity for that period.",
-                        "Fogging Control shows whether the fogger is currently running under Automatic or Manual control.",
+                        "Fogging Sessions, Total Fogging Time, and Average Session summarize fogging activity for that period.",
+                        "Fogging Control shows how much fogging was Automatic and how much was Manual.",
+                        "Fogging Strategy lists the fogging patterns that ran and how long each one ran: Normal, Startup, Hot, Cold, and Night. Only patterns that actually ran are listed.",
                         "Water Outlook estimates the reservoir level and when a refill may be needed. It only shows when the app has enough recent data to estimate it.",
-                        "Recent Fogging Activity lists individual sessions. Use the share icon to export a PDF."))
+                        "Fogging Sessions lists individual sessions. Each one shows how it started: Manual, or Automatic followed by its pattern, for example Automatic · Night. Use the share icon to export a PDF."))
+                .tip("Night Fogging: From 10:00 PM to 6:00 AM, Basilience automatically uses a reduced fogging schedule of 2 minutes ON and 10 minutes OFF.")
                 .build());
 
         list.add(GuideSection.builder("Notifications")
@@ -204,17 +209,16 @@ final class MobileGuideContent {
                 .build());
 
         list.add(GuideSection.builder("Device Management")
-                .role(ADMIN_ONLY)
-                .description("Devices are claimed to your account using a token provided with the hardware.")
+                .description("The Devices screen is the first screen after login. Admins claim and manage devices. Farmers see the devices their Admin assigned to them.")
                 .image(com.example.basilience.R.drawable.guide_device_management)
                 .imagePlaceholder("Device Management screen with the claim field and a registered device list")
                 .steps(Arrays.asList(
-                        "Enter the device's token code and tap \"Claim Device\" to add it to your account.",
-                        "Registered Devices lists everything claimed to your account, with a live status dot.",
+                        "Registered Devices lists your devices with a live status dot. An Admin sees every device claimed to their account. A Farmer sees only the devices assigned to them.",
                         "Tap a device to select it. The rest of the app will then work with that device.",
-                        "Press and hold a device to choose \"Configure Wi-Fi,\" \"Rename Device,\" \"Pair Harvest Scale,\" or \"Unclaim Device.\"",
-                        "\"Rename Device\" changes only the name shown in the app. It doesn't affect the device itself.",
-                        "\"Pair Harvest Scale\" links a Basilience Harvest Scale to this device by entering the scale's own device ID (found on the scale itself). This is not a Bluetooth pairing, so no phone-side Bluetooth setup is needed. Leave the field blank to unpair."))
+                        "Admin only: enter the device's token code and tap \"Claim Device\" to add it to your account. Farmers do not see this box.",
+                        "Admin only: press and hold a device to choose \"Configure Wi-Fi,\" \"Rename Device,\" \"Pair Harvest Scale,\" or \"Unclaim Device.\" A Farmer who presses and holds a device goes straight to Wi-Fi Configuration.",
+                        "Admin only: \"Rename Device\" changes only the name shown in the app. It doesn't affect the device itself.",
+                        "Admin only: \"Pair Harvest Scale\" links a Basilience Harvest Scale to this device by entering the scale's own device ID (found on the scale itself). This is not a Bluetooth pairing, so no phone-side Bluetooth setup is needed. Leave the field blank to unpair."))
                 .tip("The scale zeroes itself to whatever is on its platform each time it powers on. Keep the platform clear of any harvest item while it boots, or that item's weight gets silently zeroed out along with the platform itself.")
                 .build());
 

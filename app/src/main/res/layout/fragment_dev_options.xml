@@ -168,6 +168,7 @@
             <!-- ================= DIAGNOSTICS & SIMULATION ================= -->
             <TextView
                 style="@style/Basilience.SectionEyebrow"
+                android:id="@+id/tvDiagnosticsEyebrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="10dp"
@@ -702,7 +703,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:layout_marginBottom="16dp"
-                            android:text="Actuator hysteresis, not a target range: Start is the water depth that opens the solenoid; Stop is the depth that closes it again. Working depth is 0-6 cm."
+                            android:text="Actuator hysteresis, not a target range: Start is the water depth that opens the solenoid; Stop is the depth that closes it again. Working depth is 0-20 cm."
                             android:textColor="#757575"
                             android:textSize="13sp" />
 
@@ -729,7 +730,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginBottom="20dp"
-                            android:hint="Stop cm (e.g. 3.0)">
+                            android:hint="Stop cm (e.g. 5.0)">
 
                             <com.google.android.material.textfield.TextInputEditText
                                 android:id="@+id/etRefillStop"

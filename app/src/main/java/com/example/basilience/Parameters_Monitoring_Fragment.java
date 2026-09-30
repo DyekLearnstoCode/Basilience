@@ -82,25 +82,26 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private TextView tvWaterTemp, tvWaterLevel;
     private TextView tvPHStatus, tvECStatus, tvTempStatus, tvHumidityStatus;
     private TextView tvWaterTempStatus, tvWaterLevelStatus;
-    private boolean phAlertActive;
-    private boolean ecAlertActive;
-    private boolean airTemperatureAlertActive;
-    private boolean waterTemperatureAlertActive;
-    private boolean waterLevelAlertActive;
-    private boolean humidityAlertActive;
+    /**
+     * Configured target range per parameter as {min, max} - what decides
+     * whether a shown reading is red ("Below Range"/"Above Range"). Starts at
+     * the compiled defaults, which mirror the firmware's own, and is replaced
+     * by the device's settings/{minKey,maxKey} values as they load. Only ever
+     * touched on the main thread (Firebase callbacks and updateSensorUI()).
+     */
+    private final java.util.EnumMap<ParameterTargetRanges, double[]> targetRanges =
+            new java.util.EnumMap<>(ParameterTargetRanges.class);
+    {
+        for (ParameterTargetRanges parameter : ParameterTargetRanges.values()) {
+            targetRanges.put(parameter, new double[]{parameter.defaultMin, parameter.defaultMax});
+        }
+    }
+    private DatabaseReference targetRangesRef;
+    private ValueEventListener targetRangesListener;
 
-    // Direction of the current excursion per parameter, so Monitoring can show
-    // Below Range / Above Range instead of a single undirected warning.
-    private boolean phBelowRange, phAboveRange;
-    private boolean ecBelowRange, ecAboveRange;
-    private boolean airTempBelowRange, airTempAboveRange;
-    private boolean humidityBelowRange, humidityAboveRange;
-    private boolean waterTempBelowRange, waterTempAboveRange;
-    private boolean waterLevelBelowRange, waterLevelAboveRange;
-
-    // Directional firmware alert flags, kept alongside the combined flags above
-    // (which drive reading colour only) so a manual action can tell which way
-    // the parameter is actually off target.
+    // Directional firmware alert flags, kept so a manual action can tell which
+    // way the parameter is actually off target. They no longer drive the
+    // reading colour - that comes from the configured target range above.
     private final ManualOverrideAdvisor.AlertFlags overrideFlags = new ManualOverrideAdvisor.AlertFlags();
     private boolean alertsLoaded = false;
     /** Configured cooling ceiling from settings/maxWaterTemp; null when not configured. */
@@ -117,20 +118,17 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     private static final int MODE_DOSING_EC = 6;
     private static final int MODE_STABILIZING_EC = 7;
 
-    // Mirrors firmware's PH_STABILIZATION_TIME/EC_STABILIZATION_TIME
-    // (Config.h), in seconds - the fixed silent-settle window length, used
-    // only to size the pH/EC loader's determinate progress ring. Display
-    // only; firmware's own phStabilizeSecondsRemaining/ecStabilizeSecondsRemaining
-    // remain the source of truth for the actual countdown number.
-    private static final int PH_EC_STABILIZE_TOTAL_SECONDS = 90;
-
     private StabilizeLoader phLoader, ecLoader, waterLevelLoader;
 
     /**
      * Drives one parameter card's "reading is currently untrustworthy"
      * loader: a one-time "Stabilizing"/"Refilling" popup the first time the
-     * card goes unstable, then a small circular countdown replacing the
-     * value/status text until it becomes trustworthy again. See the "Hide
+     * card goes unstable, then a static loader (a "Stabilizing..." label on
+     * the pH/EC cards, a spinner on the water level row) replacing the
+     * value/status text until it becomes trustworthy again. There is
+     * deliberately no seconds countdown: the firmware's remaining-time
+     * value is re-estimated as the correction proceeds, so it jumped
+     * around (80s, 70s, 75s) instead of counting down. See the "Hide
      * unreliable readings during dosing/refilling" plan for the full design.
      */
     private final class StabilizeLoader {
@@ -138,33 +136,27 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         private final View statusView;
         private final View loaderContainer;
         private final CircularProgressIndicator progress;
-        private final TextView secondsLabel;
-        private final int totalSeconds; // 0 for the refill loader - no fixed total, indeterminate ring
         private final String popupTitle;
         private final String popupMessage;
 
         private boolean active = false;
         private boolean popupShown = false;
-        private int remainingSeconds = 0;
-        private final Runnable tick = this::onTick;
 
-        StabilizeLoader(View card, View valueView, View statusView, int totalSeconds,
+        StabilizeLoader(View card, View valueView, View statusView,
                          String popupTitle, String popupMessage) {
             this.valueView = valueView;
             this.statusView = statusView;
             this.loaderContainer = card.findViewById(R.id.stabilizingLoader);
             this.progress = card.findViewById(R.id.progressStabilizing);
-            this.secondsLabel = card.findViewById(R.id.tvStabilizeSeconds);
-            this.totalSeconds = totalSeconds;
             this.popupTitle = popupTitle;
             this.popupMessage = popupMessage;
             if (progress != null) {
-                progress.setIndeterminate(totalSeconds <= 0);
+                progress.setIndeterminate(true);
             }
         }
 
-        /** Called on every fresh /status snapshot with this parameter's current unstable state and server-reported seconds remaining. */
-        void update(boolean unstable, int serverSecondsRemaining) {
+        /** Called on every fresh /status snapshot with this parameter's current unstable state. */
+        void update(boolean unstable) {
             if (loaderContainer == null) return;
 
             if (!unstable) {
@@ -172,8 +164,6 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 popupShown = false;
                 return;
             }
-
-            remainingSeconds = Math.max(0, serverSecondsRemaining);
 
             if (!active) {
                 active = true;
@@ -197,58 +187,24 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                     // to the loader.
                     show();
                 }
-            } else {
-                // Already showing - just resync the ticker to the fresh
-                // server value instead of drifting on the local 1s ticks.
-                mainHandler.removeCallbacks(tick);
-                render();
-                scheduleNextTick();
             }
         }
 
         private void show() {
-            if (!isAdded()) return;
+            // !active: the popup can be dismissed after the reading already
+            // became trustworthy again (stop() ran) - showing the loader then
+            // would hide the value with nothing left to restore it.
+            if (!isAdded() || !active) return;
             valueView.setVisibility(View.GONE);
             statusView.setVisibility(View.GONE);
             loaderContainer.setVisibility(View.VISIBLE);
-            render();
-            mainHandler.removeCallbacks(tick);
-            scheduleNextTick();
         }
 
         private void stop() {
             active = false;
-            mainHandler.removeCallbacks(tick);
             loaderContainer.setVisibility(View.GONE);
             valueView.setVisibility(View.VISIBLE);
             statusView.setVisibility(View.VISIBLE);
-        }
-
-        private void onTick() {
-            if (!active || !isAdded()) return;
-            if (remainingSeconds > 0) remainingSeconds--;
-            render();
-            scheduleNextTick();
-        }
-
-        private void scheduleNextTick() {
-            // Refill's "0" is the documented sentinel for "no countdown
-            // published" (manual/continuous refill), not a real countdown
-            // finishing - never worth ticking on. pH/EC's 0 is a genuine,
-            // very-transient "about to become trustworthy" moment.
-            if (remainingSeconds > 0) {
-                mainHandler.postDelayed(tick, 1000);
-            }
-        }
-
-        private void render() {
-            if (secondsLabel != null) {
-                secondsLabel.setText(remainingSeconds > 0 ? (remainingSeconds + "s") : "");
-            }
-            if (progress != null && totalSeconds > 0) {
-                progress.setProgressCompat(
-                        (int) (100L * (totalSeconds - remainingSeconds) / totalSeconds), true);
-            }
         }
     }
     private DatabaseReference highWaterTempRef;
@@ -706,7 +662,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             if (label != null) label.setText("pH");
             ImageView icon = cardPH.findViewById(R.id.imgIcon);
             if (icon != null) icon.setImageResource(R.drawable.ic_ph);
-            phLoader = new StabilizeLoader(cardPH, tvPH, tvPHStatus, PH_EC_STABILIZE_TOTAL_SECONDS,
+            phLoader = new StabilizeLoader(cardPH, tvPH, tvPHStatus,
                     "Stabilizing",
                     "pH is currently being corrected. The reading will be hidden until it settles. This usually takes about a minute and a half.");
         }
@@ -717,7 +673,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             if (label != null) label.setText("EC");
             ImageView icon = cardEC.findViewById(R.id.imgIcon);
             if (icon != null) icon.setImageResource(R.drawable.ic_ec);
-            ecLoader = new StabilizeLoader(cardEC, tvEC, tvECStatus, PH_EC_STABILIZE_TOTAL_SECONDS,
+            ecLoader = new StabilizeLoader(cardEC, tvEC, tvECStatus,
                     "Stabilizing",
                     "EC is currently being corrected. The reading will be hidden until it settles. This usually takes about a minute and a half.");
         }
@@ -748,9 +704,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             tvWaterLevelStatus = cardWaterLevel.findViewById(R.id.tvStatus);
             TextView label = cardWaterLevel.findViewById(R.id.tvLabel);
             if (label != null) label.setText("Water Level");
-            // 0 total = indeterminate ring - refill has no single fixed
-            // duration to size a determinate ring against (1-3 attempts).
-            waterLevelLoader = new StabilizeLoader(cardWaterLevel, tvWaterLevel, tvWaterLevelStatus, 0,
+            waterLevelLoader = new StabilizeLoader(cardWaterLevel, tvWaterLevel, tvWaterLevelStatus,
                     "Refilling",
                     "The reservoir is currently refilling. The water level reading will be hidden until the refill finishes.");
         }
@@ -913,8 +867,12 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (!isAdded()) return;
 
-                // Reuse firmware-published alert truth for presentation only.
-                // No Android-side threshold or warning range is introduced.
+                // Firmware-published alert truth, used only by the manual
+                // override advisor to tell which way a parameter is off target.
+                // It does NOT colour the readings: the firmware confirms an
+                // alert over several samples and releases it with hysteresis,
+                // so it lags the number on screen. The colour comes from the
+                // configured target range instead - see targetRangesListener.
                 // A flag that is present but the wrong type is unknown, not
                 // "inactive": it keeps the last shown state so a malformed value
                 // can never make an alert look recovered. A missing flag still
@@ -924,37 +882,6 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 overrideFlags.ecLow = isAlertActive(snapshot, "ecLow", overrideFlags.ecLow);
                 overrideFlags.lowWater = isAlertActive(snapshot, "lowWater", overrideFlags.lowWater);
                 alertsLoaded = true;
-
-                // Direction is kept, not collapsed, so each reading can say
-                // Below Range / Normal / Above Range rather than just "Warning".
-                phBelowRange = isAlertActive(snapshot, "phLow", phBelowRange);
-                phAboveRange = isAlertActive(snapshot, "phHigh", phAboveRange);
-                Boolean phOutOfRange = alertFlag(snapshot, "phOutOfRange");
-                phAlertActive = phBelowRange || phAboveRange
-                        || (phOutOfRange != null ? phOutOfRange : phAlertActive);
-
-                ecBelowRange = isAlertActive(snapshot, "ecLow", ecBelowRange);
-                ecAboveRange = isAlertActive(snapshot, "ecHigh", ecAboveRange);
-                ecAlertActive = ecBelowRange || ecAboveRange;
-
-                airTempBelowRange = isAlertActive(snapshot, "lowAirTemperature", airTempBelowRange);
-                airTempAboveRange = isAlertActive(snapshot, "highTemperature", airTempAboveRange);
-                airTemperatureAlertActive = airTempBelowRange || airTempAboveRange;
-
-                humidityBelowRange = isAlertActive(snapshot, "humidityLow", humidityBelowRange);
-                humidityAboveRange = isAlertActive(snapshot, "humidityHigh", humidityAboveRange);
-                humidityAlertActive = humidityBelowRange || humidityAboveRange;
-
-                waterTempBelowRange = isAlertActive(snapshot, "waterTempLow", waterTempBelowRange);
-                waterTempAboveRange = isAlertActive(snapshot, "waterTempOutOfRange", waterTempAboveRange);
-                waterTemperatureAlertActive = waterTempBelowRange || waterTempAboveRange;
-
-                // Target-range classification for display. lowWater stays the
-                // separate refill CONTROL signal and is not shown as a range.
-                waterLevelBelowRange = isAlertActive(snapshot, "waterLevelLow", waterLevelBelowRange);
-                waterLevelAboveRange = isAlertActive(snapshot, "waterLevelHigh", waterLevelAboveRange);
-                waterLevelAlertActive = waterLevelBelowRange || waterLevelAboveRange;
-                updateSensorUI();
             }
 
             @Override
@@ -963,6 +890,32 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             }
         };
         alertsRef.addValueEventListener(alertsListener);
+
+        // The configured min/max each reading is judged against. Live, so
+        // editing a range in Settings recolours the cards straight away.
+        targetRangesRef = deviceRef.child("settings");
+        targetRangesListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!isAdded()) return;
+                for (ParameterTargetRanges parameter : ParameterTargetRanges.values()) {
+                    // A missing or malformed value falls back to the compiled
+                    // default the firmware itself uses in that case.
+                    Double min = FirebaseSafeRead.dbl(snapshot.child(parameter.minKey));
+                    Double max = FirebaseSafeRead.dbl(snapshot.child(parameter.maxKey));
+                    targetRanges.put(parameter, new double[]{
+                            min != null ? min : parameter.defaultMin,
+                            max != null ? max : parameter.defaultMax});
+                }
+                updateSensorUI();
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                handleAccessRevoked("targetRanges", error);
+            }
+        };
+        targetRangesRef.addValueEventListener(targetRangesListener);
 
         statusRef = dbHelper.getStatusReference();
         statusListener = new ValueEventListener() {
@@ -1003,9 +956,6 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 int mode = operationContext.currentMode;
                 boolean phWatchPhaseActive = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot.child("phWatchPhaseActive")));
                 boolean ecWatchPhaseActive = Boolean.TRUE.equals(FirebaseSafeRead.bool(snapshot.child("ecWatchPhaseActive")));
-                Long phSecs = FirebaseSafeRead.lng(snapshot.child("phStabilizeSecondsRemaining"));
-                Long ecSecs = FirebaseSafeRead.lng(snapshot.child("ecStabilizeSecondsRemaining"));
-                Long refillSecs = FirebaseSafeRead.lng(snapshot.child("refillSecondsRemaining"));
 
                 boolean phUnstable = mode == MODE_DOSING_PH
                         || (mode == MODE_STABILIZING_PH && !phWatchPhaseActive);
@@ -1013,9 +963,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                         || (mode == MODE_STABILIZING_EC && !ecWatchPhaseActive);
                 boolean waterLevelUnstable = mode == MODE_REFILLING;
 
-                if (phLoader != null) phLoader.update(phUnstable, phSecs != null ? phSecs.intValue() : 0);
-                if (ecLoader != null) ecLoader.update(ecUnstable, ecSecs != null ? ecSecs.intValue() : 0);
-                if (waterLevelLoader != null) waterLevelLoader.update(waterLevelUnstable, refillSecs != null ? refillSecs.intValue() : 0);
+                if (phLoader != null) phLoader.update(phUnstable);
+                if (ecLoader != null) ecLoader.update(ecUnstable);
+                if (waterLevelLoader != null) waterLevelLoader.update(waterLevelUnstable);
             }
 
             @Override
@@ -2320,20 +2270,48 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             tvWaterLevel.setText(waterLevelText);
         }
 
-        applyParameterStateColor(tvPH, tvPHStatus, phAlertActive, phBelowRange, phAboveRange);
-        applyParameterStateColor(tvEC, tvECStatus, ecAlertActive, ecBelowRange, ecAboveRange);
-        // dhtStale takes priority over range/alert coloring in the overload
-        // below - a retained last-known value that happens to fall inside
-        // the target range must never read "Normal".
-        applyParameterStateColor(tvTemp, tvTempStatus, airTemperatureAlertActive,
-                airTempBelowRange, airTempAboveRange, dhtStale);
+        // Red is decided here, from the number itself against the configured
+        // target range - the reading turns red the moment it is below the
+        // minimum or above the maximum, not when the firmware's slower
+        // confirmed alert catches up.
+        applyParameterStateColor(tvPH, tvPHStatus, ParameterTargetRanges.PH,
+                data != null ? data.ph : null, false);
+        applyParameterStateColor(tvEC, tvECStatus, ParameterTargetRanges.EC,
+                data != null ? data.ec : null, false);
+        // dhtStale takes priority over range coloring - a retained
+        // last-known value that happens to fall inside the target range must
+        // never read "Normal".
+        applyParameterStateColor(tvTemp, tvTempStatus, ParameterTargetRanges.AIR_TEMPERATURE,
+                data != null ? data.airTemperature : null, dhtStale);
         // Humidity now has a real target range instead of always reading Normal.
-        applyParameterStateColor(tvHumidity, tvHumidityStatus, humidityAlertActive,
-                humidityBelowRange, humidityAboveRange, dhtStale);
-        applyParameterStateColor(tvWaterTemp, tvWaterTempStatus, waterTemperatureAlertActive,
-                waterTempBelowRange, waterTempAboveRange);
-        applyParameterStateColor(tvWaterLevel, tvWaterLevelStatus, waterLevelAlertActive,
-                waterLevelBelowRange, waterLevelAboveRange);
+        applyParameterStateColor(tvHumidity, tvHumidityStatus, ParameterTargetRanges.HUMIDITY,
+                data != null ? data.humidity : null, dhtStale);
+        applyParameterStateColor(tvWaterTemp, tvWaterTempStatus, ParameterTargetRanges.WATER_TEMPERATURE,
+                data != null ? data.waterTemperature : null, false);
+        applyParameterStateColor(tvWaterLevel, tvWaterLevelStatus, ParameterTargetRanges.WATER_LEVEL,
+                data != null ? data.waterLevel : null, false);
+    }
+
+    /**
+     * Whether the reading is outside the configured target range, judged on
+     * the value as displayed (rounded to the card's own decimal places) so
+     * what the user reads always agrees with the colour: with a 5.5 - 6.5
+     * range, 5.49 and 6.51 are red while 5.50 and 6.50 are not. The bounds
+     * themselves are in range. Compared as whole hundredths/tenths so a
+     * float such as 5.4999999 cannot flip the result.
+     *
+     * @return -1 below the minimum, +1 above the maximum, 0 inside (or unknown)
+     */
+    private int targetRangePosition(ParameterTargetRanges parameter, Double value) {
+        if (value == null || value.isNaN() || value.isInfinite()) return 0;
+        double[] range = targetRanges.get(parameter);
+        if (range == null) return 0;
+
+        double scale = Math.pow(10, parameter.decimals);
+        long shown = Math.round(value * scale);
+        if (shown < Math.round(range[0] * scale)) return -1;
+        if (shown > Math.round(range[1] * scale)) return 1;
+        return 0;
     }
 
     /**
@@ -2376,24 +2354,13 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         return active != null ? active : lastKnown;
     }
 
-    /** Applies the same Normal/Warning/No Data state to both the value's color and a text status label. */
-    private void applyParameterStateColor(TextView valueView, TextView statusView, boolean alertActive) {
-        applyParameterStateColor(valueView, statusView, alertActive, false, false);
-    }
-
     /**
-     * Renders one reading's state. A missing reading stays "No Data" and is
-     * never reported as out of range; an excursion is labelled with its
-     * direction when the device published one.
-     */
-    private void applyParameterStateColor(TextView valueView, TextView statusView,
-                                          boolean alertActive, boolean belowRange, boolean aboveRange) {
-        applyParameterStateColor(valueView, statusView, alertActive, belowRange, aboveRange, false);
-    }
-
-    /**
-     * Same as the 5-argument overload above, with an explicit `stale`
-     * parameter for a sensor (currently DHT air temperature/humidity) whose
+     * Renders one reading's state as the value's color plus a text status
+     * label. A missing reading stays "No Data" and is never reported as out
+     * of range; a reading outside the configured target range is red and
+     * labelled with its direction (see targetRangePosition()).
+     *
+     * `stale` is for a sensor (currently DHT air temperature/humidity) whose
      * VALUE TEXT stays a normal-looking formatted number even while stale -
      * unlike pH/EC fault or the Stabilizing/No Data cases below, which are
      * already distinguishable by the literal text set in updateSensorUI(),
@@ -2402,9 +2369,10 @@ public class Parameters_Monitoring_Fragment extends Fragment {
      * sit inside the target range.
      */
     private void applyParameterStateColor(TextView valueView, TextView statusView,
-                                          boolean alertActive, boolean belowRange, boolean aboveRange,
+                                          ParameterTargetRanges parameter, Double value,
                                           boolean stale) {
         if (valueView == null) return;
+        final int position = targetRangePosition(parameter, value);
         final int colorRes;
         final String statusText;
         if (stale && !"--".contentEquals(valueView.getText())) {
@@ -2413,7 +2381,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             // device goes offline (see updateConnectionUI()), rather than
             // inventing a new visual pattern. Takes priority over every
             // other branch below so a stale reading is never shown as
-            // Normal/Warning/Below/Above Range.
+            // Normal/Below/Above Range.
             colorRes = R.color.state_no_data;
             statusText = "Last known";
         } else if ("Check pH sensor".contentEquals(valueView.getText())
@@ -2421,9 +2389,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             // Confirmed pH/EC hardware fault (see SensorData's own comment) -
             // distinct from a plain "--"/No Data (never read anything yet)
             // and from Below/Above Range (a valid, dosing-correctable
-            // chemistry reading). Colored the same as an active alert since
-            // this needs attention, but labelled with its own status text
-            // rather than "Warning" so it reads as a hardware issue.
+            // chemistry reading). Colored the same red since this needs
+            // attention, but labelled with its own status text so it reads
+            // as a hardware issue rather than an out-of-range reading.
             colorRes = R.color.state_critical;
             statusText = "Sensor unavailable";
         } else if ("Stabilizing…".contentEquals(valueView.getText())) {
@@ -2436,15 +2404,12 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         } else if ("--".contentEquals(valueView.getText())) {
             colorRes = R.color.state_no_data;
             statusText = "No Data";
-        } else if (belowRange) {
+        } else if (position < 0) {
             colorRes = R.color.state_critical;
             statusText = "Below Range";
-        } else if (aboveRange) {
+        } else if (position > 0) {
             colorRes = R.color.state_critical;
             statusText = "Above Range";
-        } else if (alertActive) {
-            colorRes = R.color.state_critical;
-            statusText = "Warning";
         } else {
             colorRes = R.color.state_success;
             statusText = "Normal";
@@ -2642,6 +2607,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (alertsRef != null && alertsListener != null) {
             alertsRef.removeEventListener(alertsListener);
         }
+        if (targetRangesRef != null && targetRangesListener != null) {
+            targetRangesRef.removeEventListener(targetRangesListener);
+        }
         if (statusRef != null && statusListener != null) {
             statusRef.removeEventListener(statusListener);
         }
@@ -2679,9 +2647,9 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (getContext() == null) return;
         String[][] sections = {
                 {"What does this section do?",
-                        "Shows every pump, fan, light, and valve the system controls, and whether each is currently running under the automatic system, a manual command from this app, or a physical override at the hardware."},
+                        "Shows every pump, fan, light, and valve the system controls, and whether each is currently running under the automatic system (Auto) or being controlled manually through the Basilience mobile application (Manual)."},
                 {"Automatic vs. Manual Mode",
-                        "By default every actuator runs automatically from sensor readings. Turning on 'Manual Mode' lets an Admin operate individual actuators by hand without disabling the automatic system underneath - toggle it back off to return everything to automatic control. Each status line shows the source: Auto, Manual, or App."},
+                        "By default every actuator runs automatically from sensor readings. An Admin can turn on 'Manual Mode' to operate individual actuators by hand. A Farmer can ask an Admin for manual-control access. Manual control puts a hold on the actuator you control, and other eligible automatic operations may continue. Turning Manual Mode on can stop an automatic job already in progress, such as refilling or dosing. Turn Manual Mode off to return everything to automatic control. It also ends by itself after about 15 minutes of inactivity. Each status line shows how the actuator is controlled: Auto or Manual."},
                 {"Start Reservoir Refill",
                         "Admin-only. Manually opens the water pump/valve to top up the reservoir, the same action the automatic system takes on its own when the water level runs low. Useful for topping off before a cycle or after inspecting the reservoir by hand."},
                 {"Reset Safety",

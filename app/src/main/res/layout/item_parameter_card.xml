@@ -62,11 +62,11 @@
         <!-- STABILIZING LOADER - shown instead of tvValue/tvStatus above
              while the reading is known to be untrustworthy (actively dosing,
              or still in the initial settle window after a correction). See
-             Parameters_Monitoring_Fragment's updateStabilizingLoader(). Just
-             the countdown text now - no circular progress ring (removed per
-             request; StabilizeLoader's own progress-ring code already
-             null-guards every access to R.id.progressStabilizing, so
-             dropping it here needs no Java change). -->
+             Parameters_Monitoring_Fragment's StabilizeLoader. A static label
+             only - no seconds countdown and no circular progress ring (both
+             removed per request; StabilizeLoader null-guards
+             R.id.progressStabilizing, so a card without it needs no Java
+             change). -->
         <FrameLayout
             android:id="@+id/stabilizingLoader"
             android:layout_width="wrap_content"
@@ -75,13 +75,13 @@
             android:visibility="gone">
 
             <TextView
-                android:id="@+id/tvStabilizeSeconds"
+                android:id="@+id/tvStabilizeLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="--"
+                android:text="Stabilizing…"
                 android:textSize="22sp"
                 android:textStyle="bold"
-                android:textColor="@color/state_primary_text"/>
+                android:textColor="@color/state_warning"/>
 
         </FrameLayout>
 

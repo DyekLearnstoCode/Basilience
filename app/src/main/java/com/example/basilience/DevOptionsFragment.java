@@ -114,7 +114,7 @@ public class DevOptionsFragment extends Fragment {
     // Water-depth model (centimeters) - see firmware Config.h's "Water
     // Reservoir Geometry". Matches REFILL_START_CM/REFILL_STOP_CM.
     private float loadedRefillStart = 2.0f;
-    private float loadedRefillStop = 3.0f;
+    private float loadedRefillStop = 5.0f;
 
     // EC Voltage diagnostic tile - raw signal behind the EC reading, useful
     // for Sensor Test hardware inspection. No calibration mechanism here;
@@ -521,10 +521,16 @@ public class DevOptionsFragment extends Fragment {
     private void configureAccessMode(View view) {
         TextView title = view.findViewById(R.id.tvToolsTitle);
         TextView subtitle = view.findViewById(R.id.tvToolsSubtitle);
+        TextView diagnosticsEyebrow = view.findViewById(R.id.tvDiagnosticsEyebrow);
 
         if (maintenanceMode) {
             if (title != null) title.setText("Device Configuration");
             if (subtitle != null) subtitle.setText("Safe device diagnostics and production settings.");
+            // Sensor Test (diagnostic) and Refill Thresholds (setting) are all
+            // Device Configuration shows here - nothing is simulated in this
+            // mode, so the shared "Diagnostics & Simulation" heading (kept for
+            // Developer Options, where Mock Data lives) would be inaccurate.
+            if (diagnosticsEyebrow != null) diagnosticsEyebrow.setText("Diagnostics & Settings");
             btnFilterMock.setVisibility(View.GONE);
             containerMockData.setVisibility(View.GONE);
             cardAutomationTestMode.setVisibility(View.GONE);
@@ -918,10 +924,9 @@ public class DevOptionsFragment extends Fragment {
         // FoggingReportsFragment's resolveRunningStateAndRender): rtc/* is
         // last-known data that stays in RTDB after the device drops offline,
         // so it must not be shown as current until presence is confirmed.
-        Boolean backendOnline = FirebaseSafeRead.bool(statusSnapshot.child("online"));
         Long lastServerSeen = DeviceConnectionManager.readLongValue(statusSnapshot.child("lastServerSeen"));
         boolean deviceLive = DeviceConnectionManager.resolveState(
-                backendOnline, lastServerSeen, System.currentTimeMillis())
+                lastServerSeen, DeviceConnectionManager.serverNowMs())
                 == DeviceConnectivityState.ONLINE;
         String lastKnownSuffix = deviceLive ? "" : " (last known)";
 
@@ -1235,6 +1240,33 @@ public class DevOptionsFragment extends Fragment {
     }
 
     private void pushMockValues() {
+        // Mock Sensors and Automation Test Mode are two independent commands
+        // (commands/mockSensors vs commands/automationTestMode) - enabling
+        // this alone does NOT put the firmware into the isolated-test stale
+        // policy. Confirmed root cause of a real failed test: mock pH was
+        // pushed and drove PH_DOWN correctly, but with Automation Test Mode
+        // left OFF, a mid-test Firebase outage aged the mock payload past its
+        // freshness timeout and the firmware correctly followed its NORMAL
+        // (non-isolated) policy - fall back to physical sensors - per
+        // SensorManager.cpp's applyEffectiveSensors(). On a bare test board
+        // with no physical sensors that reads as NaN, and the in-progress pH
+        // correction aborted on a sensor fault. The firmware behavior here is
+        // correct and intentionally unchanged; this warns the one moment a
+        // developer could silently end up relying on it by accident.
+        if (switchMockEnable.isChecked() && "OFF".equals(confirmedAutomationTestMode)) {
+            NotificationHelper.showConfirmation(requireContext(),
+                    "Automation Test Mode Is Off",
+                    "Mock Sensors alone will not hold your values if Firebase drops mid-test - " +
+                            "the firmware falls back to physical sensors once the mock payload goes stale, " +
+                            "and this board has none connected. For a deterministic test, set Automation Test " +
+                            "Mode to the subsystem you're testing first.\n\nPush mock data anyway?",
+                    "Push Anyway", "Cancel", this::pushMockValuesConfirmed);
+            return;
+        }
+        pushMockValuesConfirmed();
+    }
+
+    private void pushMockValuesConfirmed() {
         Map<String, Object> updates = new HashMap<>();
         updates.put("enabled", switchMockEnable.isChecked());
         updates.put("dynamic", switchDynamicMock.isChecked());
@@ -1338,7 +1370,18 @@ public class DevOptionsFragment extends Fragment {
                 "This sends a developer command to the online ESP32 to start the local Basilience-Setup access point. No Wi-Fi credentials are sent through Firebase.",
                 "Enable AP", "Cancel", () -> {
                     showLoading("Starting AP Mode...", "Sending developer command to ESP32...");
-                    deviceRef.child("commands").child("startProvisioning").setValue(System.currentTimeMillis())
+                    // Must be the JSON boolean `true`, not a timestamp: firmware reads this
+                    // node as FirebaseJsonData.boolValue (FirebaseManager.cpp, the
+                    // startProvisioning command handler). For a JSON number, that library
+                    // derives boolValue from truncating the value to a signed int32 and
+                    // checking > 0 - a millis() timestamp overflows int32, and whether the
+                    // truncated low 32 bits land positive or negative flips roughly every
+                    // 24 days as time advances, silently swallowing this command whenever it
+                    // lands negative. The ESP32 never even logs a rejection, since
+                    // `jsonData.success` is still true for a Number node - only the
+                    // `startProvisioningRequested` boolean AND ends up false, so this is
+                    // indistinguishable from the app failing to send the command at all.
+                    deviceRef.child("commands").child("startProvisioning").setValue(true)
                             .addOnSuccessListener(aVoid -> {
                                 if (!isAdded()) return;
                                 showLoading("AP command sent", "Connect this phone to Basilience-Setup, then send Wi-Fi credentials locally.");

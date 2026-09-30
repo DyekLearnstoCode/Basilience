@@ -56,16 +56,6 @@
                 app:trackThickness="3dp"
                 app:indicatorColor="@color/primary" />
 
-            <TextView
-                android:id="@+id/tvStabilizeSeconds"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:text="--"
-                android:textSize="8sp"
-                android:textStyle="bold"
-                android:textColor="@color/state_primary_text"/>
-
         </FrameLayout>
     </LinearLayout>
 </LinearLayout>

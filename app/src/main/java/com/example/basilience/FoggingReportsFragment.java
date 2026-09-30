@@ -1068,13 +1068,12 @@ public class FoggingReportsFragment extends Fragment {
                 public void onDataChange(@NonNull DataSnapshot snapshot) {
                     if (!isAdded() || requestGeneration != reportRequestGeneration) return;
 
-                    Boolean backendOnline = FirebaseSafeRead.bool(snapshot.child("online"));
                     Long lastServerSeen = DeviceConnectionManager.readLongValue(snapshot.child("lastServerSeen"));
                     // Reuses DeviceConnectionManager's authoritative presence
                     // rule so Fogging Reports can never disagree with the rest
                     // of the app about whether the device is online.
                     boolean deviceLive = DeviceConnectionManager.resolveState(
-                            backendOnline, lastServerSeen, System.currentTimeMillis())
+                            lastServerSeen, DeviceConnectionManager.serverNowMs())
                             == DeviceConnectivityState.ONLINE;
 
                     if (!deviceLive) {
@@ -1698,12 +1697,11 @@ public class FoggingReportsFragment extends Fragment {
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         if (!isAdded() || requestGeneration != waterOutlookRequestGeneration) return;
 
-                        Boolean backendOnline = FirebaseSafeRead.bool(snapshot.child("online"));
                         Long lastServerSeen = DeviceConnectionManager.readLongValue(snapshot.child("lastServerSeen"));
                         // Reuses the project's single authoritative presence
                         // rule - no second freshness threshold is defined.
                         boolean deviceLive = DeviceConnectionManager.resolveState(
-                                backendOnline, lastServerSeen, System.currentTimeMillis())
+                                lastServerSeen, DeviceConnectionManager.serverNowMs())
                                 == DeviceConnectivityState.ONLINE;
 
                         if (!deviceLive) {
@@ -2183,7 +2181,8 @@ public class FoggingReportsFragment extends Fragment {
                                 + "• Average Session - the total time divided by the number of sessions.\n"
                                 + "• Automatic - fogging the system started on its own.\n"
                                 + "• Manual - fogging someone started by hand.\n"
-                                + "• Fogging Strategy - the different fogging patterns the system used, such as Normal or Startup, and how long each one ran."},
+                                + "• Fogging Strategy - the fogging patterns the system used (Normal, Startup, Hot, Cold, and Night) and how long each one ran. Only patterns that actually ran are listed.\n"
+                                + "• Night Fogging - from 10:00 PM to 6:00 AM, Basilience automatically uses a reduced fogging schedule of 2 minutes ON and 10 minutes OFF."},
                 {"Fogging Time Per Day",
                         "Each bar is the total fogging time recorded in one day - or in one hour when you pick Today. A bar of zero means no fogging was recorded then. Tap any bar to see its exact total."},
                 {"Water Outlook",

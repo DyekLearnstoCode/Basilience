@@ -247,7 +247,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
             // after onCancelled has already set the terminal revoked state.
             if (accessRevoked) return;
             applyStatus(DeviceConnectionManager.resolveState(
-                    backendOnline, lastServerSeen, provisioning, System.currentTimeMillis()));
+                    lastServerSeen, provisioning, DeviceConnectionManager.serverNowMs()));
         }
 
         private void applyStatus(DeviceConnectivityState state) {

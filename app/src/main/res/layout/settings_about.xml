@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -151,12 +152,17 @@
                 android:textStyle="italic"
                 android:text="Basilience was developed as the project &quot;Basilience: An IoT-Android Based Fogponics Cultivation System for Genovese Basil Using Ultrasonic Atomization for Girasoles Farm Candelaria.&quot;" />
 
+            <!-- The real "Version <versionName>" text is set at runtime by
+                 AboutFragment from the installed package info, so no version
+                 is hardcoded here. Design-time placeholder only (tools:text is
+                 stripped from the built APK). This view is also the tap target
+                 for the Developer Mode trigger - keep its id and click handler. -->
             <TextView
                 android:id="@+id/tvVersion"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:text="Version 1.0.0"
+                tools:text="Version x.y.z"
                 android:textColor="#777777"
                 android:textSize="13sp" />
 
