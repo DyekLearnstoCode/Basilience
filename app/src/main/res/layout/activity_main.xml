@@ -75,4 +75,26 @@
 
     </com.google.android.material.card.MaterialCardView>
 
+    <!-- CONFIRMED BUG FIX (loading overlay not covering bottom nav): every
+         per-fragment "full screen" loading overlay (e.g. parameters_monitoring.xml's
+         actuatorLoadingOverlay/sensorStabilizingOverlay, reports_fogging.xml's
+         layoutLoading, etc.) lives inside that fragment's own root view, which
+         nav_host_fragment above bounds to the space ABOVE this BottomNavigationView
+         (height="0dp" + layout_weight="1") - so those overlays can visually dim
+         their own screen's content but can never reach the nav bar, which sits in a
+         separate, non-overlapping sibling area and stayed fully bright/interactive
+         during "loading". This single Activity-level scrim sits above BOTH of them
+         in the same root FrameLayout and is toggled by MainActivity.setGlobalDimOverlayVisible()
+         alongside each fragment's own local overlay, so the nav bar is now covered
+         and non-interactive for the same duration as the rest of the screen. -->
+    <View
+        android:id="@+id/globalDimOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="24dp"
+        android:visibility="gone" />
+
 </FrameLayout>

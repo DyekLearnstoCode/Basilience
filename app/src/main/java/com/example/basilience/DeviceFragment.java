@@ -127,6 +127,7 @@ public class DeviceFragment extends Fragment {
                     layoutLoadingShownAt = SystemClock.elapsedRealtime();
                     layoutLoading.setVisibility(View.VISIBLE);
                     layoutLoading.bringToFront();
+                    setGlobalDimOverlayVisible(true);
                 }
                 dbHelper.claimDevice(token)
                         .addOnSuccessListener(aVoid -> {
@@ -216,6 +217,7 @@ public class DeviceFragment extends Fragment {
                     layoutLoadingShownAt = SystemClock.elapsedRealtime();
                     layoutLoading.setVisibility(View.VISIBLE);
                     layoutLoading.bringToFront();
+                    setGlobalDimOverlayVisible(true);
                 }
                 dbHelper.setHarvestScaleId(device.getDeviceId(), scaleId)
                         .addOnSuccessListener(aVoid -> {
@@ -364,6 +366,7 @@ public class DeviceFragment extends Fragment {
             layoutLoadingShownAt = SystemClock.elapsedRealtime();
             layoutLoading.setVisibility(View.VISIBLE);
             layoutLoading.bringToFront();
+            setGlobalDimOverlayVisible(true);
         }
         dbHelper.hasActiveCycle(device.getDeviceId())
                 .addOnCompleteListener(task -> {
@@ -394,6 +397,7 @@ public class DeviceFragment extends Fragment {
             layoutLoadingShownAt = SystemClock.elapsedRealtime();
             layoutLoading.setVisibility(View.VISIBLE);
             layoutLoading.bringToFront();
+            setGlobalDimOverlayVisible(true);
         }
 
         dbHelper.unclaimDevice(device.getDeviceId())
@@ -430,6 +434,14 @@ public class DeviceFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
+        // CONFIRMED BUG FIX (loading overlay not covering bottom nav): if
+        // this view is torn down while layoutLoading was still visible, its
+        // matching setGlobalDimOverlayVisible(true) call would otherwise
+        // never be balanced by a hide, leaving MainActivity's global dim
+        // stuck over the whole app (including the nav bar) forever.
+        if (layoutLoading != null && layoutLoading.getVisibility() == View.VISIBLE) {
+            setGlobalDimOverlayVisible(false);
+        }
         // Detaching the adapter stops every row's live status listener and
         // refresh loop (see DeviceAdapter.onDetachedFromRecyclerView).
         // deviceMutationInProgress / unclaimCheckInProgress are deliberately
@@ -447,11 +459,27 @@ public class DeviceFragment extends Fragment {
         super.onDestroyView();
     }
 
+    // CONFIRMED BUG FIX (loading overlay not covering bottom nav): this
+    // fragment's own layoutLoading overlay is bounded to nav_host_fragment's
+    // area and can never visually reach bottom_navigation, which lives in a
+    // separate sibling view in activity_main.xml - see
+    // MainActivity.setGlobalDimOverlayVisible()'s own comment for the full
+    // root cause. Called alongside every local overlay show/hide so the nav
+    // bar is dimmed and non-interactive for the same duration instead of
+    // staying bright and clickable above it.
+    private void setGlobalDimOverlayVisible(boolean visible) {
+        if (!isAdded()) return;
+        if (getActivity() instanceof MainActivity) {
+            ((MainActivity) getActivity()).setGlobalDimOverlayVisible(visible);
+        }
+    }
+
     /** Hides the claim/unclaim loading overlay, never sooner than the minimum visible duration. */
     private void hideLayoutLoading() {
         if (layoutLoading == null || layoutLoading.getVisibility() != View.VISIBLE) return;
         NotificationHelper.hideLoaderAfterMinimumDuration(layoutLoadingShownAt, () -> {
             if (layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+            setGlobalDimOverlayVisible(false);
         });
     }
 

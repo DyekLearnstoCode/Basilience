@@ -767,6 +767,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         if (sensorStabilizingOverlay != null) {
             sensorStabilizingOverlay.setVisibility(View.VISIBLE);
             sensorStabilizingOverlay.bringToFront();
+            setGlobalDimOverlayVisible(true);
         }
         mainHandler.removeCallbacks(sensorStabilizingTimeoutRunnable);
         mainHandler.postDelayed(sensorStabilizingTimeoutRunnable, SENSOR_STABILIZING_TIMEOUT_MS);
@@ -1660,6 +1661,21 @@ public class Parameters_Monitoring_Fragment extends Fragment {
             });
     }
 
+    // CONFIRMED BUG FIX (loading overlay not covering bottom nav): this
+    // fragment's own actuatorLoadingOverlay/sensorStabilizingOverlay are
+    // bounded to nav_host_fragment's area and can never visually reach
+    // bottom_navigation, which lives in a separate sibling view in
+    // activity_main.xml - see MainActivity.setGlobalDimOverlayVisible()'s
+    // own comment for the full root cause. Called alongside every local
+    // overlay show/hide below so the nav bar is dimmed and non-interactive
+    // for the same duration instead of staying bright and clickable above it.
+    private void setGlobalDimOverlayVisible(boolean visible) {
+        if (!isAdded()) return;
+        if (getActivity() instanceof MainActivity) {
+            ((MainActivity) getActivity()).setGlobalDimOverlayVisible(visible);
+        }
+    }
+
     /** Show the full-screen loading overlay with a title and optional subtitle */
     private void showActuatorLoading(String title, String subtitle) {
         if (actuatorLoadingOverlay == null || !isAdded()) return;
@@ -1668,6 +1684,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         }
         actuatorLoadingOverlay.setVisibility(View.VISIBLE);
         actuatorLoadingOverlay.bringToFront();
+        setGlobalDimOverlayVisible(true);
         if (tvActuatorLoadingTitle != null) tvActuatorLoadingTitle.setText(title);
         if (tvActuatorLoadingStatus != null) {
             tvActuatorLoadingStatus.setText(subtitle);
@@ -1681,6 +1698,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
                 || actuatorLoadingOverlay.getVisibility() != View.VISIBLE) return;
         NotificationHelper.hideLoaderAfterMinimumDuration(actuatorLoadingShownAt, () -> {
             if (isAdded() && actuatorLoadingOverlay != null) actuatorLoadingOverlay.setVisibility(View.GONE);
+            setGlobalDimOverlayVisible(false);
         });
     }
 
@@ -2332,6 +2350,7 @@ public class Parameters_Monitoring_Fragment extends Fragment {
         mainHandler.removeCallbacks(sensorStabilizingTimeoutRunnable);
         if (sensorStabilizingOverlay != null) {
             sensorStabilizingOverlay.setVisibility(View.GONE);
+            setGlobalDimOverlayVisible(false);
         }
         Log.d(SENSOR_UI_TAG, "[SENSOR-UI] " + diagnostic);
         updateSensorUI();
@@ -2572,6 +2591,20 @@ public class Parameters_Monitoring_Fragment extends Fragment {
 
     @Override
     public void onDestroyView() {
+        // CONFIRMED BUG FIX (loading overlay not covering bottom nav): if
+        // this view is torn down (e.g. back navigation) while either overlay
+        // was still visible, its matching setGlobalDimOverlayVisible(true)
+        // call below would otherwise never be balanced by a hide() call,
+        // leaving MainActivity's global dim stuck over the whole app
+        // (including the nav bar) forever. Released here, once per overlay
+        // that was still showing, before either is nulled out below.
+        if (actuatorLoadingOverlay != null && actuatorLoadingOverlay.getVisibility() == View.VISIBLE) {
+            setGlobalDimOverlayVisible(false);
+        }
+        if (sensorStabilizingOverlay != null && sensorStabilizingOverlay.getVisibility() == View.VISIBLE) {
+            setGlobalDimOverlayVisible(false);
+        }
+
         // Confirmed live bug: this Fragment INSTANCE survives navigating away
         // and back (Jetpack Navigation keeps it on the back stack, only its
         // view gets destroyed/recreated), but sensorsRevealed is a plain

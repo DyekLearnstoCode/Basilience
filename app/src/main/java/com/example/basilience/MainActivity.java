@@ -107,6 +107,9 @@ public class MainActivity extends AppCompatActivity {
 
 
     private BottomNavigationView bottomNav;
+    // CONFIRMED BUG FIX (loading overlay not covering bottom nav): see
+    // activity_main.xml's globalDimOverlay comment for the full root cause.
+    private View globalDimOverlay;
     private ListenerRegistration notificationCounterListener;
 
     private static final String[] CURRENT_PARAMETER_ALERT_KEYS = {
@@ -201,6 +204,7 @@ public class MainActivity extends AppCompatActivity {
         prefs.registerOnSharedPreferenceChangeListener(selectedDevicePrefListener);
 
         bottomNav = findViewById(R.id.bottom_navigation);
+        globalDimOverlay = findViewById(R.id.globalDimOverlay);
         startNotificationCounterListener();
 
         NavHostFragment navHostFragment =
@@ -1066,6 +1070,32 @@ public class MainActivity extends AppCompatActivity {
         badge.setVisible(true);
         badge.setNumber((int) Math.min(clamped, Integer.MAX_VALUE));
         badge.setMaxCharacterCount(3);
+    }
+
+    // CONFIRMED BUG FIX (loading overlay not covering bottom nav): a
+    // fragment's own local loading overlay is bounded to nav_host_fragment's
+    // area and can never reach bottom_navigation, which lives in a separate
+    // sibling view (see activity_main.xml's globalDimOverlay comment for the
+    // full root cause). Fragments call this alongside showing/hiding their
+    // own local overlay so the nav bar is dimmed and non-interactive for the
+    // same duration, instead of staying bright and clickable above it.
+    // Reference-counted (not a plain toggle): a single screen can have more
+    // than one local overlay (e.g. Parameters Monitoring's
+    // sensorStabilizingOverlay during initial load and actuatorLoadingOverlay
+    // for a manual command can both be active at once) - counting callers
+    // means hiding one never prematurely un-dims the nav while another is
+    // still legitimately showing.
+    private int globalDimOverlayRequests = 0;
+
+    public void setGlobalDimOverlayVisible(boolean visible) {
+        if (globalDimOverlay == null) return;
+        globalDimOverlayRequests = Math.max(0, globalDimOverlayRequests + (visible ? 1 : -1));
+        if (globalDimOverlayRequests > 0) {
+            globalDimOverlay.setVisibility(View.VISIBLE);
+            globalDimOverlay.bringToFront();
+        } else {
+            globalDimOverlay.setVisibility(View.GONE);
+        }
     }
 
     @Override

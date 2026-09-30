@@ -631,7 +631,16 @@ public class Database_Helper {
                 .child(scaleDeviceId)
                 .child("harvestScale")
                 .child("harvests")
-                .orderByKey()
+                // Ordered by capturedAt, NOT the key - measurementIds are
+                // "HS_<chipId>_<sequence>" with an unpadded decimal
+                // sequence, so key order is lexicographic string order, not
+                // numeric/chronological order (e.g. "..._10" sorts before
+                // "..._9"). Ordering by key here would both pick the wrong
+                // LAST-10 window server-side (the true newest reading could
+                // fall outside it) and select the wrong "newest" candidate
+                // from whatever window did come back. orderByChild here is
+                // what fixes both at once.
+                .orderByChild("capturedAt")
                 .limitToLast(HARVEST_SCALE_CANDIDATE_WINDOW)
                 .addListenerForSingleValueEvent(new com.google.firebase.database.ValueEventListener() {
                     @Override
@@ -644,12 +653,24 @@ public class Database_Helper {
                             return;
                         }
 
-                        // RTDB returns children in ascending key order;
-                        // newest-first matches the "return the NEWEST
-                        // unconsumed measurement" requirement.
                         List<DataSnapshot> children = new ArrayList<>();
                         for (DataSnapshot child : snapshot.getChildren()) children.add(child);
-                        Collections.reverse(children);
+
+                        // Explicit, deterministic newest-first sort by the
+                        // numeric capturedAt value itself - does not lean on
+                        // any assumption about how the SDK/listener API
+                        // orders (or fails to re-order) results from the
+                        // orderByChild() query above once they reach this
+                        // callback. A missing/non-numeric capturedAt sorts
+                        // last (oldest), which is harmless: entries like
+                        // that get discarded a few lines below regardless.
+                        Collections.sort(children, (a, b) -> {
+                            Double capturedAtA = FirebaseSafeRead.dbl(a.child("capturedAt"));
+                            Double capturedAtB = FirebaseSafeRead.dbl(b.child("capturedAt"));
+                            long valA = capturedAtA != null ? Math.round(capturedAtA) : Long.MIN_VALUE;
+                            long valB = capturedAtB != null ? Math.round(capturedAtB) : Long.MIN_VALUE;
+                            return Long.compare(valB, valA);
+                        });
 
                         long nowMs = System.currentTimeMillis();
                         List<HarvestScaleReading> candidates = new ArrayList<>();

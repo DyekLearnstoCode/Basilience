@@ -521,6 +521,34 @@ public class Personnel_Details_Fragment extends Fragment {
 
     private long layoutLoadingShownAt;
 
+    // CONFIRMED BUG FIX (loading overlay not covering bottom nav): this
+    // fragment's own layoutLoading overlay is bounded to nav_host_fragment's
+    // area and can never visually reach bottom_navigation, which lives in a
+    // separate sibling view in activity_main.xml - see
+    // MainActivity.setGlobalDimOverlayVisible()'s own comment for the full
+    // root cause. Called alongside every local overlay show/hide so the nav
+    // bar is dimmed and non-interactive for the same duration instead of
+    // staying bright and clickable above it.
+    private void setGlobalDimOverlayVisible(boolean visible) {
+        if (!isAdded()) return;
+        if (getActivity() instanceof MainActivity) {
+            ((MainActivity) getActivity()).setGlobalDimOverlayVisible(visible);
+        }
+    }
+
+    @Override
+    public void onDestroyView() {
+        // CONFIRMED BUG FIX (loading overlay not covering bottom nav): if
+        // this view is torn down while layoutLoading was still visible, its
+        // matching setGlobalDimOverlayVisible(true) call would otherwise
+        // never be balanced by a hide, leaving MainActivity's global dim
+        // stuck over the whole app (including the nav bar) forever.
+        if (layoutLoading != null && layoutLoading.getVisibility() == View.VISIBLE) {
+            setGlobalDimOverlayVisible(false);
+        }
+        super.onDestroyView();
+    }
+
     private void showLoading(boolean show, String title) {
         if (!isAdded() || layoutLoading == null) return;
         if (show) {
@@ -528,9 +556,11 @@ public class Personnel_Details_Fragment extends Fragment {
             layoutLoadingShownAt = SystemClock.elapsedRealtime();
             layoutLoading.setVisibility(View.VISIBLE);
             layoutLoading.bringToFront();
+            setGlobalDimOverlayVisible(true);
         } else if (layoutLoading.getVisibility() == View.VISIBLE) {
             NotificationHelper.hideLoaderAfterMinimumDuration(layoutLoadingShownAt, () -> {
                 if (isAdded() && layoutLoading != null) layoutLoading.setVisibility(View.GONE);
+                setGlobalDimOverlayVisible(false);
             });
         }
     }
