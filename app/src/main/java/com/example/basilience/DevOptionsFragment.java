@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -101,6 +102,7 @@ public class DevOptionsFragment extends Fragment {
     private TextView tvDiagnosticHumidity, tvDiagnosticWaterTemperature, tvDiagnosticWaterLevel;
     private TextView tvDiagnosticWaterLevelDistance;
     private TextView tvDiagnosticWaterDepth;
+    private TextView tvDiagnosticWaterLevelStatus;
 
     private MaterialButton btnPush, btnEnableProvisioningAp, btnDisableDeveloperMode, btnSendTestSms;
     private DatabaseReference testSmsRef;
@@ -154,6 +156,14 @@ public class DevOptionsFragment extends Fragment {
     private boolean sensorTestRequested = false;
     private ValueEventListener sensorTestStatusListener;
     private ValueEventListener diagnosticSensorsListener;
+    // Last debug/physicalSensors snapshot delivered by diagnosticSensorsListener.
+    // RTDB gives no ordering guarantee between that listener and
+    // sensorTestStatusListener (status/sensorTest), so a snapshot can arrive
+    // while sensorTestActive is still false and be rendered as "--". Kept so
+    // renderSensorTestState() can re-render it the moment the status flips to
+    // active instead of leaving the tiles blank until the next snapshot.
+    private DataSnapshot lastDiagnosticSnapshot;
+    private static final String DEV_PHYS_TAG = "DEV-PHYS-APP";
     // waitForMockAcknowledgement()'s listener - untracked before, so it never
     // appeared in onDestroyView()'s cleanup list like every other listener in
     // this file, and pushMockValues()/disableMockMode() could each attach a
@@ -265,6 +275,7 @@ public class DevOptionsFragment extends Fragment {
         tvDiagnosticWaterLevel = view.findViewById(R.id.tvDiagnosticWaterLevel);
         tvDiagnosticWaterLevelDistance = view.findViewById(R.id.tvDiagnosticWaterLevelDistance);
         tvDiagnosticWaterDepth = view.findViewById(R.id.tvDiagnosticWaterDepth);
+        tvDiagnosticWaterLevelStatus = view.findViewById(R.id.tvDiagnosticWaterLevelStatus);
 
         // Refill threshold components
         layoutRefillStart = view.findViewById(R.id.layoutRefillStart);
@@ -814,25 +825,51 @@ public class DevOptionsFragment extends Fragment {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (!isAdded()) return;
-                renderDiagnostic(tvDiagnosticPh, "pH", snapshot.child("ph").getValue(), "");
-                renderDiagnostic(tvDiagnosticEc, "EC", snapshot.child("ec").getValue(), " mS/cm");
-                renderDiagnostic(tvDiagnosticEcVoltage, "EC Voltage", snapshot.child("ecVoltage").getValue(), " V");
-                renderDiagnostic(tvDiagnosticAirTemperature, "Air Temperature", snapshot.child("airTemperature").getValue(), " °C");
-                renderDiagnostic(tvDiagnosticHumidity, "Humidity", snapshot.child("humidity").getValue(), " %");
-                renderDiagnostic(tvDiagnosticWaterTemperature, "Water Temperature",
-                        snapshot.child("waterTemperature").getValue(), " °C", "Unavailable");
-                renderDiagnostic(tvDiagnosticWaterLevel, "Water Level", snapshot.child("waterLevel").getValue(), " %");
-                renderDiagnostic(tvDiagnosticWaterLevelDistance, "Water Level Distance", snapshot.child("waterLevelDistanceCm").getValue(), " cm");
-                renderDiagnostic(tvDiagnosticWaterDepth, "Water Depth", snapshot.child("waterLevelCm").getValue(), " cm");
+                lastDiagnosticSnapshot = snapshot;
+                Log.d(DEV_PHYS_TAG, "sensorTestActive=" + sensorTestActive
+                        + " path=" + diagnosticSensorsRef.toString());
+                renderDiagnosticSnapshot(snapshot);
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 if (!isAdded()) return;
+                lastDiagnosticSnapshot = null;
+                Log.d(DEV_PHYS_TAG, "diagnostics reset reason=listener cancelled: " + error.getMessage());
                 renderAllDiagnosticsUnavailable();
             }
         });
         renderSensorTestState();
+    }
+
+    private void renderDiagnosticSnapshot(DataSnapshot snapshot) {
+        Object waterLevelRaw = snapshot.child("waterLevel").getValue();
+        // Raw HC-SR04 echo (published even when the reservoir logic rejects
+        // it) wins; the accepted/filtered distance is only a fallback for
+        // firmware that predates waterLevelRawDistanceCm.
+        Object waterLevelDistanceRaw = snapshot.child("waterLevelRawDistanceCm").getValue();
+        if (waterLevelDistanceRaw == null) {
+            waterLevelDistanceRaw = snapshot.child("waterLevelDistanceCm").getValue();
+        }
+        Object waterLevelStatusRaw = snapshot.child("waterLevelStatus").getValue();
+        Log.d(DEV_PHYS_TAG, "snapshot exists=" + snapshot.exists());
+        Log.d(DEV_PHYS_TAG, "waterLevel raw=" + waterLevelRaw);
+        Log.d(DEV_PHYS_TAG, "waterLevelDistanceCm raw=" + waterLevelDistanceRaw
+                + " status=" + waterLevelStatusRaw);
+        renderWaterLevelStatus(waterLevelStatusRaw);
+        renderDiagnostic(tvDiagnosticPh, "pH", snapshot.child("ph").getValue(), "");
+        renderDiagnostic(tvDiagnosticEc, "EC", snapshot.child("ec").getValue(), " mS/cm");
+        renderDiagnostic(tvDiagnosticEcVoltage, "EC Voltage", snapshot.child("ecVoltage").getValue(), " V");
+        renderDiagnostic(tvDiagnosticAirTemperature, "Air Temperature", snapshot.child("airTemperature").getValue(), " °C");
+        renderDiagnostic(tvDiagnosticHumidity, "Humidity", snapshot.child("humidity").getValue(), " %");
+        renderDiagnostic(tvDiagnosticWaterTemperature, "Water Temperature",
+                snapshot.child("waterTemperature").getValue(), " °C", "Unavailable");
+        renderDiagnostic(tvDiagnosticWaterLevel, "Water Level", waterLevelRaw, " %");
+        renderDiagnostic(tvDiagnosticWaterLevelDistance, "Water Level Distance", waterLevelDistanceRaw, " cm");
+        renderDiagnostic(tvDiagnosticWaterDepth, "Water Depth", snapshot.child("waterLevelCm").getValue(), " cm");
+        Log.d(DEV_PHYS_TAG, "render waterLevel=" + (sensorTestActive && waterLevelRaw instanceof Number
+                ? ((Number) waterLevelRaw).doubleValue() + " %" : "unavailable (sensorTestActive="
+                + sensorTestActive + ")"));
     }
 
     /**
@@ -1000,7 +1037,16 @@ public class DevOptionsFragment extends Fragment {
                 ContextCompat.getColor(requireContext(),
                         sensorTestActive || sensorTestRequested
                                 ? R.color.action_destructive : R.color.primary)));
-        if (!sensorTestActive) renderAllDiagnosticsUnavailable();
+        if (!sensorTestActive) {
+            Log.d(DEV_PHYS_TAG, "diagnostics reset reason=sensorTestActive=false (requested="
+                    + sensorTestRequested + ")");
+            renderAllDiagnosticsUnavailable();
+        } else if (lastDiagnosticSnapshot != null) {
+            // Status can flip to active AFTER the first physicalSensors
+            // snapshot was already delivered (and rendered "--" because
+            // sensorTestActive was still false) - re-render it now.
+            renderDiagnosticSnapshot(lastDiagnosticSnapshot);
+        }
     }
 
     private void renderDiagnostic(TextView view, String label, Object rawValue, String unit) {
@@ -1027,7 +1073,35 @@ public class DevOptionsFragment extends Fragment {
         }
     }
 
+    // Firmware's diagnostic validity label for the HC-SR04 reading (see
+    // SensorManager::getWaterLevelDiagStatus()). Purely informational - it
+    // never changes whether Water Level/Depth are shown; those render only
+    // when the firmware actually published them.
+    private void renderWaterLevelStatus(Object rawStatus) {
+        if (tvDiagnosticWaterLevelStatus == null) return;
+        if (!sensorTestActive || !(rawStatus instanceof String)) {
+            tvDiagnosticWaterLevelStatus.setText("Water Level Status\n--\nNO STATUS");
+            tvDiagnosticWaterLevelStatus.setTextColor(
+                    ContextCompat.getColor(requireContext(), R.color.sensor_no_data));
+            return;
+        }
+        String status = (String) rawStatus;
+        String label;
+        switch (status) {
+            case "VALID": label = "Valid"; break;
+            case "OUT_OF_RANGE": label = "Out of Range"; break;
+            case "NO_ECHO": label = "No Echo"; break;
+            case "CONFIRMING": label = "Confirming"; break;
+            case "SENSOR_FAULT": label = "Sensor Fault"; break;
+            default: label = status; break;
+        }
+        tvDiagnosticWaterLevelStatus.setText("Water Level Status\n" + label + "\nREADING");
+        tvDiagnosticWaterLevelStatus.setTextColor(ContextCompat.getColor(requireContext(),
+                "VALID".equals(status) ? R.color.sensor_reading : R.color.state_warning));
+    }
+
     private void renderAllDiagnosticsUnavailable() {
+        renderWaterLevelStatus(null);
         renderDiagnostic(tvDiagnosticPh, "pH", null, "");
         renderDiagnostic(tvDiagnosticEc, "EC", null, " mS/cm");
         renderDiagnostic(tvDiagnosticEcVoltage, "EC Voltage", null, " V");
@@ -1521,6 +1595,7 @@ public class DevOptionsFragment extends Fragment {
             testSmsRef = null;
             testSmsListener = null;
         }
+        lastDiagnosticSnapshot = null;
         mainHandler.removeCallbacksAndMessages(null);
         super.onDestroyView();
     }

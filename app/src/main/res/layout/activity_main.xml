@@ -83,15 +83,30 @@
          (height="0dp" + layout_weight="1") - so those overlays can visually dim
          their own screen's content but can never reach the nav bar, which sits in a
          separate, non-overlapping sibling area and stayed fully bright/interactive
-         during "loading". This single Activity-level scrim sits above BOTH of them
-         in the same root FrameLayout and is toggled by MainActivity.setGlobalDimOverlayVisible()
-         alongside each fragment's own local overlay, so the nav bar is now covered
-         and non-interactive for the same duration as the rest of the screen. -->
+         during "loading". This Activity-level view sits above both of them in the
+         same root FrameLayout and is toggled by MainActivity.setGlobalDimOverlayVisible()
+         alongside each fragment's own local overlay, so taps on the nav bar are
+         blocked for the same duration as the rest of the screen.
+
+         CONFIRMED BUG FIX (overlay painting over dialogs/loaders): this view used
+         to also carry a visible #99000000 tint (android:background), covering the
+         WHOLE screen. Because it sits above nav_host_fragment's entire subtree, that
+         tint painted a second time over every fragment's own popup/loader content
+         too - e.g. Parameters Monitoring's actuatorLoadingOverlay/
+         sensorStabilizingOverlay card (a plain white MaterialCardView per
+         Basilience.LoadingOverlayCard) rendered washed-out grey instead of crisp
+         white, because this scrim darkened it a second time on top of the
+         fragment's own, correctly-scoped dim. This view is now fully transparent -
+         it exists purely to intercept touches over the whole screen (including the
+         nav bar, which fragments can't reach) while something is loading. The nav
+         bar's own visible dimming now comes from a foreground scrim MainActivity
+         toggles directly on bottom_navigation (see setGlobalDimOverlayVisible()),
+         which is bounded to exactly that view's own rectangle and can never bleed
+         into nav_host_fragment's area. -->
     <View
         android:id="@+id/globalDimOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#99000000"
         android:clickable="true"
         android:focusable="true"
         android:elevation="24dp"

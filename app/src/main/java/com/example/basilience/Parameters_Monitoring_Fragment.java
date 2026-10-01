@@ -1679,12 +1679,25 @@ public class Parameters_Monitoring_Fragment extends Fragment {
     /** Show the full-screen loading overlay with a title and optional subtitle */
     private void showActuatorLoading(String title, String subtitle) {
         if (actuatorLoadingOverlay == null || !isAdded()) return;
+        // CONFIRMED BUG FIX (nav bar stuck dimmed after a command finishes):
+        // this method is called repeatedly while a command is in flight -
+        // monitorActuatorCommand's poll loop calls it roughly every 500ms to
+        // refresh the title/subtitle (Validating..., Activating..., ...) -
+        // but hideActuatorLoading() only runs once at the end. Each call used
+        // to unconditionally call setGlobalDimOverlayVisible(true), and that
+        // request count is reference-counted in MainActivity (see its own
+        // comment), so a multi-poll command could open 4-5 requests against
+        // a single closing one, leaving the nav bar's dim scrim stuck on
+        // forever. Gating the call behind the same "was it already visible"
+        // check already used for actuatorLoadingShownAt keeps it to exactly
+        // one open request per visible session, matching hideActuatorLoading's
+        // one close.
         if (actuatorLoadingOverlay.getVisibility() != View.VISIBLE) {
             actuatorLoadingShownAt = SystemClock.elapsedRealtime();
+            setGlobalDimOverlayVisible(true);
         }
         actuatorLoadingOverlay.setVisibility(View.VISIBLE);
         actuatorLoadingOverlay.bringToFront();
-        setGlobalDimOverlayVisible(true);
         if (tvActuatorLoadingTitle != null) tvActuatorLoadingTitle.setText(title);
         if (tvActuatorLoadingStatus != null) {
             tvActuatorLoadingStatus.setText(subtitle);

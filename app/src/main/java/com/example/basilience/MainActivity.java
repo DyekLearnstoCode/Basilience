@@ -1,6 +1,7 @@
 package com.example.basilience;
 
 import android.content.SharedPreferences;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.TextView;
@@ -1077,8 +1078,8 @@ public class MainActivity extends AppCompatActivity {
     // area and can never reach bottom_navigation, which lives in a separate
     // sibling view (see activity_main.xml's globalDimOverlay comment for the
     // full root cause). Fragments call this alongside showing/hiding their
-    // own local overlay so the nav bar is dimmed and non-interactive for the
-    // same duration, instead of staying bright and clickable above it.
+    // own local overlay so the nav bar is blocked/dimmed for the same
+    // duration, instead of staying bright and clickable above it.
     // Reference-counted (not a plain toggle): a single screen can have more
     // than one local overlay (e.g. Parameters Monitoring's
     // sensorStabilizingOverlay during initial load and actuatorLoadingOverlay
@@ -1087,14 +1088,29 @@ public class MainActivity extends AppCompatActivity {
     // still legitimately showing.
     private int globalDimOverlayRequests = 0;
 
+    // CONFIRMED BUG FIX (overlay painting over dialogs/loaders): drawn as
+    // bottomNav's own foreground instead of a second Activity-wide tint, so
+    // it's bounded to exactly the nav bar's rectangle and can never paint
+    // over a fragment's own popup/loader card the way the old whole-screen
+    // globalDimOverlay tint did (see activity_main.xml's comment). Not
+    // static: setForeground() gives the Drawable a callback back to this
+    // bottomNav instance, so a per-Activity-instance Drawable avoids that
+    // callback ever pointing at a View from a previous (destroyed) Activity
+    // instance after a recreation.
+    private final ColorDrawable navDimScrim = new ColorDrawable(0x99000000);
+
     public void setGlobalDimOverlayVisible(boolean visible) {
         if (globalDimOverlay == null) return;
         globalDimOverlayRequests = Math.max(0, globalDimOverlayRequests + (visible ? 1 : -1));
-        if (globalDimOverlayRequests > 0) {
+        boolean shouldShow = globalDimOverlayRequests > 0;
+        if (shouldShow) {
             globalDimOverlay.setVisibility(View.VISIBLE);
             globalDimOverlay.bringToFront();
         } else {
             globalDimOverlay.setVisibility(View.GONE);
+        }
+        if (bottomNav != null) {
+            bottomNav.setForeground(shouldShow ? navDimScrim : null);
         }
     }
 
